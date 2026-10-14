@@ -11,6 +11,7 @@ import { TimelinePanel } from './timeline/TimelinePanel'
 import { EffectControlsPanel } from './panels/EffectControls'
 import { ToolsPanel } from './panels/ToolsPanel'
 import { AudioMeters, AudioMixerPanel, EffectsPanel, MediaBrowserPanel } from './panels/Placeholders'
+import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel, TextPanel } from './panels/RightPanels'
 
 const panel = (id: PanelId, C: React.FC) => {
   const Wrapped = (_: IDockviewPanelProps) => (
@@ -32,31 +33,36 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   effects: panel('effects', EffectsPanel),
   mediaBrowser: panel('mediaBrowser', MediaBrowserPanel),
   tools: panel('tools', ToolsPanel),
-  audioMeters: panel('audioMeters', AudioMeters)
+  audioMeters: panel('audioMeters', AudioMeters),
+  essentialSound: panel('essentialSound', EssentialSoundPanel),
+  lumetri: panel('lumetri', LumetriPanel),
+  properties: panel('properties', PropertiesPanel),
+  metadata: panel('metadata', MetadataPanel),
+  text: panel('text', TextPanel),
+  audioTrackMixer: panel('audioTrackMixer', AudioMixerPanel),
+  graphicTemplates: panel('graphicTemplates', GraphicTemplatesPanel)
 }
 
 const LUMINA_THEME = { name: 'lumina', className: 'dockview-theme-lumina', colorScheme: 'dark' as const, gap: 4 }
 
-const WORKSPACES = ['Learning', 'Assembly', 'Editing', 'Color', 'Effects', 'Audio', 'Captions and Graphics', 'Libraries']
-
-function WorkspaceBar() {
+// Premiere 2025+ header: no workspace tabs, project name centered.
+function TopBar() {
   const connected = useStore((s) => s.connected)
   const history = useStore((s) => s.history)
   const path = useStore((s) => s.path)
+  const name = useStore((s) => s.doc?.name)
+  const title = path ? path.split(/[\\/]/).pop()!.replace(/\.lumina$/, '') : name ?? 'Untitled'
   return (
-    <div className="lm-workspaces">
+    <div className="lm-topbar">
       <span className="home">
         <Home size={15} />
       </span>
-      {WORKSPACES.map((w) => (
-        <span key={w} className={`ws ${w === 'Editing' ? 'active' : ''}`} title={w === 'Editing' ? '' : 'Coming soon'}>
-          {w}
-        </span>
-      ))}
-      <span className="spacer" />
+      <span className="title">
+        {title}
+        {history.dirty ? ' *' : ''}
+      </span>
       <span className="status">
         {history.in_transaction && <span>Transaction open</span>}
-        <span>{path ? path.split(/[\\/]/).pop() : 'Unsaved project'}{history.dirty ? ' *' : ''}</span>
         <span>
           <span className={`dot ${connected ? '' : 'off'}`} />
           {connected ? 'Engine' : 'Engine offline'}
@@ -88,7 +94,7 @@ export function App() {
 
   return (
     <div className="lm-app">
-      <WorkspaceBar />
+      <TopBar />
       <div className="lm-dock">
         <DockviewReact theme={LUMINA_THEME} components={components} onReady={onReady} />
       </div>

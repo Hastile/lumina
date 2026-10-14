@@ -5,6 +5,7 @@ export type Field =
   | { key: string; label: string; type: 'number'; value: number; min?: number; max?: number; step?: number; suffix?: string }
   | { key: string; label: string; type: 'select'; value: string; options: { value: string; label: string }[] }
   | { key: string; label: string; type: 'checkbox'; value: boolean }
+  | { key: string; label: string; type: 'note'; value: string }
 
 export type DialogSpec = {
   title: string

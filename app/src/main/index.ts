@@ -129,6 +129,7 @@ const MENU: Record<string, Item[]> = {
     { label: 'New Bin', action: 'file.newBin', accel: 'Ctrl+/' },
     'sep',
     { label: 'Open Project...', action: 'file.open', accel: 'Ctrl+O' },
+    { label: 'Open Premiere Pro Project (.prproj)...', action: 'file.open' },
     'sep',
     { label: 'Save', action: 'file.save', accel: 'Ctrl+S' },
     { label: 'Save As...', action: 'file.saveAs', accel: 'Ctrl+Shift+S' },
@@ -207,7 +208,15 @@ const MENU: Record<string, Item[]> = {
     { label: 'Effects', action: 'window.effects', accel: 'Shift+7' },
     { label: 'Media Browser', action: 'window.mediaBrowser', accel: 'Shift+8' },
     { label: 'Tools', action: 'window.tools' },
-    { label: 'Audio Meters', action: 'window.audioMeters' }
+    { label: 'Audio Meters', action: 'window.audioMeters' },
+    'sep',
+    { label: 'Essential Sound', action: 'window.essentialSound' },
+    { label: 'Lumetri Color', action: 'window.lumetri' },
+    { label: 'Properties', action: 'window.properties' },
+    { label: 'Metadata', action: 'window.metadata' },
+    { label: 'Text', action: 'window.text' },
+    { label: 'Audio Track Mixer', action: 'window.audioTrackMixer' },
+    { label: 'Graphic Templates', action: 'window.graphicTemplates' }
   ],
   Help: [{ label: 'Lumina Help', action: 'help.docs' }]
 }

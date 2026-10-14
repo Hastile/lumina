@@ -6,7 +6,7 @@ import { timecode } from '../util/time'
 // Premiere-style property tree. Motion / keyframes arrive with the M3
 // compositor; Opacity, Speed and Volume are live engine properties today.
 
-function ValueScrub({ value, min, max, step = 1, digits = 1, suffix = '', onChange }: {
+export function ValueScrub({ value, min, max, step = 1, digits = 1, suffix = '', onChange }: {
   value: number; min: number; max: number; step?: number; digits?: number; suffix?: string; onChange: (v: number) => void
 }) {
   const [edit, setEdit] = useState<string | null>(null)

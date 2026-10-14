@@ -6,6 +6,7 @@ export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'r
 
 export type PanelId =
   | 'project' | 'source' | 'program' | 'timeline' | 'effectControls' | 'audioMixer' | 'effects' | 'mediaBrowser' | 'tools' | 'audioMeters'
+  | 'essentialSound' | 'lumetri' | 'properties' | 'metadata' | 'text' | 'audioTrackMixer' | 'graphicTemplates'
 
 export type Toast = { id: number; kind: 'error' | 'info'; text: string }
 

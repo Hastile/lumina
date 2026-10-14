@@ -69,6 +69,26 @@ async function saveAs(): Promise<void> {
   if (path) await call('project.save', { path })
 }
 
+const isPremiere = (p: string) => /\.prproj$/i.test(p)
+
+type PremiereImport = { media: number; sequences: string[]; bins: number; warnings: string[] }
+
+/** Import a Premiere project (read-only) into the open project, like Premiere's Import of a .prproj. */
+async function importPremiere(path: string, intoRoot = false): Promise<void> {
+  toast(`Importing ${path.split(/[\\/]/).pop()}…`, 'info')
+  const res = await exec<PremiereImport>('project.import_premiere', { path, into_root: intoRoot, bin_id: intoRoot ? null : get().currentBin }, 'Import Premiere Project')
+  if (!res) return
+  toast(`Imported ${res.sequences.length} sequence(s), ${res.media} media, ${res.bins} bin(s)`, 'info')
+  if (res.warnings.length) {
+    openDialog({
+      title: 'Premiere Import Report',
+      okLabel: 'OK',
+      fields: res.warnings.map((w, i) => ({ key: `w${i}`, label: '', type: 'note' as const, value: w })),
+      onSubmit: () => undefined
+    })
+  }
+}
+
 async function importFiles(paths?: string[]): Promise<void> {
   const files =
     paths ??
@@ -76,12 +96,16 @@ async function importFiles(paths?: string[]): Promise<void> {
       title: 'Import',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'All Supported Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mxf', 'mts', 'wav', 'mp3', 'm4a', 'aac', 'flac', 'png', 'jpg', 'jpeg', 'psd', 'tif', 'tiff', 'webp', 'gif'] },
+        { name: 'All Supported Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mxf', 'mts', 'wav', 'mp3', 'm4a', 'aac', 'flac', 'png', 'jpg', 'jpeg', 'psd', 'tif', 'tiff', 'webp', 'gif', 'prproj'] },
+        { name: 'Adobe Premiere Pro Projects', extensions: ['prproj'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     }))
   if (!files.length) return
-  const res = await exec<{ media_ids: string[]; errors: { path: string; error: string }[] }>('media.import', { paths: files, bin_id: get().currentBin })
+  for (const p of files.filter(isPremiere)) await importPremiere(p)
+  const media = files.filter((p) => !isPremiere(p))
+  if (!media.length) return
+  const res = await exec<{ media_ids: string[]; errors: { path: string; error: string }[] }>('media.import', { paths: media, bin_id: get().currentBin })
   for (const e of res?.errors ?? []) toast(`${e.path}: ${e.error}`)
 }
 export { importFiles }
@@ -265,11 +289,25 @@ def('file.newProject', 'New Project', async () => {
 def('file.newSequence', 'New Sequence', newSequenceDialog)
 def('file.newBin', 'New Bin', async () => void (await exec('bin.create', { name: 'New Bin', parent_id: get().currentBin })))
 def('file.open', 'Open Project', async () => {
-  const [path] = await window.lumina.openDialog({ title: 'Open Project', properties: ['openFile'], filters: [{ name: 'Lumina Project', extensions: ['lumina'] }] })
-  if (path) {
-    const r = await call<{ recovered_patches?: number }>('project.open', { path })
-    if (r?.recovered_patches) toast(`Recovered ${r.recovered_patches} unsaved change(s) from the op-log`, 'info')
+  const [path] = await window.lumina.openDialog({
+    title: 'Open Project',
+    properties: ['openFile'],
+    filters: [
+      { name: 'Projects', extensions: ['lumina', 'prproj'] },
+      { name: 'Lumina Project', extensions: ['lumina'] },
+      { name: 'Adobe Premiere Pro Project (import)', extensions: ['prproj'] }
+    ]
+  })
+  if (!path) return
+  if (isPremiere(path)) {
+    // hand-off: the .prproj is only read; the result is a new, unsaved Lumina project
+    const name = path.split(/[\\/]/).pop()!.replace(/\.prproj$/i, '')
+    if (!(await call('project.new', { name }))) return
+    await importPremiere(path, true)
+    return
   }
+  const r = await call<{ recovered_patches?: number }>('project.open', { path })
+  if (r?.recovered_patches) toast(`Recovered ${r.recovered_patches} unsaved change(s) from the op-log`, 'info')
 })
 def('file.save', 'Save', async () => (get().path ? void (await call('project.save', {})) : saveAs()))
 def('file.saveAs', 'Save As', saveAs)
@@ -449,6 +487,13 @@ def('window.effects', 'Effects', panel('effects'))
 def('window.mediaBrowser', 'Media Browser', panel('mediaBrowser'))
 def('window.tools', 'Tools', panel('tools'))
 def('window.audioMeters', 'Audio Meters', panel('audioMeters'))
+def('window.essentialSound', 'Essential Sound', panel('essentialSound'))
+def('window.lumetri', 'Lumetri Color', panel('lumetri'))
+def('window.properties', 'Properties', panel('properties'))
+def('window.metadata', 'Metadata', panel('metadata'))
+def('window.text', 'Text', panel('text'))
+def('window.audioTrackMixer', 'Audio Track Mixer', panel('audioTrackMixer'))
+def('window.graphicTemplates', 'Graphic Templates', panel('graphicTemplates'))
 def('window.maximize', 'Maximize or Restore Frame Under Cursor', () => toggleMaximize(get().focusedPanel))
 
 // small util used by panels

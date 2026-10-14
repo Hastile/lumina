@@ -12,7 +12,14 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   effects: 'Effects',
   mediaBrowser: 'Media Browser',
   tools: 'Tools',
-  audioMeters: 'Audio Meters'
+  audioMeters: 'Audio Meters',
+  essentialSound: 'Essential Sound',
+  lumetri: 'Lumetri Color',
+  properties: 'Properties',
+  metadata: 'Metadata',
+  text: 'Text',
+  audioTrackMixer: 'Audio Track Mixer',
+  graphicTemplates: 'Graphic Templates'
 }
 
 let api: DockviewApi | null = null
@@ -25,26 +32,47 @@ export function dockApi(): DockviewApi | null {
   return api
 }
 
-/** Premiere's default "Editing" workspace. */
+/**
+ * Premiere 2025+ "Editing" workspace:
+ *   [Effect Controls group | Program | Essential Sound ] [ Lumetri Color /
+ *   [Project group | Tools | Timeline | Audio Meters   ] [ Properties     ]
+ */
 export function buildEditingLayout(a: DockviewApi): void {
   a.clear()
+  const narrow = new Set<PanelId>(['tools', 'audioMeters'])
   const add = (id: PanelId, position?: Parameters<DockviewApi['addPanel']>[0]['position']) =>
-    a.addPanel({ id, component: id, title: PANEL_TITLES[id], position, minimumWidth: id === 'tools' || id === 'audioMeters' ? 36 : 120 })
+    a.addPanel({ id, component: id, title: PANEL_TITLES[id], position, minimumWidth: narrow.has(id) ? 36 : 120 })
 
-  // bottom row first, then the monitor row spans the full width above it
+  // bottom row
   add('project')
+  add('effects', { referencePanel: 'project', direction: 'within', index: 0 })
+  add('graphicTemplates', { referencePanel: 'project', direction: 'within', index: 1 })
   add('mediaBrowser', { referencePanel: 'project', direction: 'within' })
-  add('effects', { referencePanel: 'project', direction: 'within' })
   add('tools', { referencePanel: 'project', direction: 'right' })
   add('timeline', { referencePanel: 'tools', direction: 'right' })
   add('audioMeters', { referencePanel: 'timeline', direction: 'right' })
-  add('source', { direction: 'above' })
-  add('effectControls', { referencePanel: 'source', direction: 'within' })
-  add('audioMixer', { referencePanel: 'source', direction: 'within' })
-  add('program', { referencePanel: 'source', direction: 'right' })
+  // top row spans the bottom row's width
+  add('effectControls', { direction: 'above' })
+  add('source', { referencePanel: 'effectControls', direction: 'within' })
+  add('audioMixer', { referencePanel: 'effectControls', direction: 'within' })
+  add('metadata', { referencePanel: 'effectControls', direction: 'within' })
+  add('text', { referencePanel: 'effectControls', direction: 'within' })
+  add('audioTrackMixer', { referencePanel: 'effectControls', direction: 'within' })
+  add('program', { referencePanel: 'effectControls', direction: 'right' })
+  add('essentialSound', { referencePanel: 'program', direction: 'right' })
+  // full-height column on the far right
+  add('lumetri', { direction: 'right' })
+  add('properties', { referencePanel: 'lumetri', direction: 'within' })
 
-  a.getPanel('source')?.api.setActive()
+  // Tools and Audio Meters have no tab strip in Premiere
+  for (const id of ['tools', 'audioMeters'] as const) {
+    const g = a.getPanel(id)?.group
+    if (g) g.header.hidden = true
+  }
+
+  a.getPanel('effectControls')?.api.setActive()
   a.getPanel('project')?.api.setActive()
+  a.getPanel('properties')?.api.setActive()
 
   // proportions close to Premiere's defaults (after the grid has laid out)
   requestAnimationFrame(() => sizeEditingLayout(a))
@@ -53,10 +81,12 @@ export function buildEditingLayout(a: DockviewApi): void {
 function sizeEditingLayout(a: DockviewApi): void {
   const total = a.width || window.innerWidth
   const height = a.height || window.innerHeight
-  a.getPanel('source')?.group.api.setSize({ height: Math.round(height * 0.52) })
-  a.getPanel('source')?.group.api.setSize({ width: Math.round(total * 0.5) })
-  a.getPanel('project')?.group.api.setSize({ width: Math.round(total * 0.27) })
-  a.getPanel('tools')?.group.api.setSize({ width: 52 })
+  a.getPanel('properties')?.group.api.setSize({ width: Math.round(total * 0.18) })
+  a.getPanel('effectControls')?.group.api.setSize({ height: Math.round(height * 0.6) })
+  a.getPanel('effectControls')?.group.api.setSize({ width: Math.round(total * 0.29) })
+  a.getPanel('essentialSound')?.group.api.setSize({ width: Math.round(total * 0.18) })
+  a.getPanel('project')?.group.api.setSize({ width: Math.round(total * 0.31) })
+  a.getPanel('tools')?.group.api.setSize({ width: 40 })
   a.getPanel('audioMeters')?.group.api.setSize({ width: 60 })
 }
 

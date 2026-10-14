@@ -37,7 +37,9 @@ export function DialogHost() {
       >
         <h3>{dialog.title}</h3>
         <div className="body">
-          {dialog.fields.map((f, i) => (
+          {dialog.fields.map((f, i) => f.type === 'note' ? (
+            <div key={f.key} className="note">{f.value}</div>
+          ) : (
             <FieldRow key={f.key}>
               <label htmlFor={`f-${f.key}`}>{f.label}</label>
               {f.type === 'select' ? (

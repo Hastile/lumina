@@ -45,3 +45,18 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | Marquee selection | ✗ |
 | Rubber bands (volume / opacity) | ✗ (M3) |
 | Nested sequences | ✗ (M2) |
+
+## Premiere project hand-off (.prproj, read-only)
+`File > Open Project` and `File > Import` accept `.prproj`, and so does dropping one onto the Project panel.
+The `project_import_premiere` MCP tool does the same. The source file is never modified.
+
+| Item | Status |
+|---|---|
+| Bin tree, file media (thumbnails/waveforms/proxies generated automatically) | ✓ |
+| Sequences: frame rate, frame size, track count, clip placement, source in, speed | ✓ |
+| Video+audio link groups, label colors, track mute, sequence markers, playhead | ✓ |
+| Duplicate sequence names → disambiguated with the bin name | ✓ |
+| Motion/opacity/effects/keyframes | ✗ (M3), so scaled shorts footage shows letterboxed |
+| Transitions | ✗ (reported) |
+| MOGRT / Essential Graphics / captions (.aegraphic, .srt) | ✗ (M4, reported) |
+| Nested sequences | ✗ (M2, reported) |

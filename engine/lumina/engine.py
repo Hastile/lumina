@@ -27,6 +27,7 @@ class Engine:
     def __init__(self, services: Any = None, run_jobs: bool = True):
         self.session = Session(services=services or MediaServices())
         self.run_jobs = run_jobs
+        self._queued: set[str] = set()
         self.jobs = JobRunner(record=self._record_derived, emit=self.session._emit)
         self.methods: dict[str, Callable[[dict], Any]] = {
             "hello": lambda p: {"engine": "lumina", "api": 1, "commands": REGISTRY.describe(), **self.session.snapshot()},
@@ -65,18 +66,27 @@ class Engine:
         if not name:
             raise CommandError("BAD_PARAMS", "execute needs 'name'")
         out = self.session.execute(name, p.get("params") or {}, p.get("label"))
-        if name == "media.import" and self.run_jobs:
-            for mid in out["result"]["media_ids"]:
-                self.jobs.submit_media(self.session.doc["media"][mid])
+        if name in ("media.import", "project.import_premiere"):
+            self._submit_missing_jobs()
         return out
+
+    def _submit_missing_jobs(self) -> None:
+        """Queue thumbnail/waveform/proxy generation for media that has none yet."""
+        if not self.run_jobs:
+            return
+        for item in list(self.session.doc["media"].values()):
+            if item["id"] in self._queued:
+                continue
+            derived = [item.get(k) for k in ("thumbnail_path", "waveform_path", "proxy_path")]
+            if any(d and not Path(d).exists() for d in derived) or not (item.get("thumbnail_path") or item.get("waveform_path")):
+                if Path(item["path"]).exists():
+                    self._queued.add(item["id"])
+                    self.jobs.submit_media(item)
 
     def _open(self, p: dict) -> dict:
         snap = self.session.open(p["path"])
-        if self.run_jobs:
-            for item in self.session.doc["media"].values():
-                derived = [item.get(k) for k in ("thumbnail_path", "waveform_path", "proxy_path")]
-                if any(d and not Path(d).exists() for d in derived) or not (item.get("thumbnail_path") or item.get("waveform_path")):
-                    self.jobs.submit_media(item)
+        self._queued.clear()
+        self._submit_missing_jobs()
         return snap
 
     def _record_derived(self, media_id: str, fields: dict) -> None:
