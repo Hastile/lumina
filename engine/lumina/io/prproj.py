@@ -47,6 +47,29 @@ class Graph:
     by_id: dict[str, ET.Element]
     by_uid: dict[str, ET.Element]
     _blobs: dict[str, str] | None = None
+    path: str | None = None
+    _mogrts: dict | None = None
+
+    def mogrt(self, media: ET.Element | None) -> dict | None:
+        """Text layout of an After Effects template referenced by a Media element."""
+        if media is None:
+            return None
+        from .aep import read_mogrt
+
+        if self._mogrts is None:
+            self._mogrts = {}
+        cands = []
+        if fp := _text(media, "FilePath"):
+            cands.append(Path(fp))
+        if (rp := _text(media, "RelativePath")) and self.path:
+            cands.append((Path(self.path).parent / rp.replace("\\", "/")))
+        for c in cands:
+            key = str(c)
+            if key not in self._mogrts:
+                self._mogrts[key] = read_mogrt(key) if c.suffix.lower() in (".aegraphic", ".mogrt") else None
+            if self._mogrts[key]:
+                return self._mogrts[key]
+        return None
 
     def blob(self, el: ET.Element | None) -> str | None:
         """Base64 text of a binary value. Premiere writes identical blobs once
@@ -99,7 +122,7 @@ def load(path: str) -> Graph:
             by_id[oid] = el
         if (ouid := el.get("ObjectUID")) is not None:
             by_uid[ouid] = el
-    return Graph(root, by_id, by_uid)
+    return Graph(root, by_id, by_uid, path=str(p))
 
 
 def _text(el: ET.Element | None, path: str, default: str | None = None) -> str | None:
@@ -655,6 +678,128 @@ def _fb_ref(d: bytes, at: int | None) -> int | None:
     return None if at is None else at + _st.unpack_from("<I", d, at)[0]
 
 
+def _fb_u32(d: bytes, at: int | None, default=None):
+    import struct as _st
+
+    return default if at is None else _st.unpack_from("<I", d, at)[0]
+
+
+def _fb_f32(d: bytes, at: int | None, default=None):
+    import struct as _st
+
+    return default if at is None else _st.unpack_from("<f", d, at)[0]
+
+
+def _fb_color(d: bytes, at: int | None) -> str | None:
+    t = _fb_ref(d, at)
+    if t is None:
+        return None
+    return "#%02x%02x%02x" % tuple(d[o] if (o := _fb_field(d, t, i)) is not None else 0 for i in range(3))
+
+
+def _fb_string(d: bytes, at: int | None) -> str:
+    v = _fb_ref(d, at)
+    if v is None:
+        return ""
+    n = _fb_u32(d, v)
+    return d[v + 4:v + 4 + n].decode("utf-8", "replace")
+
+
+def _fb_vector(d: bytes, at: int | None) -> list[int]:
+    """Absolute offsets of a vector-of-tables' elements."""
+    v = _fb_ref(d, at)
+    if v is None:
+        return []
+    return [_fb_ref(d, v + 4 + 4 * i) for i in range(_fb_u32(d, v))]
+
+
+# Premiere's text FlatBuffer (12-byte header, root -> document table). Field
+# numbers mapped from real Premiere 2025-26 projects against frames rendered by
+# Premiere itself:
+#   document: 0 runs, 1 font names, 2/3 area box w/h, 4 alignment (absent = left,
+#             1 right, 2 center), 5 vertical alignment (area text: 1 center,
+#             2 bottom), 10 shadow color, 11 shadow on, 12 shadow opacity,
+#             14 shadow distance, 15 shadow blur
+#   run: 0 text (bytes), 1 style
+#   style: 0 font index, 1 size (absent = 100), 2 fill color (absent = white),
+#          4 stroke color (absent = white), 6 stroke width, 8 tracking (1/1000 em)
+TEXT_ALIGN = {None: "left", 0: "left", 1: "right", 2: "center"}
+TEXT_VALIGN = {None: "top", 0: "top", 1: "center", 2: "bottom"}
+
+
+def _text_doc(blob: bytes) -> dict | None:
+    import struct as _st
+
+    try:
+        root = 12 + _st.unpack_from("<I", blob, 12)[0]
+        doc = _fb_ref(blob, _fb_field(blob, root, 0))
+        if doc is None:
+            return None
+        F = lambda i: _fb_field(blob, doc, i)
+        fv = _fb_ref(blob, F(1))
+        fonts_ = [_fb_string(blob, fv + 4 + 4 * i) for i in range(_fb_u32(blob, fv))] if fv is not None else []
+        runs = []
+        for r in _fb_vector(blob, F(0)):
+            text = _fb_string(blob, _fb_field(blob, r, 0))
+            st = _fb_ref(blob, _fb_field(blob, r, 1))
+            S = (lambda i: _fb_field(blob, st, i)) if st is not None else (lambda i: None)
+            font_idx = _fb_u32(blob, S(0), 0)
+            runs.append({
+                "text": text,
+                "font_family": fonts_[font_idx] if font_idx < len(fonts_) else (fonts_[0] if fonts_ else None),
+                "font_size": float(_fb_f32(blob, S(1), 100.0)),
+                "color": _fb_color(blob, S(2)) or "#ffffff",
+                "stroke_color": (_fb_color(blob, S(4)) or "#ffffff") if (_fb_f32(blob, S(6), 0.0) or 0) > 0 else None,
+                "stroke_width": float(_fb_f32(blob, S(6), 0.0) or 0.0),
+                "tracking": float(_fb_f32(blob, S(8), 0.0) or 0.0),
+            })
+        if not runs:
+            return None
+        box = [float(_fb_f32(blob, F(2))), float(_fb_f32(blob, F(3)))] if F(2) is not None and F(3) is not None else None
+        shadow = None
+        if F(11) is not None and blob[F(11)]:
+            shadow = {"color": _fb_color(blob, F(10)) or "#000000", "opacity": float(_fb_f32(blob, F(12), 75.0)),
+                      "angle": 135.0, "distance": float(_fb_f32(blob, F(14), 10.0)), "blur": float(_fb_f32(blob, F(15), 0.0))}
+        return {"runs": runs, "box": box, "align": TEXT_ALIGN.get(_fb_u32(blob, F(4)), "left"),
+                "vertical_align": TEXT_VALIGN.get(_fb_u32(blob, F(5)), "top"), "shadow": shadow}
+    except (_st.error, IndexError, UnicodeDecodeError):
+        return None
+
+
+def _native_text(blob: bytes, params: dict[int, ET.Element], seq_w: int, seq_h: int) -> dict | None:
+    doc = _text_doc(blob)
+    if doc is None:
+        return None
+    runs = doc["runs"]
+    first = runs[0]
+    layer = {
+        "type": "text", "text": "".join(r["text"] for r in runs).replace("\r\n", "\n").replace("\r", "\n").rstrip("\n"),
+        "font_family": first["font_family"] or "Pretendard", "font_size": first["font_size"], "bold": False, "italic": False,
+        "color": first["color"], "stroke_color": first["stroke_color"], "stroke_width": first["stroke_width"],
+        "tracking": first["tracking"], "background": None, "align": doc["align"], "box": doc["box"],
+        "vertical_align": doc["vertical_align"], "shadow": doc["shadow"],
+        "runs": [{k: v for k, v in r.items()} for r in runs] if len(runs) > 1 else None,
+        "scale": float(_param_static(params.get(4)) or 100.0),
+        "rotation": float(_param_static(params.get(7)) or 0.0),
+        "opacity": float(_param_static(params.get(8)) if _param_static(params.get(8)) is not None else 100.0),
+        "approximate": False,
+    }
+    if layer["runs"]:
+        layer["runs"][-1]["text"] = layer["runs"][-1]["text"].rstrip("\r\n")
+    pos = _param_static(params.get(3))
+    if not isinstance(pos, list):
+        pos = [0.5, 0.5]
+    x, y = pos[0] * seq_w, pos[1] * seq_h
+    if layer["box"] is None:
+        # Premiere puts the first baseline at Position; Lumina anchors the block's vertical center
+        from ..render.text import layout
+
+        lines, _, bh = layout(layer)
+        y = y - (lines[0].baseline if lines else 0.0) + bh / 2
+    layer["position"] = [x, y]
+    return layer
+
+
 def _shape_style(blob: bytes) -> dict:
     """Fill color and kind from the Shape component's style FlatBuffer
     (12-byte header, then root -> style table). Field numbers were mapped from
@@ -729,6 +874,60 @@ def _shape(g: Graph, params: dict[int, ET.Element], seq_w: int, seq_h: int, stat
     }
 
 
+def _mogrt_fields(g: Graph, params: dict[int, ET.Element]) -> dict[str, dict]:
+    """Capsule params by field name -> the edited values (text, font, size, faux styles)."""
+    import base64
+
+    out = {}
+    for pid in sorted(params):
+        raw = g.blob(params[pid].find("StartKeyframeValue")) or _text(params[pid], "StartKeyframeValue")
+        if not raw:
+            continue
+        try:
+            data = json.loads(base64.b64decode(raw).decode("utf-16-le"))
+        except (ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(data, dict) and "textEditValue" in data:
+            out[_text(params[pid], "Name") or str(pid)] = data
+    return out
+
+
+def _mogrt_layers(ae: dict, fields: dict[str, dict], seq_w: int, seq_h: int) -> list[dict]:
+    """Lumina text layers (bottom first) from an AE template's text layers with
+    Premiere's edited field values applied. AE puts a point-text layer's first
+    baseline at its origin (position - anchor); the comp is centered in the frame."""
+    from ..render.text import layout
+
+    cw, ch = ae.get("width") or seq_w, ae.get("height") or seq_h
+    ox, oy = (seq_w - cw) / 2, (seq_h - ch) / 2
+    out = []
+    for al in reversed(ae["layers"]):
+        f = fields.get(al.get("name") or "", {})
+        first = lambda key, default: (f.get(key) or [default])[0]
+        text = f.get("textEditValue", al.get("text", ""))
+        layer = {
+            "type": "text", "text": text.replace("\r\n", "\n").replace("\r", "\n"),
+            "font_family": first("fontEditValue", al.get("font_family") or "Pretendard"),
+            "font_size": float(first("fontSizeEditValue", al.get("font_size") or 100.0)),
+            "bold": bool(first("fontFSBoldValue", False)) or bool(al.get("bold")),
+            "italic": bool(first("fontFSItalicValue", False)) or bool(al.get("italic")),
+            "color": al.get("color") or "#ffffff", "stroke_color": al.get("stroke_color"),
+            "stroke_width": float(al.get("stroke_width") or 0.0), "tracking": float(al.get("tracking") or 0.0),
+            "background": None, "align": al.get("align", "left"), "box": None, "vertical_align": "top",
+            "shadow": al.get("shadow"), "runs": None, "scale": float(al.get("scale") or 100.0),
+            "rotation": float(al.get("rotation") or 0.0), "opacity": float(al.get("opacity") if al.get("opacity") is not None else 100.0),
+            "visible": True, "approximate": False,
+        }
+        px, py = al.get("position") or [cw / 2, ch / 2]
+        ax, ay = al.get("anchor") or [0.0, 0.0]
+        s = layer["scale"] / 100
+        bx, by = ox + px - ax * s, oy + py - ay * s  # the layer origin = first baseline at the alignment point
+        lines, _, bh = layout(layer)
+        layer["position"] = [bx, by + (-(lines[0].baseline if lines else 0.0) + bh / 2) * s]
+        out.append(layer)
+    return out
+
+
 def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> dict | None:
     """Text and shape layers from native Essential Graphics components, and
     text fields from MOGRT (Capsule) parameters."""
@@ -740,6 +939,7 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
     for comp in _components(g, cti):
         match = _text(comp, "MatchName")
         params = _params(g, comp)
+        bypassed = _text(comp, "Component/Bypass") == "true"  # the layer's eye toggle in Essential Graphics
         if match == "AE.ADBE Text":
             raw = g.blob(params[1].find("StartKeyframeValue")) if 1 in params else None
             if not raw:
@@ -747,6 +947,11 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
             try:
                 blob = base64.b64decode(raw)
             except ValueError:
+                continue
+            parsed = _native_text(blob, params, seq_w, seq_h)
+            if parsed is not None:
+                parsed["visible"] = not bypassed
+                native.append(parsed)
                 continue
             strings = _length_prefixed_strings(blob)
             if not strings:
@@ -768,10 +973,17 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
                 "scale": float(_param_static(params.get(4)) or 100.0),
                 "rotation": float(_param_static(params.get(7)) or 0.0),
                 "opacity": float(_param_static(params.get(8)) if _param_static(params.get(8)) is not None else 100.0),
-                "approximate": size is None,
+                "approximate": size is None, "visible": not bypassed,
             })
         elif match == "AE.ADBE Capsule":
             source = "mogrt:" + (_text(comp, "Component/DisplayName") or "graphic")
+            sub = g.at(cti, "SubClip")
+            _, media = _clip_source(g, g.at(sub, "Clip"))
+            ae = g.mogrt(media)
+            if ae and ae["layers"]:
+                fields = _mogrt_fields(g, params)
+                layers.extend(_mogrt_layers(ae, fields, seq_w, seq_h))
+                continue
             y = seq_h * 0.12
             for pid in sorted(params):
                 raw = _text(params[pid], "StartKeyframeValue")
@@ -798,15 +1010,7 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
             if shape is None:
                 stats["shapes"] += 1
             else:
-                # PremiereFilterPrivateData byte 5: 1 on layers that render, 2 on
-                # template placeholders that don't (read as the eye toggle; inferred
-                # from real projects, not documented)
-                priv = g.blob(comp.find("PremiereFilterPrivateData"))
-                try:
-                    flags = base64.b64decode(priv) if priv else b""
-                except ValueError:
-                    flags = b""
-                shape["visible"] = not (len(flags) > 5 and flags[5] == 2)
+                shape["visible"] = not bypassed
                 native.append(shape)
     layers = native[::-1] + layers
     if not layers:

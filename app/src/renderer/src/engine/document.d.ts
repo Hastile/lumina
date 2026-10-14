@@ -157,12 +157,51 @@ export type StrokeWidth = number;
 export type Background = string | null;
 export type Align = "left" | "center" | "right";
 /**
- * sequence pixels; the text block's alignment point (vertical center)
+ * sequence pixels: point text -> the block's alignment point at its vertical center; area text -> the box's top-left
  */
 export type Position1 = number[];
+/**
+ * area text box [w, h]; null = point text
+ */
+export type Box = number[] | null;
+/**
+ * area text only
+ */
+export type VerticalAlign = "top" | "center" | "bottom";
+/**
+ * 1/1000 em added after each character
+ */
+export type Tracking = number;
+export type Color1 = string;
+/**
+ * percent
+ */
+export type Opacity1 = number;
+/**
+ * degrees clockwise from up; 135 = down-right
+ */
+export type Angle = number;
+export type Distance = number;
+/**
+ * CSS text-shadow blur radius (Gaussian sigma = blur / 2)
+ */
+export type Blur = number;
+/**
+ * styled spans; their texts concatenate to `text`
+ */
+export type Runs = TextRun[] | null;
+export type Text1 = string;
+export type FontFamily1 = string | null;
+export type FontSize1 = number | null;
+export type Bold1 = boolean | null;
+export type Italic1 = boolean | null;
+export type Color2 = string | null;
+export type StrokeColor1 = string | null;
+export type StrokeWidth1 = number | null;
+export type Tracking1 = number | null;
 export type Scale1 = number;
 export type Rotation1 = number;
-export type Opacity1 = number;
+export type Opacity2 = number;
 /**
  * the layer's eye toggle
  */
@@ -183,8 +222,8 @@ export type Closed = boolean;
  * null = no fill
  */
 export type Fill = string | null;
-export type StrokeColor1 = string | null;
-export type StrokeWidth1 = number;
+export type StrokeColor2 = string | null;
+export type StrokeWidth2 = number;
 /**
  * sequence pixels where the anchor lands
  */
@@ -200,11 +239,15 @@ export type Scale2 = number;
 export type ScaleWidth1 = number;
 export type Uniform1 = boolean;
 export type Rotation2 = number;
-export type Opacity2 = number;
+export type Opacity3 = number;
 /**
  * the layer's eye toggle
  */
 export type Visible1 = boolean;
+/**
+ * blended with everything below in the sequence
+ */
+export type Blend = "normal" | "multiply";
 /**
  * bottom to top
  */
@@ -248,7 +291,7 @@ export type Start1 = number;
 export type Duration2 = number;
 export type Name6 = string;
 export type Comment = string;
-export type Color1 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
+export type Color3 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
 export type Playhead = number;
 export type InPoint1 = number | null;
 export type OutPoint1 = number | null;
@@ -452,11 +495,44 @@ export interface TextLayer {
   background: Background;
   align: Align;
   position: Position1;
+  box: Box;
+  vertical_align: VerticalAlign;
+  tracking: Tracking;
+  shadow: TextShadow | null;
+  runs: Runs;
   scale: Scale1;
   rotation: Rotation1;
-  opacity: Opacity1;
+  opacity: Opacity2;
   visible: Visible;
   approximate: Approximate;
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "TextShadow".
+ */
+export interface TextShadow {
+  color: Color1;
+  opacity: Opacity1;
+  angle: Angle;
+  distance: Distance;
+  blur: Blur;
+}
+/**
+ * A styled span of a text layer; unset fields inherit the layer's.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "TextRun".
+ */
+export interface TextRun {
+  text: Text1;
+  font_family: FontFamily1;
+  font_size: FontSize1;
+  bold: Bold1;
+  italic: Italic1;
+  color: Color2;
+  stroke_color: StrokeColor1;
+  stroke_width: StrokeWidth1;
+  tracking: Tracking1;
 }
 /**
  * A vector shape. Its path lives in layer pixels; ``anchor`` (layer pixels)
@@ -473,16 +549,17 @@ export interface ShapeLayer {
   path: Path1;
   closed: Closed;
   fill: Fill;
-  stroke_color: StrokeColor1;
-  stroke_width: StrokeWidth1;
+  stroke_color: StrokeColor2;
+  stroke_width: StrokeWidth2;
   position: Position2;
   anchor: Anchor1;
   scale: Scale2;
   scale_width: ScaleWidth1;
   uniform: Uniform1;
   rotation: Rotation2;
-  opacity: Opacity2;
+  opacity: Opacity3;
   visible: Visible1;
+  blend: Blend;
 }
 /**
  * A standard effect, applied in order before the intrinsic Motion/Opacity
@@ -536,5 +613,5 @@ export interface Marker {
   duration: Duration2;
   name: Name6;
   comment: Comment;
-  color: Color1;
+  color: Color3;
 }

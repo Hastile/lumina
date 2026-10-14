@@ -232,7 +232,8 @@ def clip_fit_to_frame(ctx: Context, p: FitToFrame):
 def _text_layer(text: str, position: list[float], **style) -> dict:
     layer = {"id": new_id(), "type": "text", "text": text, "font_family": "Pretendard", "font_size": 100.0,
              "bold": False, "italic": False, "color": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
-             "background": None, "align": "center", "position": position, "scale": 100.0, "rotation": 0.0,
+             "background": None, "align": "center", "position": position, "box": None, "vertical_align": "top",
+             "tracking": 0.0, "shadow": None, "runs": None, "scale": 100.0, "rotation": 0.0,
              "opacity": 100.0, "visible": True, "approximate": False}
     for k, v in style.items():
         if v is not None:
@@ -265,6 +266,10 @@ class TextStyle(Params):
     rotation: float | None = None
     opacity: float | None = Field(default=None, ge=0, le=100)
     visible: bool | None = None
+    tracking: float | None = Field(default=None, ge=-1000, le=10000)
+    box: list[float] | None = Field(default=None, description="area text [w, h]; pass null to make point text")
+    vertical_align: Literal["top", "center", "bottom"] | None = None
+    shadow: dict | None = Field(default=None, description="{color, opacity, angle, distance, blur}; null removes it")
 
 
 class CreateText(TextStyle):
@@ -330,10 +335,19 @@ def graphic_set_layer(ctx: Context, p: SetLayer):
     if layers[idx].get("type", "text") != "text":
         raise CommandError("NOT_TEXT", "use graphic.set_shape for shape layers")
     changes = p.model_dump(exclude={"sequence_id", "clip_id", "layer_id"}, exclude_none=True)
-    # explicit nulls for nullable colors are allowed through model_fields_set
-    for k in ("stroke_color", "background"):
+    # explicit nulls for nullable fields are allowed through model_fields_set
+    for k in ("stroke_color", "background", "box", "shadow"):
         if k in p.model_fields_set and getattr(p, k) is None:
             changes[k] = None
+    if changes.get("shadow"):
+        from ..model import TextShadow
+        changes["shadow"] = TextShadow(**changes["shadow"]).model_dump()
+    layer = layers[idx]
+    if layer.get("runs") and set(changes) - {"position", "box", "align", "vertical_align", "scale", "rotation", "opacity", "visible", "shadow", "background"}:
+        # a style or text edit applies to the whole layer: fold the first run into it
+        first = {k: v for k, v in layer["runs"][0].items() if v is not None and k != "text"}
+        layer.update(first)
+        layer["runs"] = None
     layers[idx].update(changes)
     layers[idx]["approximate"] = False if changes else layers[idx]["approximate"]
     path = clip_path(seq, tid, clip["id"])
@@ -394,6 +408,7 @@ class ShapeStyle(Params):
     rotation: float | None = None
     opacity: float | None = Field(default=None, ge=0, le=100)
     visible: bool | None = None
+    blend: Literal["normal", "multiply"] | None = None
 
 
 def _shape_changes(p: ShapeStyle) -> dict:
@@ -429,7 +444,7 @@ def _shape_layer(p: NewShape, st: dict) -> dict:
         "id": new_id(), "type": "shape", "shape": p.shape, "path": shapes.make(p.shape, -w / 2, -h / 2, w / 2, h / 2),
         "closed": True, "fill": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
         "position": [x0 + w / 2, y0 + h / 2], "anchor": [0.0, 0.0], "scale": 100.0, "scale_width": 100.0,
-        "uniform": True, "rotation": 0.0, "opacity": 100.0, "visible": True,
+        "uniform": True, "rotation": 0.0, "opacity": 100.0, "visible": True, "blend": "normal",
     }
     layer.update(_shape_changes(p))
     return layer

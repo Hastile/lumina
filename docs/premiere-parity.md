@@ -57,8 +57,9 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Video+audio link groups, label colors, track mute, sequence markers, playhead | ✓ |
 | Duplicate sequence names → disambiguated with the bin name | ✓ |
 | Motion (position/scale/rotation/anchor/crop), Opacity, their keyframes | ✓ |
-| Native text layers (text, font, position; size where decodable) and MOGRT text fields | ✓ approximate styling, flagged in Properties |
-| Shape layers (rectangle/ellipse/pen paths, fill color, transform, stacking, hidden layers) | ✓ stroke/gradient/shadow not decoded; hidden flag inferred |
+| Native text layers: styled runs, font/size, fill, stroke, tracking, point/area text with alignment, shadow, hidden (eye off) layers | ✓ (paragraph wrapping in area boxes ✗) |
+| After Effects MOGRT text fields: the template's layout, fonts, colors and strokes read from its .aep, edited values applied | ✓ text layers only (AE shapes/effects other than Drop Shadow ✗) |
+| Shape layers (rectangle/ellipse/pen paths, fill color, transform, stacking, hidden layers) | ✓ stroke/gradient/shadow not decoded |
 | Other effects (blur, Transform effect, …) | ✗ (reported) |
 | Transitions | ✗ (reported) |
 | Captions (.srt items) | ✗ (reported) |

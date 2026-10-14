@@ -55,7 +55,7 @@ def _shapes_xml(with_shapes: bool) -> str:
     for n, (oid, pos) in enumerate([(300, "0.5:0.25"), (400, "0.5:0.75")]):
         blob = lambda b: b if n == 0 else ""
         comps.append(f'''<VideoFilterComponent ObjectID="{oid}" ClassID="x" Version="9"><Component Version="7"><Params Version="1">
-  <Param Index="0" ObjectRef="{oid + 1}" /><Param Index="1" ObjectRef="{oid + 2}" /><Param Index="2" ObjectRef="{oid + 4}" /></Params></Component>
+  <Param Index="0" ObjectRef="{oid + 1}" /><Param Index="1" ObjectRef="{oid + 2}" /><Param Index="2" ObjectRef="{oid + 4}" /></Params>{"<Bypass>true</Bypass>" if n else ""}</Component>
   <MatchName>AE.ADBE Shape</MatchName></VideoFilterComponent>
 <ArbVideoComponentParam ObjectID="{oid + 1}" ClassID="x" Version="3"><ParameterID>1</ParameterID><StartKeyframeValue Encoding="base64" BinaryHash="h-path">{blob(path)}</StartKeyframeValue></ArbVideoComponentParam>
 <ArbVideoComponentParam ObjectID="{oid + 2}" ClassID="x" Version="3"><ParameterID>2</ParameterID><StartKeyframeValue Encoding="base64" BinaryHash="h-style">{blob(style)}</StartKeyframeValue></ArbVideoComponentParam>
@@ -217,3 +217,5 @@ def test_shape_layers_import_with_deduplicated_blobs(tmp_path):
         assert l["shape"] == "rectangle" and l["fill"] == "#ff0000" and l["closed"] is True
         assert l["path"][0][:2] == [-50, -20] and l["path"][2][:2] == [50, 20]
     assert not any("shape" in w for w in ex.warnings)
+    # the second component (bottom of the stack) has its eye off: <Bypass>true</Bypass>
+    assert top["visible"] is True and bottom["visible"] is False

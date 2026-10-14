@@ -2349,6 +2349,67 @@
           "default": null,
           "title": "Visible"
         },
+        "tracking": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": -1000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tracking"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "area text [w, h]; pass null to make point text",
+          "title": "Box"
+        },
+        "vertical_align": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "center",
+                "bottom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vertical Align"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{color, opacity, angle, distance, blur}; null removes it",
+          "title": "Shadow"
+        },
         "sequence_id": {
           "anyOf": [
             {
@@ -2603,6 +2664,67 @@
           "default": null,
           "title": "Visible"
         },
+        "tracking": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": -1000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tracking"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "area text [w, h]; pass null to make point text",
+          "title": "Box"
+        },
+        "vertical_align": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "center",
+                "bottom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vertical Align"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{color, opacity, angle, distance, blur}; null removes it",
+          "title": "Shadow"
+        },
         "sequence_id": {
           "anyOf": [
             {
@@ -2843,6 +2965,67 @@
           "default": null,
           "title": "Visible"
         },
+        "tracking": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": -1000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tracking"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "area text [w, h]; pass null to make point text",
+          "title": "Box"
+        },
+        "vertical_align": {
+          "anyOf": [
+            {
+              "enum": [
+                "top",
+                "center",
+                "bottom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Vertical Align"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "{color, opacity, angle, distance, blur}; null removes it",
+          "title": "Shadow"
+        },
         "sequence_id": {
           "anyOf": [
             {
@@ -3074,6 +3257,22 @@
           ],
           "default": null,
           "title": "Visible"
+        },
+        "blend": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "multiply"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blend"
         },
         "shape": {
           "default": "rectangle",
@@ -3325,6 +3524,22 @@
           "default": null,
           "title": "Visible"
         },
+        "blend": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "multiply"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blend"
+        },
         "shape": {
           "default": "rectangle",
           "enum": [
@@ -3540,6 +3755,22 @@
           ],
           "default": null,
           "title": "Visible"
+        },
+        "blend": {
+          "anyOf": [
+            {
+              "enum": [
+                "normal",
+                "multiply"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Blend"
         },
         "sequence_id": {
           "anyOf": [

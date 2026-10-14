@@ -924,6 +924,16 @@
           "description": "the layer's eye toggle",
           "title": "Visible",
           "type": "boolean"
+        },
+        "blend": {
+          "default": "normal",
+          "description": "blended with everything below in the sequence",
+          "enum": [
+            "normal",
+            "multiply"
+          ],
+          "title": "Blend",
+          "type": "string"
         }
       },
       "required": [
@@ -942,7 +952,8 @@
         "uniform",
         "rotation",
         "opacity",
-        "visible"
+        "visible",
+        "blend"
       ],
       "title": "ShapeLayer",
       "type": "object"
@@ -1029,12 +1040,72 @@
           "type": "string"
         },
         "position": {
-          "description": "sequence pixels; the text block's alignment point (vertical center)",
+          "description": "sequence pixels: point text -> the block's alignment point at its vertical center; area text -> the box's top-left",
           "items": {
             "type": "number"
           },
           "title": "Position",
           "type": "array"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "area text box [w, h]; null = point text",
+          "title": "Box"
+        },
+        "vertical_align": {
+          "default": "top",
+          "description": "area text only",
+          "enum": [
+            "top",
+            "center",
+            "bottom"
+          ],
+          "title": "Vertical Align",
+          "type": "string"
+        },
+        "tracking": {
+          "default": 0.0,
+          "description": "1/1000 em added after each character",
+          "title": "Tracking",
+          "type": "number"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextShadow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "runs": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/TextRun"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "styled spans; their texts concatenate to `text`",
+          "title": "Runs"
         },
         "scale": {
           "default": 100.0,
@@ -1078,6 +1149,11 @@
         "background",
         "align",
         "position",
+        "box",
+        "vertical_align",
+        "tracking",
+        "shadow",
+        "runs",
         "scale",
         "rotation",
         "opacity",
@@ -1085,6 +1161,167 @@
         "approximate"
       ],
       "title": "TextLayer",
+      "type": "object"
+    },
+    "TextRun": {
+      "additionalProperties": false,
+      "description": "A styled span of a text layer; unset fields inherit the layer's.",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Family"
+        },
+        "font_size": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size"
+        },
+        "bold": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bold"
+        },
+        "italic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Italic"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Width"
+        },
+        "tracking": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tracking"
+        }
+      },
+      "required": [
+        "text",
+        "font_family",
+        "font_size",
+        "bold",
+        "italic",
+        "color",
+        "stroke_color",
+        "stroke_width",
+        "tracking"
+      ],
+      "title": "TextRun",
+      "type": "object"
+    },
+    "TextShadow": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "default": "#000000",
+          "title": "Color",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 75.0,
+          "description": "percent",
+          "title": "Opacity",
+          "type": "number"
+        },
+        "angle": {
+          "default": 135.0,
+          "description": "degrees clockwise from up; 135 = down-right",
+          "title": "Angle",
+          "type": "number"
+        },
+        "distance": {
+          "default": 10.0,
+          "title": "Distance",
+          "type": "number"
+        },
+        "blur": {
+          "default": 0.0,
+          "description": "CSS text-shadow blur radius (Gaussian sigma = blur / 2)",
+          "title": "Blur",
+          "type": "number"
+        }
+      },
+      "required": [
+        "color",
+        "opacity",
+        "angle",
+        "distance",
+        "blur"
+      ],
+      "title": "TextShadow",
       "type": "object"
     },
     "Track": {

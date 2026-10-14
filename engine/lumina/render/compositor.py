@@ -36,6 +36,7 @@ from .. import effects as fx_
 from .. import shapes
 from ..motion import transform_at
 from . import fonts
+from . import text as text_
 
 TPS = timebase.TICKS_PER_SECOND
 
@@ -180,71 +181,9 @@ def _blit(canvas: Image.Image, img: Image.Image, x: int, y: int) -> None:
 # ---------------------------------------------------------------- text graphics
 
 
-def _color(value: str | None, default=(255, 255, 255, 255)):
-    from PIL import ImageColor
-
-    if not value:
-        return default
-    try:
-        return ImageColor.getrgb(value)
-    except ValueError:
-        return default
-
-
-_font_cache: dict[tuple, ImageFont.FreeTypeFont] = {}
-
-
-def load_font(family: str, size: float, bold: bool) -> tuple[ImageFont.FreeTypeFont, bool, bool]:
-    """-> (font, exact, has_bold_face)"""
-    face, exact = fonts.find(family, bold)
-    key = (face["path"], face["index"], round(size * 4)) if face else ("default", 0, round(size * 4))
-    font = _font_cache.get(key)
-    if font is None:
-        font = ImageFont.truetype(face["path"], max(1, round(size)), index=face["index"]) if face else ImageFont.load_default(max(1, round(size)))
-        if len(_font_cache) > 64:
-            _font_cache.clear()
-        _font_cache[key] = font
-    is_bold = bool(face and "bold" in fonts.norm(face["style"]) + fonts.norm(face["ps"]) or face and "black" in fonts.norm(face["ps"]))
-    return font, exact, is_bold
-
-
-def render_text_layer(layer: dict) -> tuple[Image.Image, float, float]:
-    """Rasterise one text layer (unrotated, unscaled) -> (image, align_x, align_y)
-    where (align_x, align_y) is the layer's alignment point inside the image.
-    Matches GraphicView.textStyle: line-height 1.2, background padding
-    0.08em/0.3em, outside stroke of ``stroke_width`` px."""
-    size = max(1.0, float(layer["font_size"]))
-    font, _, has_bold = load_font(layer["font_family"], size, layer["bold"])
-    lines = layer["text"].split("\n") or [""]
-    lh = 1.2 * size
-    widths = [font.getlength(line) for line in lines]
-    block_w = max(widths) if widths else 0
-    block_h = lh * len(lines)
-    pad_x, pad_y = (0.3 * size, 0.08 * size) if layer.get("background") else (0.0, 0.0)
-    stroke = round(layer["stroke_width"]) if layer.get("stroke_color") and layer["stroke_width"] > 0 else 0
-    faux_bold = layer["bold"] and not has_bold
-    margin = stroke + math.ceil(size * 0.3) + 2  # room for ascenders/descenders overflowing the line box
-    box_w, box_h = block_w + 2 * pad_x, block_h + 2 * pad_y
-    img = Image.new("RGBA", (math.ceil(box_w + 2 * margin), math.ceil(box_h + 2 * margin)), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    if layer.get("background"):
-        draw.rectangle((margin, margin, margin + box_w, margin + box_h), fill=_color(layer["background"], (0, 0, 0, 255)))
-    fill = _color(layer["color"])
-    anchor = {"left": "lm", "right": "rm"}.get(layer["align"], "mm")
-    x = margin + pad_x + {"left": 0, "right": block_w}.get(layer["align"], block_w / 2)
-    for i, line in enumerate(lines):
-        y = margin + pad_y + lh * i + lh / 2
-        kw: dict = {}
-        if stroke:
-            kw = {"stroke_width": stroke, "stroke_fill": _color(layer["stroke_color"], (0, 0, 0, 255))}
-        if faux_bold:
-            draw.text((x, y), line, font=font, fill=fill, anchor=anchor, stroke_width=max(1, round(size / 36)), stroke_fill=fill)
-        draw.text((x, y), line, font=font, fill=fill, anchor=anchor, **kw)
-    if layer.get("italic"):
-        shear = 0.2  # synthetic oblique, like the browser does without an italic face
-        img = img.transform(img.size, Image.Transform.AFFINE, (1, shear, -shear * img.height / 2, 0, 1, 0), resample=Image.Resampling.BICUBIC)
-    align_x = margin + {"left": 0, "right": box_w}.get(layer["align"], box_w / 2)
-    return img, align_x, margin + box_h / 2
+_color = text_.color
+load_font = text_.load_font
+render_text_layer = text_.render_text_layer
 
 
 def _coverage(poly: list[tuple[float, float]], w: int, h: int, ss: int) -> np.ndarray:
@@ -319,30 +258,65 @@ def render_shape_layer(layer: dict) -> tuple[Image.Image, float, float] | None:
     return img, ax - ox, ay - oy
 
 
-def render_graphic(graphic: dict, width: int, height: int) -> Image.Image:
-    """Layers are bottom to top."""
-    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+def _layer_image(layer: dict) -> tuple[Image.Image, dict] | None:
+    if layer.get("type") == "shape":
+        out = render_shape_layer(layer)
+        if out is None:
+            return None
+        img, ax, ay = out
+        s = layer.get("scale", 100.0)
+        sx = s if layer.get("uniform", True) else layer.get("scale_width", 100.0)
+    else:
+        if not layer.get("text") and not layer.get("runs"):
+            return None
+        img, ax, ay = render_text_layer(layer)
+        s = sx = layer.get("scale", 100.0)
+    return img, {
+        "src_w": img.width, "src_h": img.height, "crop_left": 0, "crop_top": 0, "crop_right": 0, "crop_bottom": 0,
+        "position": layer["position"], "anchor": [ax, ay], "scale_x": sx, "scale_y": s,
+        "rotation": layer.get("rotation", 0.0), "opacity": layer.get("opacity", 100.0),
+    }
+
+
+def render_graphic_groups(graphic: dict, width: int, height: int) -> list[tuple[str, Image.Image]]:
+    """Layers bottom to top, flattened into consecutive runs that share a blend
+    mode: [(blend, image)]. Normal runs are plain alpha-over; a multiply run is
+    blended onto whatever lies below it in the sequence (Premiere does not
+    isolate a graphic's layers)."""
+    groups: list[tuple[str, Image.Image]] = []
     for layer in graphic.get("layers", []):
         if not layer.get("visible", True):
             continue
-        if layer.get("type") == "shape":
-            out = render_shape_layer(layer)
-            if out is None:
-                continue
-            img, ax, ay = out
-            s = layer.get("scale", 100.0)
-            sx = s if layer.get("uniform", True) else layer.get("scale_width", 100.0)
-        else:
-            if not layer.get("text"):
-                continue
-            img, ax, ay = render_text_layer(layer)
-            s = sx = layer.get("scale", 100.0)
-        place(canvas, img, (0, 0), {
-            "src_w": img.width, "src_h": img.height, "crop_left": 0, "crop_top": 0, "crop_right": 0, "crop_bottom": 0,
-            "position": layer["position"], "anchor": [ax, ay], "scale_x": sx, "scale_y": s,
-            "rotation": layer.get("rotation", 0.0), "opacity": layer.get("opacity", 100.0),
-        })
+        out = _layer_image(layer)
+        if out is None:
+            continue
+        blend = layer.get("blend", "normal") if layer.get("type") == "shape" else "normal"
+        if not groups or groups[-1][0] != blend:
+            groups.append((blend, Image.new("RGBA", (width, height), (0, 0, 0, 0))))
+        place(groups[-1][1], out[0], (0, 0), out[1])
+    return groups
+
+
+def render_graphic(graphic: dict, width: int, height: int) -> Image.Image:
+    """All layers alpha-over (blend modes ignored): thumbnails and tests."""
+    canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+    for _, img in render_graphic_groups(graphic, width, height):
+        canvas.alpha_composite(img)
     return canvas
+
+
+def blend_multiply(target: Image.Image, src: Image.Image) -> None:
+    """W3C multiply with source-over compositing, in place:
+    co = cs * as * (1 - ab) + cs * cb * as * ab + cb * ab * (1 - as)."""
+    d = np.asarray(target, dtype=np.float32) / 255
+    s_ = np.asarray(src, dtype=np.float32) / 255
+    ab, as_ = d[..., 3:4], s_[..., 3:4]
+    cb, cs = d[..., :3], s_[..., :3]
+    co = cs * as_ * (1 - ab) + cs * cb * as_ * ab + cb * ab * (1 - as_)
+    ao = as_ + ab * (1 - as_)
+    rgb = np.where(ao > 0, co / np.maximum(ao, 1e-6), 0)
+    out = np.concatenate([rgb, ao], axis=2)
+    target.paste(Image.fromarray(np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA"))
 
 
 # ---------------------------------------------------------------- sources
@@ -480,6 +454,7 @@ class ActiveClip:
     decoder: VideoDecoder | None = None
     still: Image.Image | None = None
     origin: tuple[float, float] = (0.0, 0.0)
+    groups: list | None = None  # graphics with blend modes: [(blend, image, origin)]
 
 
 class Compositor:
@@ -546,16 +521,19 @@ class Compositor:
             key = json.dumps(clip["graphic"], sort_keys=True)
             cached = self._graphics.get(clip["id"])
             if not cached or cached[0] != key:
-                img = render_graphic(clip["graphic"], self.w, self.h)
-                box = img.getbbox()
-                if box:
-                    img = img.crop(box)
-                    origin = (float(box[0]), float(box[1]))
-                else:
-                    img, origin = Image.new("RGBA", (1, 1), (0, 0, 0, 0)), (0.0, 0.0)
-                cached = (key, img, origin)
+                groups = []
+                for blend, img in render_graphic_groups(clip["graphic"], self.w, self.h):
+                    box = img.getbbox()
+                    if box:
+                        groups.append((blend, img.crop(box), (float(box[0]), float(box[1]))))
+                if not groups:
+                    groups = [("normal", Image.new("RGBA", (1, 1), (0, 0, 0, 0)), (0.0, 0.0))]
+                cached = (key, groups)
                 self._graphics[clip["id"]] = cached
-            return ActiveClip(clip, None, self.w, self.h, still=cached[1], origin=cached[2])
+            groups = cached[1]
+            if len(groups) == 1 and groups[0][0] == "normal":
+                return ActiveClip(clip, None, self.w, self.h, still=groups[0][1], origin=groups[0][2])
+            return ActiveClip(clip, None, self.w, self.h, still=groups[0][1], origin=groups[0][2], groups=groups)
         media = self.doc["media"].get(clip["media_id"] or "")
         if not media or not media.get("video"):
             return None
@@ -600,9 +578,19 @@ class Compositor:
                 return
         else:
             img = ac.still
-        img, origin, pre, pre_op = apply_effects(clip, img, ac.origin, ac.prescale, t, ac.src_w, ac.src_h)
         tr = transform_at(clip, t, self.seq, ac.media)
         tr["src_w"], tr["src_h"] = ac.src_w, ac.src_h
+        if ac.groups:
+            for blend, gimg, gorigin in ac.groups:
+                gimg, origin, pre, pre_op = apply_effects(clip, gimg, gorigin, ac.prescale, t, ac.src_w, ac.src_h)
+                if blend == "normal":
+                    place(target, gimg, origin, tr, ac.prescale, pre, pre_op)
+                else:
+                    layer = Image.new("RGBA", target.size, (0, 0, 0, 0))
+                    place(layer, gimg, origin, tr, ac.prescale, pre, pre_op)
+                    blend_multiply(target, layer)
+            return
+        img, origin, pre, pre_op = apply_effects(clip, img, ac.origin, ac.prescale, t, ac.src_w, ac.src_h)
         place(target, img, origin, tr, ac.prescale, pre, pre_op)
 
     def _layer(self, clip: dict | None, t: int) -> Image.Image | None:
@@ -624,7 +612,9 @@ class Compositor:
             canvas.alpha_composite(out)
 
     def frame(self, t: int) -> Image.Image:
-        canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255))
+        # transparent until the end so blend modes see "nothing below" as
+        # transparent (as Premiere does); flattened onto black on return
+        canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
         items = []
         for track, trans in self.tracks:
             if not track["hidden"]:
@@ -641,7 +631,9 @@ class Compositor:
                 self._draw(canvas, item[1], t)
             else:
                 self._transition(canvas, item[1], item[2], item[3], item[4], t)
-        return canvas
+        out = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255))
+        out.alpha_composite(canvas)
+        return out
 
     def close(self) -> None:
         for ac in self.active.values():

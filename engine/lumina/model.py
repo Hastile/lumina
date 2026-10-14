@@ -97,6 +97,27 @@ class Motion(_Model):
     crop_bottom: float = 0.0
 
 
+class TextRun(_Model):
+    """A styled span of a text layer; unset fields inherit the layer's."""
+    text: str
+    font_family: str | None = None
+    font_size: float | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    color: str | None = None
+    stroke_color: str | None = None
+    stroke_width: float | None = None
+    tracking: float | None = None
+
+
+class TextShadow(_Model):
+    color: str = "#000000"
+    opacity: float = Field(default=75.0, description="percent")
+    angle: float = Field(default=135.0, description="degrees clockwise from up; 135 = down-right")
+    distance: float = 10.0
+    blur: float = Field(default=0.0, description="CSS text-shadow blur radius (Gaussian sigma = blur / 2)")
+
+
 class TextLayer(_Model):
     id: str
     type: Literal["text"] = "text"
@@ -110,7 +131,13 @@ class TextLayer(_Model):
     stroke_width: float = 0.0
     background: str | None = None
     align: Literal["left", "center", "right"] = "center"
-    position: list[float] = Field(description="sequence pixels; the text block's alignment point (vertical center)")
+    position: list[float] = Field(description="sequence pixels: point text -> the block's alignment point at its vertical "
+                                              "center; area text -> the box's top-left")
+    box: list[float] | None = Field(default=None, description="area text box [w, h]; null = point text")
+    vertical_align: Literal["top", "center", "bottom"] = Field(default="top", description="area text only")
+    tracking: float = Field(default=0.0, description="1/1000 em added after each character")
+    shadow: TextShadow | None = None
+    runs: list[TextRun] | None = Field(default=None, description="styled spans; their texts concatenate to `text`")
     scale: float = 100.0
     rotation: float = 0.0
     opacity: float = 100.0
@@ -138,6 +165,7 @@ class ShapeLayer(_Model):
     rotation: float = 0.0
     opacity: float = 100.0
     visible: bool = Field(default=True, description="the layer's eye toggle")
+    blend: Literal["normal", "multiply"] = Field(default="normal", description="blended with everything below in the sequence")
 
 
 GraphicLayer = Annotated[TextLayer | ShapeLayer, Field(discriminator="type")]
