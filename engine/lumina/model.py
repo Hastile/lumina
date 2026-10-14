@@ -71,9 +71,60 @@ class Bin(_Model):
     parent_id: str | None
 
 
+KeyframeProp = Literal[
+    "position", "scale", "scale_width", "rotation", "anchor",
+    "crop_left", "crop_top", "crop_right", "crop_bottom", "opacity", "volume_db",
+]
+
+
+class Keyframe(_Model):
+    t: int = Field(description="source time in ticks (Premiere convention: keyframes follow the content when trimmed)")
+    v: float | list[float]
+    interp: Literal["linear", "ease", "hold"] = "linear"
+
+
+class Motion(_Model):
+    """Premiere's intrinsic Motion effect."""
+    position: list[float] | None = Field(default=None, description="sequence pixels [x, y]; null = frame center")
+    scale: float = 100.0
+    scale_width: float = Field(default=100.0, description="used when uniform is false")
+    uniform: bool = True
+    rotation: float = Field(default=0.0, description="degrees, clockwise")
+    anchor: list[float] | None = Field(default=None, description="source pixels [x, y]; null = source center")
+    crop_left: float = 0.0
+    crop_top: float = 0.0
+    crop_right: float = 0.0
+    crop_bottom: float = 0.0
+
+
+class TextLayer(_Model):
+    id: str
+    type: Literal["text"] = "text"
+    text: str
+    font_family: str = "Pretendard"
+    font_size: float = 100.0
+    bold: bool = False
+    italic: bool = False
+    color: str = "#ffffff"
+    stroke_color: str | None = None
+    stroke_width: float = 0.0
+    background: str | None = None
+    align: Literal["left", "center", "right"] = "center"
+    position: list[float] = Field(description="sequence pixels; the text block's alignment point (vertical center)")
+    scale: float = 100.0
+    rotation: float = 0.0
+    opacity: float = 100.0
+    approximate: bool = Field(default=False, description="imported with best-effort styling (e.g. from a MOGRT)")
+
+
+class Graphic(_Model):
+    layers: list[TextLayer] = Field(default_factory=list)
+    source: str | None = Field(default=None, description="origin, e.g. 'mogrt:Title' for imported Premiere graphics")
+
+
 class Clip(_Model):
     id: str
-    media_id: str
+    media_id: str | None = Field(description="null for graphics")
     name: str
     start: int = Field(description="timeline start, ticks (inclusive)")
     end: int = Field(description="timeline end, ticks (exclusive)")
@@ -84,6 +135,9 @@ class Clip(_Model):
     label: LabelColor = "iris"
     opacity: float = 100.0
     volume_db: float = 0.0
+    motion: Motion = Field(default_factory=Motion)
+    keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
+    graphic: Graphic | None = None
 
 
 class Track(_Model):

@@ -204,8 +204,8 @@ class Session:
             raw = json.loads(Path(path).read_text(encoding="utf-8"))
             if raw.get("format") != FILE_FORMAT:
                 raise CommandError("BAD_FILE", f"{path} is not a Lumina project")
-            doc = raw["document"]
-            validate_project(doc)
+            # normalizing through the schema also migrates older files (fills new fields with defaults)
+            doc = validate_project(raw["document"]).model_dump(mode="json")
             self._reset(doc, str(Path(path).resolve()), version=int(raw.get("version", 0)))
             recovered = self._replay_oplog()
             snap = self.snapshot()

@@ -1,0 +1,13 @@
+{
+  "description": "Keyframe interpolation vectors shared by engine/lumina/motion.py and app/src/renderer/src/util/motion.ts. Times are source ticks.",
+  "cases": [
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "linear" }, { "t": 1000, "v": 100, "interp": "linear" }], "t": 250, "expect": 25 },
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "linear" }, { "t": 1000, "v": 100, "interp": "linear" }], "t": -5, "expect": 0 },
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "linear" }, { "t": 1000, "v": 100, "interp": "linear" }], "t": 2000, "expect": 100 },
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "hold" }, { "t": 1000, "v": 100, "interp": "linear" }], "t": 999, "expect": 0 },
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "ease" }, { "t": 1000, "v": 100, "interp": "ease" }], "t": 250, "expect": 15.625 },
+    { "keyframes": [{ "t": 0, "v": 0, "interp": "ease" }, { "t": 1000, "v": 100, "interp": "ease" }], "t": 500, "expect": 50 },
+    { "keyframes": [{ "t": 0, "v": [0, 0], "interp": "linear" }, { "t": 100, "v": [100, 50], "interp": "linear" }], "t": 50, "expect": [50, 25] },
+    { "keyframes": [{ "t": 0, "v": 10, "interp": "linear" }, { "t": 100, "v": 20, "interp": "linear" }, { "t": 200, "v": 0, "interp": "linear" }], "t": 150, "expect": 10 }
+  ]
+}

@@ -64,8 +64,16 @@
           "type": "string"
         },
         "media_id": {
-          "title": "Media Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null for graphics",
+          "title": "Media Id"
         },
         "name": {
           "title": "Name",
@@ -141,6 +149,45 @@
           "default": 0.0,
           "title": "Volume Db",
           "type": "number"
+        },
+        "motion": {
+          "$ref": "#/$defs/Motion"
+        },
+        "keyframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Keyframe"
+            },
+            "type": "array"
+          },
+          "propertyNames": {
+            "enum": [
+              "position",
+              "scale",
+              "scale_width",
+              "rotation",
+              "anchor",
+              "crop_left",
+              "crop_top",
+              "crop_right",
+              "crop_bottom",
+              "opacity",
+              "volume_db"
+            ]
+          },
+          "title": "Keyframes",
+          "type": "object"
+        },
+        "graphic": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Graphic"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -155,9 +202,84 @@
         "link_id",
         "label",
         "opacity",
-        "volume_db"
+        "volume_db",
+        "motion",
+        "keyframes",
+        "graphic"
       ],
       "title": "Clip",
+      "type": "object"
+    },
+    "Graphic": {
+      "additionalProperties": false,
+      "properties": {
+        "layers": {
+          "items": {
+            "$ref": "#/$defs/TextLayer"
+          },
+          "title": "Layers",
+          "type": "array"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "origin, e.g. 'mogrt:Title' for imported Premiere graphics",
+          "title": "Source"
+        }
+      },
+      "required": [
+        "layers",
+        "source"
+      ],
+      "title": "Graphic",
+      "type": "object"
+    },
+    "Keyframe": {
+      "additionalProperties": false,
+      "properties": {
+        "t": {
+          "description": "source time in ticks (Premiere convention: keyframes follow the content when trimmed)",
+          "title": "T",
+          "type": "integer"
+        },
+        "v": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "V"
+        },
+        "interp": {
+          "default": "linear",
+          "enum": [
+            "linear",
+            "ease",
+            "hold"
+          ],
+          "title": "Interp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "t",
+        "v",
+        "interp"
+      ],
+      "title": "Keyframe",
       "type": "object"
     },
     "Marker": {
@@ -373,6 +495,100 @@
       "title": "MediaItem",
       "type": "object"
     },
+    "Motion": {
+      "additionalProperties": false,
+      "description": "Premiere's intrinsic Motion effect.",
+      "properties": {
+        "position": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sequence pixels [x, y]; null = frame center",
+          "title": "Position"
+        },
+        "scale": {
+          "default": 100.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "scale_width": {
+          "default": 100.0,
+          "description": "used when uniform is false",
+          "title": "Scale Width",
+          "type": "number"
+        },
+        "uniform": {
+          "default": true,
+          "title": "Uniform",
+          "type": "boolean"
+        },
+        "rotation": {
+          "default": 0.0,
+          "description": "degrees, clockwise",
+          "title": "Rotation",
+          "type": "number"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source pixels [x, y]; null = source center",
+          "title": "Anchor"
+        },
+        "crop_left": {
+          "default": 0.0,
+          "title": "Crop Left",
+          "type": "number"
+        },
+        "crop_top": {
+          "default": 0.0,
+          "title": "Crop Top",
+          "type": "number"
+        },
+        "crop_right": {
+          "default": 0.0,
+          "title": "Crop Right",
+          "type": "number"
+        },
+        "crop_bottom": {
+          "default": 0.0,
+          "title": "Crop Bottom",
+          "type": "number"
+        }
+      },
+      "required": [
+        "position",
+        "scale",
+        "scale_width",
+        "uniform",
+        "rotation",
+        "anchor",
+        "crop_left",
+        "crop_top",
+        "crop_right",
+        "crop_bottom"
+      ],
+      "title": "Motion",
+      "type": "object"
+    },
     "Sequence": {
       "additionalProperties": false,
       "properties": {
@@ -504,6 +720,139 @@
         "sample_rate"
       ],
       "title": "SequenceSettings",
+      "type": "object"
+    },
+    "TextLayer": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "text",
+          "default": "text",
+          "title": "Type",
+          "type": "string"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "font_family": {
+          "default": "Pretendard",
+          "title": "Font Family",
+          "type": "string"
+        },
+        "font_size": {
+          "default": 100.0,
+          "title": "Font Size",
+          "type": "number"
+        },
+        "bold": {
+          "default": false,
+          "title": "Bold",
+          "type": "boolean"
+        },
+        "italic": {
+          "default": false,
+          "title": "Italic",
+          "type": "boolean"
+        },
+        "color": {
+          "default": "#ffffff",
+          "title": "Color",
+          "type": "string"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "default": 0.0,
+          "title": "Stroke Width",
+          "type": "number"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "align": {
+          "default": "center",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "title": "Align",
+          "type": "string"
+        },
+        "position": {
+          "description": "sequence pixels; the text block's alignment point (vertical center)",
+          "items": {
+            "type": "number"
+          },
+          "title": "Position",
+          "type": "array"
+        },
+        "scale": {
+          "default": 100.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "rotation": {
+          "default": 0.0,
+          "title": "Rotation",
+          "type": "number"
+        },
+        "opacity": {
+          "default": 100.0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "approximate": {
+          "default": false,
+          "description": "imported with best-effort styling (e.g. from a MOGRT)",
+          "title": "Approximate",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "text",
+        "font_family",
+        "font_size",
+        "bold",
+        "italic",
+        "color",
+        "stroke_color",
+        "stroke_width",
+        "background",
+        "align",
+        "position",
+        "scale",
+        "rotation",
+        "opacity",
+        "approximate"
+      ],
+      "title": "TextLayer",
       "type": "object"
     },
     "Track": {

@@ -10,7 +10,7 @@ from pydantic import Field
 from ..model import new_id
 from .project import bin_id_or_root, build_sequence
 from .registry import CommandError, Context, Params, command
-from .timeline import source_at
+from .timeline import DEFAULT_MOTION, source_at
 
 
 class ImportPremiere(Params):
@@ -91,25 +91,34 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                 track["targeted"] = track["targeted"]
                 prev_end = 0
                 for it in sorted(tr["items"], key=lambda i: i["start"]):
-                    mid = media_map.get(it["media_uid"])
-                    if mid is None:
-                        continue
-                    item = doc["media"][mid]
-                    if kind == "video" and item["video"] is None and item["kind"] != "image":
-                        continue
-                    if kind == "audio" and item["audio"] is None:
-                        continue
+                    graphic = it.get("graphic")
+                    if graphic:
+                        if kind != "video":
+                            continue
+                        mid, item = None, None
+                    else:
+                        mid = media_map.get(it["media_uid"])
+                        if mid is None:
+                            continue
+                        item = doc["media"][mid]
+                        if kind == "video" and item["video"] is None and item["kind"] != "image":
+                            continue
+                        if kind == "audio" and item["audio"] is None:
+                            continue
                     clip = {
                         "id": new_id(), "media_id": mid, "name": it["name"],
                         "start": max(it["start"], prev_end), "end": it["end"],
                         "source_in": it["source_in"], "speed": it["speed"], "enabled": True,
                         "link_id": links.setdefault(it["link"], new_id()) if it["link"] else None,
                         "label": it["label"] if kind == "video" else "caribbean",
-                        "opacity": 100.0, "volume_db": 0.0,
+                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0,
+                        "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
+                        "keyframes": it.get("keyframes", {}),
+                        "graphic": graphic,
                     }
                     if clip["start"] != it["start"]:
                         clip["source_in"] += round((clip["start"] - it["start"]) * clip["speed"])
-                    limit = None if item["kind"] == "image" else item["duration"]
+                    limit = None if item is None or item["kind"] == "image" else item["duration"]
                     if limit and source_at(clip, clip["end"]) > limit:
                         # project-file durations and ffprobe can disagree by a frame or two
                         clip["end"] = clip["start"] + int((limit - clip["source_in"]) / clip["speed"])

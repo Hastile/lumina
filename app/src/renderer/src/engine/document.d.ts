@@ -74,7 +74,10 @@ export type Muted = boolean;
 export type Solo = boolean;
 export type Targeted = boolean;
 export type Id5 = string;
-export type MediaId = string;
+/**
+ * null for graphics
+ */
+export type MediaId = string | null;
 export type Name5 = string;
 /**
  * timeline start, ticks (inclusive)
@@ -114,6 +117,62 @@ export type Label1 =
 export type Opacity = number;
 export type VolumeDb = number;
 /**
+ * sequence pixels [x, y]; null = frame center
+ */
+export type Position = number[] | null;
+export type Scale = number;
+/**
+ * used when uniform is false
+ */
+export type ScaleWidth = number;
+export type Uniform = boolean;
+/**
+ * degrees, clockwise
+ */
+export type Rotation = number;
+/**
+ * source pixels [x, y]; null = source center
+ */
+export type Anchor = number[] | null;
+export type CropLeft = number;
+export type CropTop = number;
+export type CropRight = number;
+export type CropBottom = number;
+/**
+ * source time in ticks (Premiere convention: keyframes follow the content when trimmed)
+ */
+export type T = number;
+export type V = number | number[];
+export type Interp = "linear" | "ease" | "hold";
+export type Id6 = string;
+export type Type = "text";
+export type Text = string;
+export type FontFamily = string;
+export type FontSize = number;
+export type Bold = boolean;
+export type Italic = boolean;
+export type Color = string;
+export type StrokeColor = string | null;
+export type StrokeWidth = number;
+export type Background = string | null;
+export type Align = "left" | "center" | "right";
+/**
+ * sequence pixels; the text block's alignment point (vertical center)
+ */
+export type Position1 = number[];
+export type Scale1 = number;
+export type Rotation1 = number;
+export type Opacity1 = number;
+/**
+ * imported with best-effort styling (e.g. from a MOGRT)
+ */
+export type Approximate = boolean;
+export type Layers = TextLayer[];
+/**
+ * origin, e.g. 'mogrt:Title' for imported Premiere graphics
+ */
+export type Source = string | null;
+/**
  * bottom (V1) to top
  */
 export type VideoTracks = string[];
@@ -121,12 +180,12 @@ export type VideoTracks = string[];
  * top (A1) to bottom
  */
 export type AudioTracks = string[];
-export type Id6 = string;
+export type Id7 = string;
 export type Start1 = number;
 export type Duration1 = number;
 export type Name6 = string;
 export type Comment = string;
-export type Color = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
+export type Color1 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
 export type Playhead = number;
 export type InPoint1 = number | null;
 export type OutPoint1 = number | null;
@@ -268,6 +327,70 @@ export interface Clip {
   label: Label1;
   opacity: Opacity;
   volume_db: VolumeDb;
+  motion: Motion;
+  keyframes: Keyframes;
+  graphic: Graphic | null;
+}
+/**
+ * Premiere's intrinsic Motion effect.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Motion".
+ */
+export interface Motion {
+  position: Position;
+  scale: Scale;
+  scale_width: ScaleWidth;
+  uniform: Uniform;
+  rotation: Rotation;
+  anchor: Anchor;
+  crop_left: CropLeft;
+  crop_top: CropTop;
+  crop_right: CropRight;
+  crop_bottom: CropBottom;
+}
+export interface Keyframes {
+  [k: string]: Keyframe[];
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Keyframe".
+ */
+export interface Keyframe {
+  t: T;
+  v: V;
+  interp: Interp;
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Graphic".
+ */
+export interface Graphic {
+  layers: Layers;
+  source: Source;
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "TextLayer".
+ */
+export interface TextLayer {
+  id: Id6;
+  type: Type;
+  text: Text;
+  font_family: FontFamily;
+  font_size: FontSize;
+  bold: Bold;
+  italic: Italic;
+  color: Color;
+  stroke_color: StrokeColor;
+  stroke_width: StrokeWidth;
+  background: Background;
+  align: Align;
+  position: Position1;
+  scale: Scale1;
+  rotation: Rotation1;
+  opacity: Opacity1;
+  approximate: Approximate;
 }
 export interface Markers {
   [k: string]: Marker;
@@ -277,10 +400,10 @@ export interface Markers {
  * via the `definition` "Marker".
  */
 export interface Marker {
-  id: Id6;
+  id: Id7;
   start: Start1;
   duration: Duration1;
   name: Name6;
   comment: Comment;
-  color: Color;
+  color: Color1;
 }

@@ -257,7 +257,8 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
             if ti.get("ObjectRef"):
                 links[ti.get("ObjectRef")] = link.get("ObjectID") or link_ref.get("ObjectRef")
 
-    stats = {"nested": 0, "graphics": 0, "transitions": 0, "reversed": 0}
+    stats = {"nested": 0, "graphics": 0, "transitions": 0, "reversed": 0, "effects": 0, "shapes": 0, "approx_text": 0}
+    seq_w, seq_h = w or 1920, h or 1080
 
     def tracks(group: ET.Element | None, kind: str) -> list[dict]:
         result = []
@@ -286,11 +287,16 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                 if src_kind == "sequence":
                     stats["nested"] += 1
                     continue
+                graphic = None
                 if src_kind != "media" or target.get("ObjectUID") not in out.media:
                     if src_kind == "media" and (info := _media_info(g, target)) is not None:
                         out.media[target.get("ObjectUID")] = {**info, "name": _text(sub, "Name") or info["title"], "label": "iris", "bin": None}
+                    elif kind == "video":
+                        graphic = _graphic(g, cti, seq_w, seq_h, stats)
+                        if graphic is None:
+                            stats["graphics"] += 1
+                            continue
                     else:
-                        stats["graphics"] += 1
                         continue
                 speed_txt = _text(clip_el, "Clip/PlaybackSpeed")
                 speed = float(speed_txt) if speed_txt else 1.0
@@ -299,15 +305,20 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                     speed = -speed
                 if cti.find("HeadTransition") is not None or cti.find("TailTransition") is not None:
                     stats["transitions"] += 1
+                media = None if graphic else out.media[target.get("ObjectUID")]
+                fx = _motion(g, cti, seq_w, seq_h, media, stats) if kind == "video" else {}
                 items.append({
-                    "media_uid": target.get("ObjectUID"),
-                    "name": _text(sub, "Name") or out.media[target.get("ObjectUID")]["name"],
+                    "media_uid": None if graphic else target.get("ObjectUID"),
+                    "name": _text(sub, "Name") or (graphic["name"] if graphic else media["name"]),
                     "start": start,
                     "end": end,
                     "source_in": max(0, _int(clip_el, "Clip/InPoint", 0)),
                     "speed": speed or 1.0,
-                    "label": _label(_text(clip_el, "Clip/Node/Properties/asl.clip.label.name"), "iris" if kind == "video" else "caribbean"),
+                    "label": _label(_text(clip_el, "Clip/Node/Properties/asl.clip.label.name"),
+                                    "rose" if graphic else ("iris" if kind == "video" else "caribbean")),
                     "link": links.get(item.get("ObjectID")),
+                    "graphic": graphic and {"layers": graphic["layers"], "source": graphic["source"]},
+                    **fx,
                 })
             result.append({"muted": _text(tr, "ClipTrack/Track/IsMuted") == "true", "items": items})
         return result
@@ -330,6 +341,12 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
         parts.append(f"{stats['transitions']} transition(s)")
     if stats["reversed"]:
         parts.append(f"{stats['reversed']} reversed clip(s) imported forward")
+    if stats["effects"]:
+        parts.append(f"{stats['effects']} effect(s) other than Motion/Opacity (blur, Transform, ...)")
+    if stats["shapes"]:
+        parts.append(f"{stats['shapes']} shape layer(s)")
+    if stats["approx_text"]:
+        parts.append(f"{stats['approx_text']} text layer(s) with approximate styling (check font size/position)")
     if parts:
         out.warnings.append(f"Sequence '{name}': skipped " + ", ".join(parts))
     return seq
@@ -370,3 +387,225 @@ def _sequence_markers(g: Graph, seq_el: ET.Element) -> list[dict]:
                 })
             return markers
     return markers
+
+
+# ---------------------------------------------------------------- effects: Motion, Opacity, graphics
+
+def _components(g: Graph, cti: ET.Element) -> list[ET.Element]:
+    chain = g.at(cti, "ComponentOwner/Components")
+    if chain is None:
+        return []
+    return [c for c in (g.ref(ref) for ref in chain.findall("ComponentChain/Components/Component")) if c is not None]
+
+
+def _params(g: Graph, comp: ET.Element) -> dict[int, ET.Element]:
+    out = {}
+    for ref in comp.findall("Component/Params/Param"):
+        pe = g.ref(ref)
+        if pe is not None:
+            try:
+                out[int(_text(pe, "ParameterID", "-1"))] = pe
+            except ValueError:
+                pass
+    return out
+
+
+def _parse_value(raw: str):
+    if ":" in raw:
+        x, y = raw.split(":", 1)
+        return [float(x), float(y)]
+    if raw in ("true", "false"):
+        return raw == "true"
+    return float(raw)
+
+
+def _param_static(pe: ET.Element | None):
+    if pe is None:
+        return None
+    raw = _text(pe, "StartKeyframe")
+    try:
+        if raw is None:
+            cur = _text(pe, "CurrentValue")
+            return _parse_value(cur) if cur else None
+        return _parse_value(raw.split(",")[1])
+    except (IndexError, ValueError):
+        return None
+
+
+def _param_keyframes(pe: ET.Element | None) -> list[dict]:
+    if pe is None:
+        return []
+    raw = _text(pe, "Keyframes")
+    if not raw:
+        return []
+    kfs = []
+    for entry in raw.split(";"):
+        f = entry.split(",")
+        if len(f) < 3:
+            continue
+        try:
+            # interpolation code: 0 = linear, 1 = hold, others = Bezier variants (approximated as ease)
+            interp = "linear" if f[2] == "0" else ("hold" if f[2] == "1" else "ease")
+            kfs.append({"t": int(f[0]), "v": _parse_value(f[1]), "interp": interp})
+        except ValueError:
+            continue
+    return sorted(kfs, key=lambda k: k["t"])
+
+
+MOTION_PARAMS = {
+    1: "position", 2: "scale", 3: "scale_width", 4: "uniform", 5: "rotation", 6: "anchor",
+    8: "crop_left", 9: "crop_top", 10: "crop_right", 11: "crop_bottom",
+}
+
+
+def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | None, stats: dict) -> dict:
+    """Map the Motion and Opacity components (and their keyframes) onto Lumina clip fields."""
+    sw, sh = (media["video"]["width"], media["video"]["height"]) if media and media.get("video") else (seq_w, seq_h)
+
+    def conv(name: str, v):
+        if name == "position":
+            return [v[0] * seq_w, v[1] * seq_h]
+        if name == "anchor":
+            return [v[0] * sw, v[1] * sh]
+        if name == "uniform":
+            return bool(v)
+        return float(v)
+
+    motion: dict = {}
+    keyframes: dict = {}
+    opacity = 100.0
+    for comp in _components(g, cti):
+        match = _text(comp, "MatchName")
+        if match == "AE.ADBE Motion":
+            for pid, pe in _params(g, comp).items():
+                name = MOTION_PARAMS.get(pid)
+                if name is None:
+                    continue
+                v = _param_static(pe)
+                try:
+                    if v is not None:
+                        motion[name] = conv(name, v)
+                    kfs = _param_keyframes(pe)
+                    if kfs and name != "uniform":
+                        keyframes[name] = [{**k, "v": conv(name, k["v"])} for k in kfs]
+                except (TypeError, IndexError):
+                    continue
+        elif match == "AE.ADBE Opacity":
+            pe = _params(g, comp).get(1)
+            v = _param_static(pe)
+            if isinstance(v, float):
+                opacity = v
+            kfs = _param_keyframes(pe)
+            if kfs:
+                keyframes["opacity"] = kfs
+        elif match in ("AE.ADBE Text", "AE.ADBE Capsule", "AE.ADBE Shape"):
+            pass  # graphic content, handled by _graphic
+        else:
+            stats["effects"] += 1
+    return {"motion": motion, "keyframes": keyframes, "opacity": opacity}
+
+
+def _length_prefixed_strings(blob: bytes) -> list[str]:
+    import struct as _st
+
+    found, i, n = [], 0, len(blob)
+    while i + 4 <= n:
+        (length,) = _st.unpack_from("<I", blob, i)
+        if 1 <= length <= 4096 and i + 4 + length <= n:
+            chunk = blob[i + 4:i + 4 + length]
+            try:
+                text = chunk.decode("utf-8")
+            except UnicodeDecodeError:
+                text = None
+            if text and all(ch.isprintable() or ch in "\r\n\t" for ch in text):
+                found.append(text)
+                i += 4 + length
+                continue
+        i += 1
+    return found
+
+
+def _font_size(blob: bytes) -> float | None:
+    """Best effort: in Premiere's text FlatBuffer the size sits 16 bytes after a
+    small negative float marker. Undocumented; may miss on other versions."""
+    import struct as _st
+
+    for i in range(0, len(blob) - 20, 4):
+        v = _st.unpack_from("<f", blob, i)[0]
+        if -60 < v < -1 and abs(v - round(v)) < 1e-4:
+            size = _st.unpack_from("<f", blob, i + 16)[0]
+            return size if 4 <= size <= 1000 else None
+    return None
+
+
+def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> dict | None:
+    """Text layers from native text components and MOGRT (Capsule) parameters."""
+    import base64
+
+    layers: list[dict] = []
+    source = None
+    for comp in _components(g, cti):
+        match = _text(comp, "MatchName")
+        params = _params(g, comp)
+        if match == "AE.ADBE Text":
+            raw = _text(params.get(1), "StartKeyframeValue")
+            if not raw:
+                continue
+            try:
+                blob = base64.b64decode(raw)
+            except ValueError:
+                continue
+            strings = _length_prefixed_strings(blob)
+            if not strings:
+                continue
+            font = next((s for s in strings if "-" in s and " " not in s and len(s) < 64), None) or strings[0]
+            texts = [s for s in strings if s != font]
+            size = _font_size(blob)
+            if size is None:
+                stats["approx_text"] += 1
+            fs = size or round(seq_h / 19)
+            pos = _param_static(params.get(3))
+            if not isinstance(pos, list):
+                pos = [0.5, 0.5]
+            layers.append({
+                "type": "text", "text": (texts[-1] if texts else "").strip(), "font_family": font, "font_size": fs,
+                "align": "left",
+                # Premiere puts the baseline at Position; Lumina anchors the text block's vertical center
+                "position": [pos[0] * seq_w, pos[1] * seq_h - fs * 0.35],
+                "scale": float(_param_static(params.get(4)) or 100.0),
+                "rotation": float(_param_static(params.get(7)) or 0.0),
+                "opacity": float(_param_static(params.get(8)) if _param_static(params.get(8)) is not None else 100.0),
+                "approximate": size is None,
+            })
+        elif match == "AE.ADBE Capsule":
+            source = "mogrt:" + (_text(comp, "Component/DisplayName") or "graphic")
+            y = seq_h * 0.12
+            for pid in sorted(params):
+                raw = _text(params[pid], "StartKeyframeValue")
+                if not raw:
+                    continue
+                try:
+                    data = json.loads(base64.b64decode(raw).decode("utf-16-le"))
+                except (ValueError, UnicodeDecodeError):
+                    continue
+                if not isinstance(data, dict) or "textEditValue" not in data:
+                    continue
+                size = float((data.get("fontSizeEditValue") or [100])[0])
+                layers.append({
+                    "type": "text", "text": data["textEditValue"],
+                    "font_family": (data.get("fontEditValue") or ["Pretendard"])[0],
+                    "font_size": size, "bold": bool((data.get("fontFSBoldValue") or [False])[0]),
+                    "italic": bool((data.get("fontFSItalicValue") or [False])[0]), "align": "center",
+                    # MOGRT layout lives inside the template; stack the fields as an approximation
+                    "position": [seq_w / 2, y + size / 2], "approximate": True,
+                })
+                y += size * 1.25
+        elif match == "AE.ADBE Shape":
+            stats["shapes"] += 1
+    if not layers:
+        return None
+    defaults = {"bold": False, "italic": False, "color": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
+                "background": None, "scale": 100.0, "rotation": 0.0, "opacity": 100.0}
+    out_layers = [{**defaults, **layer, "id": f"L{i}"} for i, layer in enumerate(layers)]
+    name = next((l["text"] for l in out_layers if l["text"]), "Graphic").splitlines()[0][:40]
+    return {"layers": out_layers, "source": source, "name": name}

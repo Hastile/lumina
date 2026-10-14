@@ -195,7 +195,7 @@ def test_random_edits_keep_invariants_and_undo_exactly(data):
             assert s.doc == snapshots[-1]
             continue
         check_sequence(s.doc, s.doc["sequences"][sid])
-        validate_project(s.doc)
+        assert validate_project(s.doc).model_dump(mode="json") == s.doc, "document must be schema-canonical"
         if out["changed"]:
             snapshots.append(copy.deepcopy(s.doc))
     while len(snapshots) > 1:

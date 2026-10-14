@@ -157,7 +157,7 @@
   },
   {
     "name": "media.set_marks",
-    "description": "Set the source monitor In/Out marks (ticks; null clears).",
+    "description": "Set or clear the source monitor In/Out marks (only the given mark changes).",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -176,6 +176,7 @@
             }
           ],
           "default": null,
+          "description": "source ticks; omitted = keep",
           "title": "In Point"
         },
         "out_point": {
@@ -188,7 +189,18 @@
             }
           ],
           "default": null,
+          "description": "source ticks; omitted = keep",
           "title": "Out Point"
+        },
+        "clear_in": {
+          "default": false,
+          "title": "Clear In",
+          "type": "boolean"
+        },
+        "clear_out": {
+          "default": false,
+          "title": "Clear Out",
+          "type": "boolean"
         }
       },
       "required": [
@@ -574,7 +586,7 @@
   },
   {
     "name": "sequence.set_in_out",
-    "description": "Set or clear the sequence In/Out marks.",
+    "description": "Set or clear the sequence In/Out marks (only the given mark changes).",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -604,6 +616,7 @@
             }
           ],
           "default": null,
+          "description": "omitted = keep",
           "title": "In Point"
         },
         "out_point": {
@@ -619,7 +632,18 @@
             }
           ],
           "default": null,
+          "description": "omitted = keep",
           "title": "Out Point"
+        },
+        "clear_in": {
+          "default": false,
+          "title": "Clear In",
+          "type": "boolean"
+        },
+        "clear_out": {
+          "default": false,
+          "title": "Clear Out",
+          "type": "boolean"
         }
       },
       "title": "SetSequenceInOut",
@@ -1722,6 +1746,1184 @@
         "marker_ids"
       ],
       "title": "RemoveMarkers",
+      "type": "object"
+    }
+  },
+  {
+    "name": "project.import_premiere",
+    "description": "Import an Adobe Premiere Pro project: bins, media, sequences, clips, links, markers.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "path to a .prproj file (read-only; never modified)",
+          "title": "Path",
+          "type": "string"
+        },
+        "bin_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "bin to import into; default: a new bin named after the project",
+          "title": "Bin Id"
+        },
+        "into_root": {
+          "default": false,
+          "description": "import bins directly into the root (used when opening a .prproj as a new project)",
+          "title": "Into Root",
+          "type": "boolean"
+        },
+        "sequences": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "only these sequence names (default: all)",
+          "title": "Sequences"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ImportPremiere",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set_property",
+    "description": "Set a Motion/Opacity/Volume property. If it is animated, adds or updates the keyframe at `at` (like Premiere).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "prop": {
+          "enum": [
+            "position",
+            "scale",
+            "scale_width",
+            "rotation",
+            "anchor",
+            "crop_left",
+            "crop_top",
+            "crop_right",
+            "crop_bottom",
+            "opacity",
+            "volume_db"
+          ],
+          "title": "Prop",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sequence time used when the property is animated; default playhead",
+          "title": "At"
+        }
+      },
+      "required": [
+        "clip_id",
+        "prop",
+        "value"
+      ],
+      "title": "SetProperty",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.toggle_animation",
+    "description": "The stopwatch: start animating (keyframe at `at` with the current value) or stop (drop keyframes, keep value at `at`).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "prop": {
+          "enum": [
+            "position",
+            "scale",
+            "scale_width",
+            "rotation",
+            "anchor",
+            "crop_left",
+            "crop_top",
+            "crop_right",
+            "crop_bottom",
+            "opacity",
+            "volume_db"
+          ],
+          "title": "Prop",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        }
+      },
+      "required": [
+        "clip_id",
+        "prop"
+      ],
+      "title": "ToggleAnimation",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.keyframe",
+    "description": "Add / remove / toggle a keyframe at a time (the diamond button), or change its interpolation.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "prop": {
+          "enum": [
+            "position",
+            "scale",
+            "scale_width",
+            "rotation",
+            "anchor",
+            "crop_left",
+            "crop_top",
+            "crop_right",
+            "crop_bottom",
+            "opacity",
+            "volume_db"
+          ],
+          "title": "Prop",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "op": {
+          "default": "toggle",
+          "enum": [
+            "add",
+            "remove",
+            "toggle"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "interp": {
+          "anyOf": [
+            {
+              "enum": [
+                "linear",
+                "ease",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interp"
+        }
+      },
+      "required": [
+        "clip_id",
+        "prop"
+      ],
+      "title": "KeyframeOp",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set_keyframes",
+    "description": "Replace a property's keyframes in one go (times are relative to the clip's start).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "prop": {
+          "enum": [
+            "position",
+            "scale",
+            "scale_width",
+            "rotation",
+            "anchor",
+            "crop_left",
+            "crop_top",
+            "crop_right",
+            "crop_bottom",
+            "opacity",
+            "volume_db"
+          ],
+          "title": "Prop",
+          "type": "string"
+        },
+        "keyframes": {
+          "description": "[{t: clip-relative time (ticks or '1.5s'), v, interp}] - replaces all; [] stops animating",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Keyframes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_id",
+        "prop",
+        "keyframes"
+      ],
+      "title": "SetKeyframes",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.reset_motion",
+    "description": "Reset Motion and Opacity to defaults and remove their keyframes.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "ResetMotion",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set_uniform_scale",
+    "description": "Uniform Scale checkbox.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "uniform": {
+          "title": "Uniform",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id",
+        "uniform"
+      ],
+      "title": "SetUniform",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.fit_to_frame",
+    "description": "Set to Frame Size (fit) / Scale to fill (fill): centers the clip and sets Scale.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "mode": {
+          "default": "fit",
+          "enum": [
+            "fit",
+            "fill"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "FitToFrame",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.create_text",
+    "description": "Type tool: create a graphic clip with one text layer.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Family"
+        },
+        "font_size": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 2000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size"
+        },
+        "bold": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bold"
+        },
+        "italic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Italic"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Width"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "align": {
+          "anyOf": [
+            {
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Align"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opacity"
+        },
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "text": {
+          "default": "\uc0c8 \ud14d\uc2a4\ud2b8 \ub808\uc774\uc5b4",
+          "title": "Text",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "5s",
+          "title": "Duration"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: first empty video track above the clips at that time",
+          "title": "Track Id"
+        }
+      },
+      "title": "CreateText",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.set_layer",
+    "description": "Edit a text layer: text, font, size, colors, stroke, alignment, position, scale, rotation, opacity.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Family"
+        },
+        "font_size": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 2000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size"
+        },
+        "bold": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bold"
+        },
+        "italic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Italic"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Width"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "align": {
+          "anyOf": [
+            {
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Align"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opacity"
+        },
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: first layer",
+          "title": "Layer Id"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "SetLayer",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.add_layer",
+    "description": "Add another text layer to a graphic clip.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "font_family": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Family"
+        },
+        "font_size": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 2000,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Font Size"
+        },
+        "bold": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bold"
+        },
+        "italic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Italic"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Width"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "align": {
+          "anyOf": [
+            {
+              "enum": [
+                "left",
+                "center",
+                "right"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Align"
+        },
+        "position": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Position"
+        },
+        "scale": {
+          "anyOf": [
+            {
+              "maximum": 10000,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Scale"
+        },
+        "rotation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rotation"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opacity"
+        },
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "text": {
+          "default": "\uc0c8 \ud14d\uc2a4\ud2b8 \ub808\uc774\uc5b4",
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "AddLayer",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.remove_layer",
+    "description": "Remove a text layer from a graphic clip.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "layer_id": {
+          "title": "Layer Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "layer_id"
+      ],
+      "title": "RemoveLayer",
       "type": "object"
     }
   }

@@ -55,7 +55,7 @@ def build_prproj(tmp_path, media_path: str) -> str:
   <MasterClip ObjectUID="mc-graphic" ClassID="x" Version="12"><Clips Version="1"><Clip Index="0" ObjectRef="20" /></Clips></MasterClip>
   <VideoClip ObjectID="20" ClassID="x" Version="11"><Clip Version="18"><Source ObjectRef="21" /></Clip></VideoClip>
   <VideoMediaSource ObjectID="21" ClassID="x" Version="2"><MediaSource Version="4"><Media ObjectURef="media-graphic" /></MediaSource></VideoMediaSource>
-  <Media ObjectUID="media-graphic" ClassID="x" Version="30"><FilePath>Media\263229dc\Title.aegraphic</FilePath></Media>
+  <Media ObjectUID="media-graphic" ClassID="x" Version="30"><FilePath>Media/263229dc/Title.aegraphic</FilePath></Media>
 
   <ClipProjectItem ObjectUID="cpi-seq" ClassID="x" Version="1">
     <ProjectItem Version="1"><Name>Main Edit</Name></ProjectItem><MasterClip ObjectURef="mc-seq" />
@@ -134,7 +134,7 @@ def test_import_command_is_valid_and_one_undo_step(tmp_path):
     s = Session(services=FakeServices())
     out = s.execute("project.import_premiere", {"path": build_prproj(tmp_path, str(media))})["result"]
     doc = s.doc
-    validate_project(doc)
+    assert validate_project(doc).model_dump(mode="json") == doc
     seq = doc["sequences"][out["sequences"][0]]
     check_sequence(doc, seq)
     clips = [c for t in seq["tracks"].values() for c in t["clips"].values()]

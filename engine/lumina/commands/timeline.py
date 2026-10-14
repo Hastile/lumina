@@ -18,6 +18,8 @@ from .project import media_of, seq_of
 from .registry import CommandError, Context, Params, TimeValue, command, resolve_time
 
 STILL_DEFAULT_SECONDS = 5
+DEFAULT_MOTION = {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0, "anchor": None,
+                  "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0}
 
 
 # ---------------------------------------------------------------- helpers
@@ -254,6 +256,9 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "label": item.get("label", "iris"),
             "opacity": 100.0,
             "volume_db": 0.0,
+            "motion": dict(DEFAULT_MOTION),
+            "keyframes": {},
+            "graphic": None,
         }
         write_clip(ctx, seq, tid, clip)
         created[f"{kind}_clip_id"] = clip["id"]
@@ -480,16 +485,19 @@ def clip_trim(ctx: Context, p: TrimClip):
             write_clip(ctx, seq, tid, new)
         return {"delta": delta, "clip_ids": ids}
 
-    ripple_at, ripple_delta = edits[0][3], edits[0][4]
-    base = {tid for tid, *_ in edits}
+    ripple_delta = edits[0][4]
+    # each edited track ripples from its own clip's edge (linked clips can end at
+    # different times); other sync-locked tracks follow the primary clip's edge
+    ripple_points = {tid: at for tid, _, _, at, _ in edits}
+    base = set(ripple_points)
     for tid in sync_tracks(seq, base):
         if ripple_delta > 0:
-            shift_from(ctx, seq, tid, ripple_at, ripple_delta, exclude=trimmed)
+            shift_from(ctx, seq, tid, ripple_points.get(tid, edits[0][3]), ripple_delta, exclude=trimmed)
     for tid, _, new, _, _ in edits:
         write_clip(ctx, seq, tid, new)
     for tid in sync_tracks(seq, base):
         if ripple_delta < 0:
-            shift_from(ctx, seq, tid, ripple_at, ripple_delta, exclude=trimmed)
+            shift_from(ctx, seq, tid, ripple_points.get(tid, edits[0][3]), ripple_delta, exclude=trimmed)
     return {"delta": delta, "clip_ids": ids}
 
 
@@ -522,18 +530,22 @@ def clip_set_speed(ctx: Context, p: SetSpeed):
         edits.append((tid, c, new))
     changed = {c["id"] for _, c, _ in edits}
     delta = edits[0][2]["end"] - edits[0][1]["end"]
-    if p.ripple and delta:
-        base = {tid for tid, _, _ in edits}
-        at = edits[0][1]["end"]
-        tracks = sync_tracks(seq, base)
-        if delta > 0:
-            for tid in tracks:
-                shift_from(ctx, seq, tid, at, delta, exclude=changed)
+    if p.ripple and any(new["end"] != old["end"] for _, old, new in edits):
+        # linked clips of different lengths change by different amounts: each edited
+        # track ripples by its own clip's change, other sync-locked tracks by the primary's
+        per_track = {tid: (old["end"], new["end"] - old["end"]) for tid, old, new in edits}
+        primary = (edits[0][1]["end"], delta)
+        tracks = sync_tracks(seq, set(per_track))
+        for tid in tracks:
+            at, d = per_track.get(tid, primary)
+            if d > 0:
+                shift_from(ctx, seq, tid, at, d, exclude=changed)
         for tid, _, new in edits:
             write_clip(ctx, seq, tid, new)
-        if delta < 0:
-            for tid in tracks:
-                shift_from(ctx, seq, tid, at, delta, exclude=changed)
+        for tid in tracks:
+            at, d = per_track.get(tid, primary)
+            if d < 0:
+                shift_from(ctx, seq, tid, at, d, exclude=changed)
     else:
         for tid, _, new in edits:
             if not is_free(seq["tracks"][tid], new["start"], new["end"], exclude=changed):
