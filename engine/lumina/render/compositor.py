@@ -26,11 +26,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .. import timebase
 from ..adb.quiet_process import NO_WINDOW
 from ..media.probe import ffmpeg_bin, ffprobe_bin
+from .. import effects as fx_
 from ..motion import transform_at
 from . import fonts
 
@@ -44,72 +45,120 @@ class RenderError(Exception):
 # ---------------------------------------------------------------- geometry
 
 
-def place(canvas: Image.Image, img: Image.Image, origin: tuple[float, float], tr: dict, prescale: tuple[float, float] = (1.0, 1.0)) -> None:
-    """Composite ``img`` onto ``canvas``.
-
-    ``img`` holds the source's pixels starting at source-pixel ``origin``,
-    sampled at ``prescale`` decoded pixels per source pixel. ``tr`` is a
-    resolved transform (``lumina.motion.transform_at``)."""
-    fx, fy = prescale
-    sx, sy = tr["scale_x"] / 100.0, tr["scale_y"] / 100.0
-    opacity = max(0.0, min(1.0, tr["opacity"] / 100.0))
-    if sx <= 0 or sy <= 0 or opacity <= 0:
+def warp(canvas: Image.Image, img: Image.Image, m: tuple, opacity: float = 1.0) -> None:
+    """Composite ``img`` onto ``canvas`` through the affine ``m`` (img pixel -> canvas pixel)."""
+    if opacity <= 0 or img.width <= 0 or img.height <= 0:
         return
-    # crop rect in source pixels, intersected with the provided pixels
-    w, h = tr["src_w"], tr["src_h"]
-    cl = max(tr["crop_left"], 0) / 100 * w
-    ct = max(tr["crop_top"], 0) / 100 * h
-    cr = w - max(tr["crop_right"], 0) / 100 * w
-    cb = h - max(tr["crop_bottom"], 0) / 100 * h
-    ox, oy = origin
-    x0, y0 = max(cl, ox), max(ct, oy)
-    x1, y1 = min(cr, ox + img.width / fx), min(cb, oy + img.height / fy)
-    if x1 <= x0 or y1 <= y0:
-        return
-    # same region in img pixels
-    ix0, iy0 = round((x0 - ox) * fx), round((y0 - oy) * fy)
-    ix1, iy1 = round((x1 - ox) * fx), round((y1 - oy) * fy)
-    if (ix0, iy0, ix1, iy1) != (0, 0, img.width, img.height):
-        img = img.crop((ix0, iy0, ix1, iy1))
-    if img.width <= 0 or img.height <= 0:
-        return
-    sox, soy = ox + ix0 / fx, oy + iy0 / fy  # source pixel of img (0, 0)
-    (px, py), (ax, ay) = tr["position"], tr["anchor"]
-    rad = math.radians(tr["rotation"])
-    cos, sin = math.cos(rad), math.sin(rad)
-    # img pixel -> sequence pixel: dst = P + R S ((sox, soy) + q / f - A)
-    ex, ey = sx / fx, sy / fy  # effective scale per img pixel
-    if opacity < 1 or img.mode != "RGBA":
-        img = img.convert("RGBA") if img.mode != "RGBA" else img.copy()
-        if opacity < 1:
-            img.putalpha(img.getchannel("A").point(lambda v: round(v * opacity)))
-    tx = px + cos * sx * (sox - ax) - sin * sy * (soy - ay)
-    ty = py + sin * sx * (sox - ax) + cos * sy * (soy - ay)
-    if abs(rad) < 1e-9 and abs(ex - 1) * img.width < 1.0 and abs(ey - 1) * img.height < 1.0:
+    if img.mode != "RGBA":
+        img = img.convert("RGBA")
+    if opacity < 1:
+        img = img.copy()
+        img.putalpha(img.getchannel("A").point(lambda v: round(v * opacity)))
+    a, b, c, d, e, f = m
+    if abs(b) < 1e-9 and abs(d) < 1e-9 and abs(a - 1) * img.width < 1.0 and abs(e - 1) * img.height < 1.0:
         # pure translation: snap to whole pixels (sub-pixel resampling would only blur)
-        _blit(canvas, img, round(tx), round(ty))
+        _blit(canvas, img, round(c), round(f))
         return
-    # bounding box in sequence space
-    corners = [(0, 0), (img.width, 0), (0, img.height), (img.width, img.height)]
-    pts = [(tx + cos * ex * qx - sin * ey * qy, ty + sin * ex * qx + cos * ey * qy) for qx, qy in corners]
+    pts = [fx_.apply(m, x, y) for x, y in ((0, 0), (img.width, 0), (0, img.height), (img.width, img.height))]
     bx0 = max(0, math.floor(min(p[0] for p in pts)))
     by0 = max(0, math.floor(min(p[1] for p in pts)))
     bx1 = min(canvas.width, math.ceil(max(p[0] for p in pts)))
     by1 = min(canvas.height, math.ceil(max(p[1] for p in pts)))
     if bx1 <= bx0 or by1 <= by0:
         return
-    # inverse map (output pixel centre -> img coords): q = S^-1 R^-1 (dst - T)
-    a, b = cos / ex, sin / ex
-    d, e = -sin / ey, cos / ey
-    c = -(a * tx + b * ty)
-    f = -(d * tx + e * ty)
-    c += a * bx0 + b * by0
-    f += d * bx0 + e * by0
-    if img.mode != "RGBA":
-        img = img.convert("RGBA")
-    resample = Image.Resampling.BILINEAR if (ex > 0.6 and ey > 0.6) else Image.Resampling.BICUBIC
-    out = img.transform((bx1 - bx0, by1 - by0), Image.Transform.AFFINE, (a, b, c, d, e, f), resample=resample)
+    inv = fx_.invert(m)
+    if inv is None:
+        return
+    inv = fx_.mul(inv, (1.0, 0.0, bx0, 0.0, 1.0, by0))
+    scale = math.sqrt(abs(a * e - b * d))
+    resample = Image.Resampling.BILINEAR if scale > 0.6 else Image.Resampling.BICUBIC
+    out = img.transform((bx1 - bx0, by1 - by0), Image.Transform.AFFINE, inv, resample=resample)
     canvas.alpha_composite(out, (bx0, by0))
+
+
+def _materialize(img: Image.Image, origin, prescale, pre: tuple, src_w: float, src_h: float) -> Image.Image:
+    """Render ``img`` through a source-space affine into a source-frame-sized
+    image (at ``prescale``) -- standard effects are bounded by the clip frame."""
+    fx, fy = prescale
+    out = Image.new("RGBA", (max(1, math.ceil(src_w * fx)), max(1, math.ceil(src_h * fy))), (0, 0, 0, 0))
+    img2src = (1 / fx, 0.0, origin[0], 0.0, 1 / fy, origin[1])
+    warp(out, img, fx_.mul((fx, 0.0, 0.0, 0.0, fy, 0.0), fx_.mul(pre, img2src)))
+    return out
+
+
+def place(canvas: Image.Image, img: Image.Image, origin: tuple[float, float], tr: dict, prescale: tuple[float, float] = (1.0, 1.0),
+          pre: tuple = fx_.IDENTITY, pre_opacity: float = 1.0) -> None:
+    """Composite one clip's frame onto ``canvas``.
+
+    ``img`` holds the source's pixels starting at source-pixel ``origin``,
+    sampled at ``prescale`` decoded pixels per source pixel. ``pre`` is the
+    source->source affine of the standard effects (Transform), ``tr`` the
+    resolved Motion (``lumina.motion.transform_at``) applied after it."""
+    fx, fy = prescale
+    sx, sy = tr["scale_x"] / 100.0, tr["scale_y"] / 100.0
+    opacity = max(0.0, min(1.0, tr["opacity"] / 100.0)) * pre_opacity
+    if sx <= 0 or sy <= 0 or opacity <= 0:
+        return
+    w, h = tr["src_w"], tr["src_h"]
+    crops = [max(tr[k], 0) for k in ("crop_left", "crop_top", "crop_right", "crop_bottom")]
+    if pre != fx_.IDENTITY and any(crops):
+        img, origin, pre = _materialize(img, origin, prescale, pre, w, h), (0.0, 0.0), fx_.IDENTITY
+    if pre == fx_.IDENTITY:
+        # crop rect in source pixels, intersected with the provided pixels
+        cl, ct = crops[0] / 100 * w, crops[1] / 100 * h
+        cr, cb = w - crops[2] / 100 * w, h - crops[3] / 100 * h
+        ox, oy = origin
+        x0, y0 = max(cl, ox), max(ct, oy)
+        x1, y1 = min(cr, ox + img.width / fx), min(cb, oy + img.height / fy)
+        if x1 <= x0 or y1 <= y0:
+            return
+        ix0, iy0 = round((x0 - ox) * fx), round((y0 - oy) * fy)
+        ix1, iy1 = round((x1 - ox) * fx), round((y1 - oy) * fy)
+        if (ix0, iy0, ix1, iy1) != (0, 0, img.width, img.height):
+            img = img.crop((ix0, iy0, ix1, iy1))
+        origin = (ox + ix0 / fx, oy + iy0 / fy)
+    img2src = (1 / fx, 0.0, origin[0], 0.0, 1 / fy, origin[1])
+    motion = fx_.trs(tr["position"], tr["anchor"], sx, sy, tr["rotation"])
+    warp(canvas, img, fx_.mul(motion, fx_.mul(pre, img2src)), opacity)
+
+
+def apply_effects(clip: dict, img: Image.Image, origin, prescale, t: int, src_w: float, src_h: float):
+    """Run the clip's standard effects -> (img, origin, pre affine, pre opacity)."""
+    pre, pre_op = fx_.IDENTITY, 1.0
+    for effect in clip.get("effects") or []:
+        if not effect.get("enabled", True):
+            continue
+        if effect["type"] == "transform":
+            m, op = fx_.transform_effect_at(effect, clip, t, src_w, src_h)
+            pre, pre_op = fx_.mul(m, pre), pre_op * op
+        elif effect["type"] == "gaussian_blur":
+            sx, sy = fx_.blur_sigma(effect, clip, t)
+            sx, sy = sx * prescale[0], sy * prescale[1]
+            if sx < 0.05 and sy < 0.05:
+                continue
+            if pre != fx_.IDENTITY or pre_op < 1:
+                img = _materialize(img, origin, prescale, pre, src_w, src_h)
+                if pre_op < 1:
+                    img.putalpha(img.getchannel("A").point(lambda v, o=pre_op: round(v * o)))
+                origin, pre, pre_op = (0.0, 0.0), fx_.IDENTITY, 1.0
+            if param_bool(effect, "repeat_edge"):
+                img = img.convert("RGBA").filter(ImageFilter.GaussianBlur((sx, sy)))
+            else:
+                px, py = math.ceil(3 * sx) + 1, math.ceil(3 * sy) + 1
+                padded = Image.new("RGBA", (img.width + 2 * px, img.height + 2 * py), (0, 0, 0, 0))
+                padded.paste(img.convert("RGBA"), (px, py))
+                img = _premultiplied_blur(padded, (sx, sy))
+                origin = (origin[0] - px / prescale[0], origin[1] - py / prescale[1])
+    return img, origin, pre, pre_op
+
+
+def param_bool(effect: dict, name: str) -> bool:
+    return bool(effect.get("params", {}).get(name, fx_.EFFECTS[effect["type"]]["params"][name][1]))
+
+
+def _premultiplied_blur(img: Image.Image, sigma) -> Image.Image:
+    # blur in premultiplied alpha so transparent pixels don't darken the edges
+    return img.convert("RGBa").filter(ImageFilter.GaussianBlur(sigma)).convert("RGBA")
 
 
 def _blit(canvas: Image.Image, img: Image.Image, x: int, y: int) -> None:
@@ -315,6 +364,27 @@ def _max_scale(clip: dict, prop: str) -> float:
     return max([static, *vals]) if vals else static
 
 
+def mix(a: Image.Image | None, b: Image.Image | None, u: float) -> Image.Image | None:
+    """Linear blend of two straight-alpha layers in premultiplied space
+    (``None`` = transparent), like Premiere's Cross Dissolve."""
+    u = max(0.0, min(1.0, u))
+    if a is None and b is None:
+        return None
+    if b is None or u <= 0:
+        return _fade(a, 1 - u) if a is not None else None
+    if a is None or u >= 1:
+        return _fade(b, u) if b is not None else None
+    return Image.blend(a.convert("RGBa"), b.convert("RGBa"), u).convert("RGBA")
+
+
+def _fade(img: Image.Image, k: float) -> Image.Image:
+    if k >= 1:
+        return img
+    out = img.copy()
+    out.putalpha(img.getchannel("A").point(lambda v: round(v * k)))
+    return out
+
+
 @dataclass
 class ActiveClip:
     clip: dict
@@ -344,22 +414,46 @@ class Compositor:
         self.warn = warn or (lambda msg: None)
         self._warned: set[str] = set()
         self._graphics: dict[str, tuple[str, Image.Image, tuple[float, float]]] = {}
+        # transitions extend their clips into the handles: clip id -> (start, end) actually shown
+        self.tracks: list[tuple[dict, list]] = []
+        self.extent: dict[str, tuple[int, int]] = {}
+        for tid in self.seq["video_tracks"]:
+            track = self.seq["tracks"][tid]
+            trans = fx_.track_transitions(track)
+            self.tracks.append((track, trans))
+            for ws, we, _, a, b in trans:
+                for c in (a, b):
+                    if c is not None:
+                        s0, e0 = self.extent.get(c["id"], (c["start"], c["end"]))
+                        self.extent[c["id"]] = (min(s0, ws), max(e0, we))
 
     def _once(self, key: str, msg: str) -> None:
         if key not in self._warned:
             self._warned.add(key)
             self.warn(msg)
 
+    def track_items(self, track: dict, trans: list, t: int):
+        """What a track shows at ``t``: ("clip", clip) | ("transition", tr, u, a, b) | None."""
+        for ws, we, tr, a, b in trans:
+            if ws <= t < we:
+                a = a if a is not None and a["enabled"] else None
+                b = b if b is not None and b["enabled"] else None
+                return ("transition", tr, fx_.dissolve_progress(t + self.tpf // 2, ws, we), a, b)
+        for c in track["clips"].values():
+            if c["enabled"] and c["start"] <= t < c["end"]:
+                return ("clip", c)
+        return None
+
     def visible_clips(self, t: int) -> list[dict]:
         out = []
-        for tid in self.seq["video_tracks"]:
-            track = self.seq["tracks"][tid]
+        for track, trans in self.tracks:
             if track["hidden"]:
                 continue
-            for c in track["clips"].values():
-                if c["enabled"] and c["start"] <= t < c["end"]:
-                    out.append(c)
-                    break
+            item = self.track_items(track, trans, t)
+            if item and item[0] == "clip":
+                out.append(item[1])
+            elif item:
+                out += [c for c in item[3:] if c is not None]
         return out
 
     def _open(self, clip: dict, t: int) -> ActiveClip | None:
@@ -392,46 +486,76 @@ class Compositor:
         sy = _max_scale(clip, "scale") / 100
         sx = sy if m["uniform"] else _max_scale(clip, "scale_width") / 100
         kfs = clip.get("keyframes", {})
-        if not any(kfs.get(k) for k in ("scale", "scale_width", "rotation")) and m["rotation"] % 360 == 0:
+        if not any(kfs.get(k) for k in ("scale", "scale_width", "rotation")) and m["rotation"] % 360 == 0 and not clip.get("effects"):
             # static, unrotated: let ffmpeg scale to the exact displayed size so compositing is a paste
             limit = 2 * max(self.w, self.h) / max(w, h)
             sx, sy = min(limit, max(sx, 0.01)), min(limit, max(sy, 0.01))
         else:
             sx, sy = min(1.0, max(sx, 0.01)), min(1.0, max(sy, 0.01))
         dw, dh = max(2, round(w * sx / 2) * 2), max(2, round(h * sy / 2) * 2)
-        frames_left = -(-(clip["end"] - t) // self.tpf)
+        frames_left = -(-(self.extent.get(clip["id"], (0, clip["end"]))[1] - t) // self.tpf)
         src = clip["source_in"] + round((t - clip["start"]) * clip["speed"])
         dec = VideoDecoder(path, src, clip["speed"], self.fps, (dw, dh), frames_left, h)
         return ActiveClip(clip, media, w, h, prescale=(dw / w, dh / h), decoder=dec)
 
+    def _draw(self, target: Image.Image, clip: dict, t: int) -> None:
+        ac = self.active.get(clip["id"])
+        if ac and ac.decoder and self.expected.get(clip["id"]) != t:
+            ac.decoder.close()  # random access: restart at the new time
+            ac = None
+        if ac is None:
+            ac = self._open(clip, t)
+            if ac is None:
+                return
+            self.active[clip["id"]] = ac
+        if ac.decoder:
+            img = ac.decoder.next()
+            self.expected[clip["id"]] = t + self.tpf
+            if img is None:
+                return
+        else:
+            img = ac.still
+        img, origin, pre, pre_op = apply_effects(clip, img, ac.origin, ac.prescale, t, ac.src_w, ac.src_h)
+        tr = transform_at(clip, t, self.seq, ac.media)
+        tr["src_w"], tr["src_h"] = ac.src_w, ac.src_h
+        place(target, img, origin, tr, ac.prescale, pre, pre_op)
+
+    def _layer(self, clip: dict | None, t: int) -> Image.Image | None:
+        if clip is None:
+            return None
+        layer = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
+        self._draw(layer, clip, t)
+        return layer
+
+    def _transition(self, canvas: Image.Image, tr: dict, u: float, a: dict | None, b: dict | None, t: int) -> None:
+        la, lb = self._layer(a, t), self._layer(b, t)
+        kind = tr["type"]
+        if kind in ("dip_to_black", "dip_to_white"):
+            color = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255) if kind == "dip_to_black" else (255, 255, 255, 255))
+            out = mix(la, color, u * 2) if u < 0.5 else mix(color, lb, u * 2 - 1)
+        else:
+            out = mix(la, lb, u)
+        if out is not None:
+            canvas.alpha_composite(out)
+
     def frame(self, t: int) -> Image.Image:
         canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255))
-        clips = self.visible_clips(t)
-        live = {c["id"] for c in clips}
+        items = []
+        for track, trans in self.tracks:
+            if not track["hidden"]:
+                item = self.track_items(track, trans, t)
+                if item:
+                    items.append(item)
+        live = {c["id"] for it in items for c in ([it[1]] if it[0] == "clip" else it[3:]) if c is not None}
         for cid in [k for k in self.active if k not in live]:
             ac = self.active.pop(cid)
             if ac.decoder:
                 ac.decoder.close()
-        for clip in clips:
-            ac = self.active.get(clip["id"])
-            if ac and ac.decoder and self.expected.get(clip["id"]) != t:
-                ac.decoder.close()  # random access: restart at the new time
-                ac = None
-            if ac is None:
-                ac = self._open(clip, t)
-                if ac is None:
-                    continue
-                self.active[clip["id"]] = ac
-            if ac.decoder:
-                img = ac.decoder.next()
-                self.expected[clip["id"]] = t + self.tpf
-                if img is None:
-                    continue
+        for item in items:
+            if item[0] == "clip":
+                self._draw(canvas, item[1], t)
             else:
-                img = ac.still
-            tr = transform_at(clip, t, self.seq, ac.media)
-            tr["src_w"], tr["src_h"] = ac.src_w, ac.src_h
-            place(canvas, img, ac.origin, tr, ac.prescale)
+                self._transition(canvas, item[1], item[2], item[3], item[4], t)
         return canvas
 
     def close(self) -> None:

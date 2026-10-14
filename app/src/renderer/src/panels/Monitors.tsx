@@ -11,8 +11,9 @@ import { DRAG_MIME } from './ProjectPanel'
 import { activeSequence, exec, get, set, sequenceEnd, useStore } from '../state/store'
 import { goTo, type Monitor } from '../state/transport'
 import { focusPanel } from '../layout/dock'
-import { parseTimecode, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
+import { parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
+import { effectCss, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
 import { GraphicView } from './GraphicView'
 
@@ -156,40 +157,99 @@ export function SourceMonitor() {
 
 // ---------------------------------------------------------------- Program: composited stage
 
-type VisualLayer = { key: string; clip: Clip; media: MediaItem | null; z: number }
+type VisualLayer = {
+  key: string
+  clip: Clip | null // null = solid colour (Dip to Black/White)
+  media: MediaItem | null
+  z: number
+  color?: string
+  group?: string // transition group: children are summed (plus-lighter) inside an isolated group
+  fade?: number
+}
 type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number }
 
 export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at: number): { visual: VisualLayer[]; audio: AudioLayer[] } {
   const visual: VisualLayer[] = []
   const audio: AudioLayer[] = []
+  const tpf = ticksPerFrame(seq.settings)
+  const clipLayer = (tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
+    if (clip.graphic) return { key: `g-${clip.id}`, clip, media: null, z, ...extra }
+    const m = clip.media_id ? media[clip.media_id] : undefined
+    if (m && (m.video || m.kind === 'image')) return { key: `v-${tid}-${m.id}${suffix}`, clip, media: m, z, ...extra }
+    return null
+  }
   seq.video_tracks.forEach((tid, z) => {
     const track = seq.tracks[tid]
     if (track.hidden) return
+    const tw = trackTransitions(track).find((w) => w.start <= at && at < w.end)
+    if (tw) {
+      const u = transitionProgress(tw, at, tpf)
+      const group = `t-${tw.tr.id}`
+      const a = tw.a?.enabled ? tw.a : null
+      const b = tw.b?.enabled ? tw.b : null
+      const sameMedia = a && b && a.media_id && a.media_id === b.media_id
+      const push = (l: VisualLayer | null) => l && visual.push(l)
+      if (tw.tr.type === 'dip_to_black' || tw.tr.type === 'dip_to_white') {
+        const color = tw.tr.type === 'dip_to_black' ? '#000' : '#fff'
+        if (u < 0.5) {
+          if (a) push(clipLayer(tid, a, z, { group, fade: 1 - 2 * u }))
+          visual.push({ key: `${group}-solid`, clip: null, media: null, z, color, group, fade: 2 * u })
+        } else {
+          visual.push({ key: `${group}-solid`, clip: null, media: null, z, color, group, fade: 2 - 2 * u })
+          if (b) push(clipLayer(tid, b, z, { group, fade: 2 * u - 1 }))
+        }
+      } else {
+        if (a) push(clipLayer(tid, a, z, { group, fade: 1 - u }))
+        if (b) push(clipLayer(tid, b, z, { group, fade: u }, sameMedia ? '-in' : ''))
+      }
+      return
+    }
     for (const clip of Object.values(track.clips)) {
       if (!clip.enabled || at < clip.start || at >= clip.end) continue
-      if (clip.graphic) {
-        visual.push({ key: `g-${clip.id}`, clip, media: null, z })
-        continue
-      }
-      const m = clip.media_id ? media[clip.media_id] : undefined
-      if (m && (m.video || m.kind === 'image')) visual.push({ key: `v-${tid}-${m.id}`, clip, media: m, z })
+      const l = clipLayer(tid, clip, z)
+      if (l) visual.push(l)
     }
   })
   const anySolo = seq.audio_tracks.some((id) => seq.tracks[id].solo)
   for (const tid of seq.audio_tracks) {
     const track = seq.tracks[tid]
     if (track.muted || (anySolo && !track.solo)) continue
+    // Constant Power crossfades extend clips into their handles
+    const gains = new Map<string, number>()
+    const ext = new Map<string, [number, number]>()
+    for (const w of trackTransitions(track)) {
+      for (const [c, kind] of [[w.a, 'out'], [w.b, 'in']] as const) {
+        if (!c) continue
+        const [s0, e0] = ext.get(c.id) ?? [c.start, c.end]
+        ext.set(c.id, [Math.min(s0, w.start), Math.max(e0, w.end)])
+        if (at >= w.start && at < w.end) {
+          const u = (at - w.start) / Math.max(1, w.end - w.start)
+          gains.set(c.id, (gains.get(c.id) ?? 1) * (kind === 'in' ? Math.sin((u * Math.PI) / 2) : Math.cos((u * Math.PI) / 2)))
+        }
+      }
+    }
     for (const clip of Object.values(track.clips)) {
-      if (!clip.enabled || at < clip.start || at >= clip.end) continue
+      const [s0, e0] = ext.get(clip.id) ?? [clip.start, clip.end]
+      if (!clip.enabled || at < s0 || at >= e0) continue
       const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       audio.push({
-        key: `a-${tid}-${m.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)),
-        volume: dbToGain(valueAt(clip, 'volume_db', at, seq, m) as number)
+        key: `a-${tid}-${m.id}-${at < clip.start ? 'in' : ''}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)),
+        volume: dbToGain(valueAt(clip, 'volume_db', at, seq, m) as number) * (gains.get(clip.id) ?? 1)
       })
     }
   }
   return { visual, audio }
+}
+
+function groupLayers(layers: VisualLayer[]): { group?: string; z: number; layers: VisualLayer[] }[] {
+  const out: { group?: string; z: number; layers: VisualLayer[] }[] = []
+  for (const l of layers) {
+    const last = out[out.length - 1]
+    if (l.group && last?.group === l.group) last.layers.push(l)
+    else out.push({ group: l.group, z: l.z, layers: [l] })
+  }
+  return out
 }
 
 function Stage({ seq, media, at, playing, rate, scale }: {
@@ -234,41 +294,63 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       setDrag(null)
-      const layer = visual.find((l) => l.clip.id === clipId)
+      const layer = visual.find((l) => l.clip?.id === clipId)
       if (!layer || (Math.abs(last.dx) < 0.5 && Math.abs(last.dy) < 0.5)) return
-      const pos = valueAt(layer.clip, 'position', at, seq, layer.media) as number[]
+      const pos = valueAt(layer.clip!, 'position', at, seq, layer.media) as number[]
       void exec('clip.set_property', { sequence_id: seq.id, clip_id: clipId, prop: 'position', value: [pos[0] + last.dx, pos[1] + last.dy], at }, t('Position'))
     }
     window.addEventListener('mousemove', move)
     window.addEventListener('mouseup', up)
   }
 
+  const renderLayer = (l: VisualLayer) => {
+    if (!l.clip) return <div key={l.key} style={{ position: 'absolute', inset: 0, width: W, height: H, background: l.color }} />
+    const clip = l.clip
+    const r = transformAt(clip, at, seq, l.media)
+    if (drag?.clipId === clip.id) r.position = [r.position[0] + drag.dx, r.position[1] + drag.dy]
+    const [w, h] = l.media?.video ? [l.media.video.width, l.media.video.height] : [W, H]
+    const isSel = selected.includes(clip.id)
+    let content: React.ReactNode = clip.graphic ? (
+      <GraphicView graphic={clip.graphic} />
+    ) : (
+      <MediaLayer
+        url={mediaSrc(l.media!)}
+        kind={l.media!.kind === 'image' ? 'image' : 'video'}
+        time={ticksToSeconds(sourceTime(clip, at))}
+        playing={playing}
+        rate={rate * clip.speed}
+        muted
+        style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
+      />
+    )
+    // standard effects run before Motion: the first effect is the innermost wrapper
+    for (const fx of clip.effects ?? []) {
+      const css = effectCss(fx, clip, at, w, h)
+      if (css) content = <div className="lm-fx" data-fx={fx.id} style={{ width: w, height: h, ...css }}>{content}</div>
+    }
+    return (
+      <div key={l.key} data-clip={clip.id} className={`lm-layer ${isSel ? 'selected' : ''}`} style={{ width: w, height: h, zIndex: l.z, ...transformCss(r) }}>
+        {content}
+        {isSel && <div className="lm-layer-box" style={{ borderWidth: 1 / scale }} />}
+      </div>
+    )
+  }
+
   return (
     <div className={`lm-stage ${tool === 'type' ? 'typing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
-      {visual.map((l) => {
-        const r = transformAt(l.clip, at, seq, l.media)
-        if (drag?.clipId === l.clip.id) r.position = [r.position[0] + drag.dx, r.position[1] + drag.dy]
-        const [w, h] = l.media?.video ? [l.media.video.width, l.media.video.height] : [W, H]
-        const isSel = selected.includes(l.clip.id)
-        return (
-          <div key={l.key} data-clip={l.clip.id} className={`lm-layer ${isSel ? 'selected' : ''}`} style={{ width: w, height: h, zIndex: l.z, ...transformCss(r) }}>
-            {l.clip.graphic ? (
-              <GraphicView graphic={l.clip.graphic} />
-            ) : (
-              <MediaLayer
-                url={mediaSrc(l.media!)}
-                kind={l.media!.kind === 'image' ? 'image' : 'video'}
-                time={ticksToSeconds(sourceTime(l.clip, at))}
-                playing={playing}
-                rate={rate * l.clip.speed}
-                muted
-                style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
-              />
-            )}
-            {isSel && <div className="lm-layer-box" style={{ borderWidth: 1 / scale }} />}
+      {groupLayers(visual).map((g) =>
+        g.group ? (
+          <div key={g.group} className="lm-tgroup" style={{ zIndex: g.z }}>
+            {g.layers.map((l) => (
+              <div key={l.key} className="lm-tpart" style={{ width: W, height: H, opacity: l.fade ?? 1 }}>
+                {renderLayer(l)}
+              </div>
+            ))}
           </div>
+        ) : (
+          renderLayer(g.layers[0])
         )
-      })}
+      )}
       {audio.map((a) => (
         <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing} rate={rate * a.clip.speed} volume={a.volume} />
       ))}

@@ -24,6 +24,7 @@ type State = {
   tool: Tool
   snap: boolean
   selectedClips: string[]
+  selectedTransition: string | null
   selectedItems: string[]
   currentBin: string | null
 
@@ -52,6 +53,7 @@ export const useStore = create<State>(() => ({
   tool: 'select',
   snap: true,
   selectedClips: [],
+  selectedTransition: null,
   selectedItems: [],
   currentBin: null,
   sourceMediaId: null,

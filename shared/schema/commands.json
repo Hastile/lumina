@@ -1750,61 +1750,6 @@
     }
   },
   {
-    "name": "project.import_premiere",
-    "description": "Import an Adobe Premiere Pro project: bins, media, sequences, clips, links, markers.",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "path": {
-          "description": "path to a .prproj file (read-only; never modified)",
-          "title": "Path",
-          "type": "string"
-        },
-        "bin_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "bin to import into; default: a new bin named after the project",
-          "title": "Bin Id"
-        },
-        "into_root": {
-          "default": false,
-          "description": "import bins directly into the root (used when opening a .prproj as a new project)",
-          "title": "Into Root",
-          "type": "boolean"
-        },
-        "sequences": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "only these sequence names (default: all)",
-          "title": "Sequences"
-        }
-      },
-      "required": [
-        "path"
-      ],
-      "title": "ImportPremiere",
-      "type": "object"
-    }
-  },
-  {
     "name": "clip.set_property",
     "description": "Set a Motion/Opacity/Volume property. If it is animated, adds or updates the keyframe at `at` (like Premiere).",
     "undoable": true,
@@ -2924,6 +2869,765 @@
         "layer_id"
       ],
       "title": "RemoveLayer",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.add",
+    "description": "Apply a video effect (drag from the Effects panel). Effects run in stack order, before Motion.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "type": {
+          "enum": [
+            "transform",
+            "gaussian_blur"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "position in the effect stack; default last",
+          "title": "Index"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "type"
+      ],
+      "title": "AddEffect",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.remove",
+    "description": "Delete an effect from a clip.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id"
+      ],
+      "title": "EffectRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.set",
+    "description": "Toggle an effect on/off or reorder it in the stack.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the fx toggle",
+          "title": "Enabled"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "move to this stack position",
+          "title": "Index"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id"
+      ],
+      "title": "SetEffect",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.set_param",
+    "description": "Set an effect parameter; if it is animated, adds or updates the keyframe at `at`.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            }
+          ],
+          "title": "Value"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sequence time used when the parameter is animated; default playhead",
+          "title": "At"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id",
+        "param",
+        "value"
+      ],
+      "title": "SetParam",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.toggle_animation",
+    "description": "The stopwatch for an effect parameter.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id",
+        "param"
+      ],
+      "title": "ParamRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.keyframe",
+    "description": "Add / remove / toggle an effect-parameter keyframe at a time, or change its interpolation.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "op": {
+          "default": "toggle",
+          "enum": [
+            "add",
+            "remove",
+            "toggle"
+          ],
+          "title": "Op",
+          "type": "string"
+        },
+        "interp": {
+          "anyOf": [
+            {
+              "enum": [
+                "linear",
+                "ease",
+                "hold"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interp"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id",
+        "param"
+      ],
+      "title": "ParamKeyframe",
+      "type": "object"
+    }
+  },
+  {
+    "name": "effect.set_keyframes",
+    "description": "Replace an effect parameter's keyframes (times relative to the clip start).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "keyframes": {
+          "description": "[{t: clip-relative time, v, interp}] - replaces all; [] stops animating",
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Keyframes",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id",
+        "param",
+        "keyframes"
+      ],
+      "title": "SetParamKeyframes",
+      "type": "object"
+    }
+  },
+  {
+    "name": "transition.add",
+    "description": "Apply a transition at a clip's start or end (drag from Effects > Video/Audio Transitions).\nBetween two adjacent clips it is a two-sided transition; otherwise a fade in/out.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "edge": {
+          "description": "which edit point of the clip",
+          "enum": [
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "cross_dissolve",
+                "dip_to_black",
+                "dip_to_white",
+                "constant_power"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: Cross Dissolve (video) / Constant Power (audio)",
+          "title": "Type"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "1s",
+          "title": "Duration"
+        },
+        "alignment": {
+          "anyOf": [
+            {
+              "enum": [
+                "center",
+                "start",
+                "end"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "center at cut (default between two clips) / start at cut / end at cut",
+          "title": "Alignment"
+        }
+      },
+      "required": [
+        "clip_id",
+        "edge"
+      ],
+      "title": "AddTransition",
+      "type": "object"
+    }
+  },
+  {
+    "name": "transition.apply_default",
+    "description": "Ctrl+D (video), Ctrl+Shift+D (audio), Shift+D (both): apply the default transition.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "kind": {
+          "default": "video",
+          "enum": [
+            "video",
+            "audio",
+            "both"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "apply to both ends of these clips; default: the edit point nearest the playhead on targeted tracks",
+          "title": "Clip Ids"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "1s",
+          "title": "Duration"
+        }
+      },
+      "title": "ApplyDefault",
+      "type": "object"
+    }
+  },
+  {
+    "name": "transition.set",
+    "description": "Change a transition's type, duration or alignment.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "transition_id": {
+          "title": "Transition Id",
+          "type": "string"
+        },
+        "type": {
+          "anyOf": [
+            {
+              "enum": [
+                "cross_dissolve",
+                "dip_to_black",
+                "dip_to_white",
+                "constant_power"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Type"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "alignment": {
+          "anyOf": [
+            {
+              "enum": [
+                "center",
+                "start",
+                "end"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Alignment"
+        }
+      },
+      "required": [
+        "transition_id"
+      ],
+      "title": "SetTransition",
+      "type": "object"
+    }
+  },
+  {
+    "name": "transition.remove",
+    "description": "Delete a transition.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "transition_id": {
+          "title": "Transition Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "transition_id"
+      ],
+      "title": "TransitionRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "project.import_premiere",
+    "description": "Import an Adobe Premiere Pro project: bins, media, sequences, clips, links, markers.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "description": "path to a .prproj file (read-only; never modified)",
+          "title": "Path",
+          "type": "string"
+        },
+        "bin_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "bin to import into; default: a new bin named after the project",
+          "title": "Bin Id"
+        },
+        "into_root": {
+          "default": false,
+          "description": "import bins directly into the root (used when opening a .prproj as a new project)",
+          "title": "Into Root",
+          "type": "boolean"
+        },
+        "sequences": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "only these sequence names (default: all)",
+          "title": "Sequences"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ImportPremiere",
       "type": "object"
     }
   }

@@ -5,7 +5,7 @@ import { t } from '@shared/i18n'
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 import { activeSequence, exec, findClip, useStore } from '../state/store'
 import { goTo } from '../state/transport'
-import { keyframesOf, seqTimeOf, sourceTime, valueAt, type KeyframeProp } from '../util/motion'
+import { keyframesOf, seqTimeOf, sourceTime, valueAt, type Kf, type KeyframeProp } from '../util/motion'
 import { ticksPerFrame } from '../util/time'
 
 export type ClipCtx = { seq: Sequence; clip: Clip; kind: 'video' | 'audio'; media: MediaItem | null; time: number }
@@ -95,36 +95,51 @@ export const LABELS: Record<KeyframeProp, string> = {
 
 /** Stopwatch + value + keyframe navigator, Premiere style. */
 export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: KeyframeProp; children: React.ReactNode; label?: string }) {
-  const kfs = keyframesOf(c.clip, prop)
+  const at = clipTime(c)
+  const base = { sequence_id: c.seq.id, clip_id: c.clip.id, at }
+  return (
+    <KfRow
+      c={c}
+      kfs={keyframesOf(c.clip, prop)}
+      label={t(label ?? LABELS[prop])}
+      onToggle={() => void exec('clip.toggle_animation', { ...base, prop }, t('Toggle animation'))}
+      onKey={() => void exec('clip.keyframe', { ...base, prop }, t('Add/Remove Keyframe'))}
+    >
+      {children}
+    </KfRow>
+  )
+}
+
+/** Generic row: used by Motion/Opacity properties and by effect parameters. */
+export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = true }: {
+  c: ClipCtx; kfs: Kf[] | undefined; label: string; children: React.ReactNode; onToggle: () => void; onKey: () => void; animatable?: boolean
+}) {
   const at = clipTime(c)
   const tol = (ticksPerFrame(c.seq.settings) * c.clip.speed) / 2
   const src = sourceTime(c.clip, at)
-  const onKey = !!kfs?.some((k) => Math.abs(k.t - src) <= tol)
+  const has = !!kfs && kfs.length > 0
+  const onKeyNow = !!kfs?.some((k) => Math.abs(k.t - src) <= tol)
   const times = (kfs ?? []).map((k) => seqTimeOf(c.clip, k.t))
   const prev = [...times].reverse().find((x) => x < at - 1)
   const next = times.find((x) => x > at + 1)
   return (
     <div className="lm-ec-prop">
-      <button
-        className={`stopwatch ${kfs ? 'on' : ''}`}
-        title={t('Toggle animation')}
-        onClick={() => void exec('clip.toggle_animation', { sequence_id: c.seq.id, clip_id: c.clip.id, prop, at }, t('Toggle animation'))}
-      >
-        <Timer size={12} />
-      </button>
-      <span className="pname">{t(label ?? LABELS[prop])}</span>
+      {animatable ? (
+        <button className={`stopwatch ${has ? 'on' : ''}`} title={t('Toggle animation')} onClick={onToggle}>
+          <Timer size={12} />
+        </button>
+      ) : (
+        <span />
+      )}
+      <span className="pname">{label}</span>
       <span className="pval">{children}</span>
       <span className="kfnav">
-        {kfs && (
+        {has && (
           <>
             <button disabled={prev === undefined} title={t('Go to Previous Keyframe')} onClick={() => prev !== undefined && goTo('program', Math.round(prev))}>
               <ChevronLeft size={11} />
             </button>
-            <button
-              className={onKey ? 'on' : ''}
-              title={t('Add/Remove Keyframe')}
-              onClick={() => void exec('clip.keyframe', { sequence_id: c.seq.id, clip_id: c.clip.id, prop, at }, t('Add/Remove Keyframe'))}
-            >
+            <button className={onKeyNow ? 'on' : ''} title={t('Add/Remove Keyframe')} onClick={onKey}>
               <Diamond size={10} />
             </button>
             <button disabled={next === undefined} title={t('Go to Next Keyframe')} onClick={() => next !== undefined && goTo('program', Math.round(next))}>
@@ -133,18 +148,18 @@ export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: Ke
           </>
         )}
       </span>
-      <KeyframeLane c={c} prop={prop} />
+      <KeyframeLane c={c} kfs={kfs} />
     </div>
   )
 }
 
 /** Effect Controls' right-hand mini timeline for one property: diamonds + playhead. */
-function KeyframeLane({ c, prop }: { c: ClipCtx; prop: KeyframeProp }) {
+function KeyframeLane({ c, kfs }: { c: ClipCtx; kfs: Kf[] | undefined }) {
   const span = c.clip.end - c.clip.start
   const pct = (x: number) => `${(100 * (x - c.clip.start)) / span}%`
   return (
     <span className="lane">
-      {(keyframesOf(c.clip, prop) ?? []).map((k, i) => {
+      {(kfs ?? []).map((k, i) => {
         const x = seqTimeOf(c.clip, k.t)
         if (x < c.clip.start || x > c.clip.end) return null
         return (

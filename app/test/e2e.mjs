@@ -197,6 +197,55 @@ try {
   assert.ok(Math.abs(job.result.verification.durationSeconds - job.result.range.seconds) < 0.05)
   log('Ctrl+M export:', job.result.frames, 'frames,', job.result.encoder, `${job.result.elapsed_seconds}s, verified with ffprobe`)
 
+  // ---- effects: Effects panel (Shift+7) > search > double-click Transform on the selected clip
+  const v1clip = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks[seq.video_tracks[0]].clips).sort((a, b) => a.start - b.start)[0].id
+  })
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), v1clip)
+  await page.keyboard.press('Shift+7')
+  await page.locator('.lm-fxtree').waitFor()
+  await page.locator('.lm-panel .lm-search input').last().fill('변형')
+  await page.locator('[data-effect-item="effect:transform"]').dblclick()
+  const fx = await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean)
+    return c.effects.length ? c.effects[0] : null
+  }, v1clip, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.equal(fx.type, 'transform')
+  await page.locator(`.lm-ec [data-effect="${fx.id}"]`).waitFor()
+  await page.evaluate(([cid, fid]) => window.__lumina.engine.exec('effect.set_param', { clip_id: cid, effect_id: fid, param: 'scale', value: 50 }), [v1clip, fx.id])
+  await page.keyboard.press('Home')
+  await page.waitForFunction((fid) => (document.querySelector(`.lm-stage [data-fx="${fid}"]`)?.style.transform ?? '').startsWith('matrix(0.5'), fx.id, { timeout: 10000 })
+  log('Effects panel: Transform applied by double-click, shown in Effect Controls, rendered in the Program monitor')
+
+  // ---- transitions: Ctrl+D at the edit point nearest the playhead, then select + Delete
+  await page.evaluate(() => window.__lumina.engine.exec('clip.razor', { at: '1s' }))
+  await page.evaluate(() => window.__lumina.engine.exec('sequence.set_playhead', { time: '1s' }))
+  await page.locator('.lm-tl-lanes').click({ position: { x: 5, y: 2 } })
+  await page.evaluate(() => window.__lumina.set({ selectedClips: [] }))
+  await page.keyboard.press('Control+d')
+  const trEl = page.locator('.lm-transition').first()
+  await trEl.waitFor({ timeout: 10000 })
+  const tr = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks[seq.video_tracks[0]].transitions)[0]
+  })
+  assert.ok(tr && tr.clip_a && tr.clip_b && tr.type === 'cross_dissolve', JSON.stringify(tr))
+  await page.waitForFunction(() => document.querySelectorAll('.lm-stage .lm-tgroup .lm-tpart').length === 2, null, { timeout: 10000 })
+  log('Ctrl+D: Cross Dissolve at the edit point; Program monitor blends both clips')
+  await trEl.click()
+  await page.keyboard.press('Delete')
+  await page.waitForFunction(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.keys(seq.tracks[seq.video_tracks[0]].transitions).length === 0
+  }, null, { timeout: 10000 })
+  log('transition selected in the timeline and deleted')
+
   if (shot) await page.screenshot({ path: shot })
   log('PASS')
 } catch (err) {

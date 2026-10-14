@@ -154,3 +154,20 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .lm-renderq .meta.error { color: var(--danger); display: block; word-break: break-word; }
 .lm-renderq .spin { animation: lm-spin 1s linear infinite; }
 @keyframes lm-spin { to { transform: rotate(360deg); } }
+
+/* program monitor: transitions + effects */
+.lm-tgroup { position: absolute; left: 0; top: 0; isolation: isolate; }
+.lm-tpart { position: absolute; left: 0; top: 0; mix-blend-mode: plus-lighter; }
+.lm-fx { position: absolute; left: 0; top: 0; }
+
+/* timeline transitions / effects */
+.lm-transition { position: absolute; z-index: 3; background: linear-gradient(to bottom right, rgba(170, 140, 255, 0.85) 49.5%, rgba(110, 80, 200, 0.85) 50.5%); border: 1px solid #c9b8ff; border-radius: 2px; overflow: hidden; font-size: 10px; color: #fff; display: flex; align-items: center; padding: 0 3px; cursor: default; }
+.lm-transition.single { background: rgba(150, 120, 240, 0.85); }
+.lm-transition.selected { outline: 2px solid #fff; }
+.lm-transition span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6); }
+.lm-clip .fx.on { background: #e8c547; color: #222; }
+.lm-ec-group.bypassed .lm-ec-prop { opacity: 0.45; }
+.fxbadge.clickable { cursor: pointer; }
+.fxbadge.off { text-decoration: line-through; opacity: 0.6; }
+.lm-fxtree .node.leaf { cursor: grab; }
+.lm-fxtree .node.leaf:hover { background: rgba(255, 255, 255, 0.06); }

@@ -72,6 +72,16 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Type tool (T) / Ctrl+T new text layer, text editing in Properties (font, size, bold/italic, align, fill, stroke, background) | ✓ |
 | Keyframe interpolation: linear / ease (≈ Premiere's default Bezier) / hold | ✓ (custom Bezier handles ✗) |
 
+## Effects & transitions
+| Item | Status |
+|---|---|
+| Effects panel tree (Video Effects > Distort > Transform, Blur & Sharpen > Gaussian Blur; Video/Audio Transitions), search, drag onto a clip or edit point, double-click to apply | ✓ |
+| Effect Controls: effect groups with fx on/off, delete, keyframes (stopwatch / navigator / lane) per parameter | ✓ |
+| Ctrl+D / Ctrl+Shift+D / Shift+D default transitions; transitions drawn on the timeline, select + Delete, Set Transition Duration... | ✓ |
+| Transitions follow trims; removed when their edit point disappears (same undo step) | ✓ |
+| .prproj: Transform (Geometry2) with keyframes, Gaussian Blur, transitions (incl. Film Impact dissolves as Cross Dissolve) | ✓ |
+| Other effects (Lumetri, Crop effect, Warp Stabilizer, ...), transition handles UI, effect presets | ✗ |
+
 ## Export
 | Item | Status |
 |---|---|
@@ -80,7 +90,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Render queue card: progress, fps, ETA, cancel, Show in Explorer | ✓ |
 | Output verified with ffprobe (duration, size, streams) before "done" | ✓ |
 | What renders: Motion, crop, opacity, keyframes, speed, text graphics, track eye/mute/solo, clip volume + keyframes | ✓ |
-| Effects, transitions, nested sequences, blend modes, audio pan / track volume | ✗ (not rendered yet) |
+| Effects (Transform, Gaussian Blur) and transitions (Cross Dissolve, Dip to Black/White, Constant Power) | ✓ |
+| Other effects, nested sequences, blend modes, audio pan / track volume | ✗ (not rendered yet) |
 
 ## Language
 Korean (Premiere's Korean terminology) is the default; View > Language switches to English.

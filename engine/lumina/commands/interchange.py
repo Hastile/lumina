@@ -90,6 +90,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                 track["hidden"] = tr["muted"] if kind == "video" else False
                 track["targeted"] = track["targeted"]
                 prev_end = 0
+                pending: dict = {}
                 for it in sorted(tr["items"], key=lambda i: i["start"]):
                     graphic = it.get("graphic")
                     if graphic:
@@ -115,6 +116,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
                         "keyframes": it.get("keyframes", {}),
                         "graphic": graphic,
+                        "effects": [{"id": new_id(), **e} for e in it.get("effects", [])],
                     }
                     if clip["start"] != it["start"]:
                         clip["source_in"] += round((clip["start"] - it["start"]) * clip["speed"])
@@ -127,6 +129,18 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         continue
                     track["clips"][clip["id"]] = clip
                     prev_end = clip["end"]
+                    for tr in it.get("transitions", []):
+                        # one Premiere transition object is referenced as the outgoing clip's tail
+                        # and the incoming clip's head
+                        entry = pending.setdefault(tr["uid"], {"tr": tr, "a": None, "b": None})
+                        entry["a" if tr["side"] == "tail" else "b"] = clip["id"]
+                for entry in pending.values():
+                    if entry["a"] is None and entry["b"] is None:
+                        continue
+                    tid_ = new_id()
+                    tr = entry["tr"]
+                    track["transitions"][tid_] = {"id": tid_, "type": tr["type"], "clip_a": entry["a"], "clip_b": entry["b"],
+                                                  "duration": tr["duration"], "alignment": tr["alignment"]}
         for mk in s["markers"]:
             mkid = new_id()
             seq["markers"][mkid] = {"id": mkid, **mk}

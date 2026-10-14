@@ -27,6 +27,7 @@ from ..adb.premiere_export import validate_media_probe
 from ..adb.quiet_process import NO_WINDOW
 from ..commands.registry import CommandError, resolve_time
 from ..media.probe import ffmpeg_bin, run_ffprobe
+from .. import effects as fx_
 from ..motion import value_at
 from .compositor import Compositor, RenderError, media_path
 
@@ -141,11 +142,26 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
     rate = seq["settings"]["sample_rate"]
     total = round((b - a) * rate / TPS)
     buf = np.lib.format.open_memmap(out_path.with_suffix(".npy"), mode="w+", dtype=np.float32, shape=(total, 2)) if total > 0 else None
-    clips = [c for t in _audible_tracks(seq) for c in t["clips"].values() if c["enabled"] and c["end"] > a and c["start"] < b]
-    for i, c in enumerate(clips):
+    # clips with their audio transitions: (clip, shown start, shown end, [(fade start, fade end, "in"|"out")])
+    jobs = []
+    for track in _audible_tracks(seq):
+        fades: dict[str, list] = {}
+        ext: dict[str, list[int]] = {}
+        for ws, we, _tr, ca, cb in fx_.track_transitions(track):
+            for c, kind in ((ca, "out"), (cb, "in")):
+                if c is None:
+                    continue
+                fades.setdefault(c["id"], []).append((ws, we, kind))
+                r = ext.setdefault(c["id"], [c["start"], c["end"]])
+                r[0], r[1] = min(r[0], ws), max(r[1], we)
+        for c in track["clips"].values():
+            s0, e0 = ext.get(c["id"], (c["start"], c["end"]))
+            if c["enabled"] and e0 > a and s0 < b:
+                jobs.append((c, s0, e0, fades.get(c["id"], [])))
+    for i, (c, s0, e0, fades) in enumerate(jobs):
         if cancelled():
             return
-        progress(i / max(1, len(clips)))
+        progress(i / max(1, len(jobs)))
         media = doc["media"].get(c["media_id"] or "")
         if not media or not media.get("audio"):
             continue
@@ -153,14 +169,27 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
         if path is None:
             warn(f"media offline, audio silent: {media['name']}")
             continue
-        s, e = max(c["start"], a), min(c["end"], b)
+        s, e = max(s0, a), min(e0, b)
         src = c["source_in"] + round((s - c["start"]) * c["speed"])
+        if src < 0:  # transition reaches before the media starts: silence until it does
+            s -= round(src / c["speed"])
+            src = 0
+            if s >= e:
+                continue
         pcm = decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate)
         off = round((s - a) * rate / TPS)
         n = min(len(pcm), round((e - a) * rate / TPS) - off, total - off)
         if n <= 0:
             continue
         pcm = pcm[:n]
+        if fades:
+            t_ = s + (np.arange(n, dtype=np.float64) * TPS) / rate
+            gain = np.ones(n, dtype=np.float64)
+            for ws, we, kind in fades:
+                u = np.clip((t_ - ws) / max(1, we - ws), 0.0, 1.0)
+                # Constant Power: equal-power crossfade
+                gain *= np.sin(u * np.pi / 2) if kind == "in" else np.cos(u * np.pi / 2)
+            pcm = pcm * gain.astype(np.float32)[:, None]
         if c.get("keyframes", {}).get("volume_db"):
             # gain envelope sampled every 10 ms, interpolated per sample
             step = rate // 100

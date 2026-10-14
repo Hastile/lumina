@@ -303,8 +303,8 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                 if speed < 0:
                     stats["reversed"] += 1
                     speed = -speed
-                if cti.find("HeadTransition") is not None or cti.find("TailTransition") is not None:
-                    stats["transitions"] += 1
+                transitions = [t for t in (_transition(g, g.ref(cti.find("HeadTransition")), "head", kind, stats),
+                                           _transition(g, g.ref(cti.find("TailTransition")), "tail", kind, stats)) if t]
                 media = None if graphic else out.media[target.get("ObjectUID")]
                 fx = _motion(g, cti, seq_w, seq_h, media, stats) if kind == "video" else {}
                 items.append({
@@ -318,6 +318,7 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                                     "rose" if graphic else ("iris" if kind == "video" else "caribbean")),
                     "link": links.get(item.get("ObjectID")),
                     "graphic": graphic and {"layers": graphic["layers"], "source": graphic["source"]},
+                    "transitions": transitions,
                     **fx,
                 })
             result.append({"muted": _text(tr, "ClipTrack/Track/IsMuted") == "true", "items": items})
@@ -337,12 +338,13 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
         parts.append(f"{stats['nested']} nested-sequence clip(s)")
     if stats["graphics"]:
         parts.append(f"{stats['graphics']} graphics/synthetic clip(s)")
-    if stats["transitions"]:
-        parts.append(f"{stats['transitions']} transition(s)")
     if stats["reversed"]:
         parts.append(f"{stats['reversed']} reversed clip(s) imported forward")
     if stats["effects"]:
-        parts.append(f"{stats['effects']} effect(s) other than Motion/Opacity (blur, Transform, ...)")
+        names = ", ".join(sorted(stats.get("effect_names", ())))
+        parts.append(f"{stats['effects']} unsupported effect(s) ({names})")
+    if stats.get("approx_transitions"):
+        parts.append(f"transition(s) imported as dissolves: {', '.join(sorted(stats['approx_transitions']))}")
     if stats["shapes"]:
         parts.append(f"{stats['shapes']} shape layer(s)")
     if stats["approx_text"]:
@@ -473,6 +475,7 @@ def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | Non
 
     motion: dict = {}
     keyframes: dict = {}
+    effects: list = []
     opacity = 100.0
     for comp in _components(g, cti):
         match = _text(comp, "MatchName")
@@ -500,9 +503,83 @@ def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | Non
                 keyframes["opacity"] = kfs
         elif match in ("AE.ADBE Text", "AE.ADBE Capsule", "AE.ADBE Shape"):
             pass  # graphic content, handled by _graphic
+        elif match in EFFECT_PARAMS:
+            effects.append(_effect(g, comp, EFFECT_PARAMS[match], sw, sh))
         else:
             stats["effects"] += 1
-    return {"motion": motion, "keyframes": keyframes, "opacity": opacity}
+            stats.setdefault("effect_names", set()).add(_text(comp, "DisplayName") or match)
+    return {"motion": motion, "keyframes": keyframes, "opacity": opacity, "effects": effects}
+
+
+# Premiere effect MatchName -> (lumina type, {ParameterID: (name, kind)})
+EFFECT_PARAMS = {
+    "AE.ADBE Geometry2": ("transform", {
+        1: ("anchor", "point"), 2: ("position", "point"), 3: ("scale", "number"), 4: ("scale_width", "number"),
+        5: ("skew", "number"), 6: ("skew_axis", "number"), 7: ("rotation", "number"), 8: ("opacity", "number"),
+        11: ("uniform", "bool"),
+    }),
+    "AE.ADBE Gaussian Blur 2": ("gaussian_blur", {
+        1: ("blurriness", "number"), 2: ("dimensions", "number"), 3: ("repeat_edge", "bool"),
+    }),
+}
+
+
+def _effect(g: Graph, comp: ET.Element, spec: tuple, sw: float, sh: float) -> dict:
+    """Map a standard effect component; points are normalized to the clip frame in Premiere."""
+    kind, params = spec
+
+    def conv(ptype: str, v):
+        if ptype == "point":
+            return [float(v[0]) * sw, float(v[1]) * sh]
+        if ptype == "bool":
+            return bool(v)
+        return float(v)
+
+    out = {"type": kind, "enabled": _text(comp, "Component/Bypass") != "true", "params": {}, "keyframes": {}}
+    for pid, pe in _params(g, comp).items():
+        if pid not in params:
+            continue
+        name, ptype = params[pid]
+        try:
+            v = _param_static(pe)
+            if v is not None:
+                out["params"][name] = conv(ptype, v)
+            kfs = _param_keyframes(pe)
+            if kfs and ptype != "bool":
+                out["keyframes"][name] = [{**k, "v": conv(ptype, k["v"])} for k in kfs]
+        except (TypeError, IndexError, ValueError):
+            continue
+    return out
+
+
+TRANSITION_TYPES = {
+    "AE.ADBE Cross Dissolve New": "cross_dissolve", "AE.ADBE Cross Dissolve": "cross_dissolve",
+    "AE.AE_Impact_Dissolve": "cross_dissolve", "AE.ADBE Additive Dissolve": "cross_dissolve",
+    "AE.ADBE Film Dissolve": "cross_dissolve",
+    "AE.ADBE Dip To Black": "dip_to_black", "AE.ADBE Dip To White": "dip_to_white",
+    "AE.ADBE Constant Power": "constant_power", "AE.ADBE Constant Gain": "constant_power",
+    "AE.ADBE Exponential Fade": "constant_power",
+}
+
+
+def _transition(g: Graph, el: ET.Element | None, side: str, kind: str, stats: dict) -> dict | None:
+    if el is None:
+        return None
+    tti = el.find("TransitionTrackItem")
+    if tti is None:
+        return None
+    start, end = _int(tti, "TrackItem/Start", 0), _int(tti, "TrackItem/End", 0)
+    if end <= start:
+        return None
+    match = _text(tti, "MatchName") or ""
+    ttype = TRANSITION_TYPES.get(match)
+    if ttype is None:
+        ttype = "constant_power" if kind == "audio" else "cross_dissolve"
+        stats.setdefault("approx_transitions", set()).add(_text(tti, "DisplayName") or match)
+    offset = _int(tti, "Alignment", (end - start) // 2)
+    align = "start" if offset <= 0 else "end" if offset >= end - start else "center"
+    return {"uid": el.get("ObjectID"), "side": side, "type": ttype, "duration": end - start, "alignment": align,
+            "outgoing": _text(tti, "HasOutgoingClip") == "true", "incoming": _text(tti, "HasIncomingClip") == "true"}
 
 
 def _length_prefixed_strings(blob: bytes) -> list[str]:

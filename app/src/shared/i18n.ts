@@ -270,7 +270,36 @@ const ko: Record<string, string> = {
   'remaining': '남음',
   'Output verified with ffprobe': 'ffprobe로 출력 확인됨',
   Close: '닫기',
-  Stereo: '스테레오'
+  Stereo: '스테레오',
+  // effects & transitions
+  'Apply Video Transition': '비디오 전환 적용',
+  'Apply Audio Transition': '오디오 전환 적용',
+  'Apply Default Transitions to Selection': '선택 항목에 기본 전환 적용',
+  'Apply Transition': '전환 적용',
+  'Apply Effect': '효과 적용',
+  'Set Transition Duration...': '전환 지속 시간 설정...',
+  'Drop onto a clip': '클립 위에 놓으세요',
+  'Video effects go on video clips': '비디오 효과는 비디오 클립에 적용됩니다',
+  'Toggle effect on/off': '효과 켜기/끄기',
+  'Delete Effect': '효과 삭제',
+  'Distort': '왜곡',
+  'Blur & Sharpen': '흐림 및 선명',
+  'Gaussian Blur': '가우시안 흐림',
+  'Dissolve': '디졸브',
+  'Cross Dissolve': '교차 디졸브',
+  'Dip to Black': '검정으로 물들이기',
+  'Dip to White': '흰색으로 물들이기',
+  'Crossfade': '크로스페이드',
+  'Constant Power': '지속 가감속',
+  'Scale Height': '높이 비율 조정',
+  'Skew': '기울이기',
+  'Skew Axis': '축 기울이기',
+  'Blurriness': '흐림',
+  'Blur Dimensions': '흐림 차원',
+  'Repeat Edge Pixels': '가장자리 픽셀 반복',
+  'Horizontal and Vertical': '수평 및 수직',
+  'Horizontal': '수평',
+  'Vertical': '수직'
 }
 
 let locale: Locale = 'ko'

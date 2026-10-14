@@ -172,6 +172,28 @@ export type Layers = TextLayer[];
  * origin, e.g. 'mogrt:Title' for imported Premiere graphics
  */
 export type Source = string | null;
+export type Id7 = string;
+export type Type1 = "transform" | "gaussian_blur";
+export type Enabled1 = boolean;
+export type Effects = Effect[];
+export type Id8 = string;
+export type Type2 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
+/**
+ * outgoing clip (ends at the cut)
+ */
+export type ClipA = string | null;
+/**
+ * incoming clip (starts at the cut)
+ */
+export type ClipB = string | null;
+/**
+ * ticks
+ */
+export type Duration1 = number;
+/**
+ * center at cut / start at cut (over clip_b) / end at cut (over clip_a)
+ */
+export type Alignment = "center" | "start" | "end";
 /**
  * bottom (V1) to top
  */
@@ -180,9 +202,9 @@ export type VideoTracks = string[];
  * top (A1) to bottom
  */
 export type AudioTracks = string[];
-export type Id7 = string;
+export type Id9 = string;
 export type Start1 = number;
-export type Duration1 = number;
+export type Duration2 = number;
 export type Name6 = string;
 export type Comment = string;
 export type Color1 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
@@ -306,6 +328,7 @@ export interface Track {
   solo: Solo;
   targeted: Targeted;
   clips: Clips;
+  transitions: Transitions;
 }
 export interface Clips {
   [k: string]: Clip;
@@ -330,6 +353,7 @@ export interface Clip {
   motion: Motion;
   keyframes: Keyframes;
   graphic: Graphic | null;
+  effects: Effects;
 }
 /**
  * Premiere's intrinsic Motion effect.
@@ -392,6 +416,45 @@ export interface TextLayer {
   opacity: Opacity1;
   approximate: Approximate;
 }
+/**
+ * A standard effect, applied in order before the intrinsic Motion/Opacity
+ * (Premiere's render order). Params and keyframes are keyed by the names in
+ * ``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Effect".
+ */
+export interface Effect {
+  id: Id7;
+  type: Type1;
+  enabled: Enabled1;
+  params: Params;
+  keyframes: Keyframes1;
+}
+export interface Params {
+  [k: string]: number | boolean | number[];
+}
+export interface Keyframes1 {
+  [k: string]: Keyframe[];
+}
+export interface Transitions {
+  [k: string]: Transition;
+}
+/**
+ * A transition at an edit point. Its position follows the clips: the cut is
+ * ``clip_a``'s end (or ``clip_b``'s start for a single-sided one).
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Transition".
+ */
+export interface Transition {
+  id: Id8;
+  type: Type2;
+  clip_a: ClipA;
+  clip_b: ClipB;
+  duration: Duration1;
+  alignment: Alignment;
+}
 export interface Markers {
   [k: string]: Marker;
 }
@@ -400,9 +463,9 @@ export interface Markers {
  * via the `definition` "Marker".
  */
 export interface Marker {
-  id: Id7;
+  id: Id9;
   start: Start1;
-  duration: Duration1;
+  duration: Duration2;
   name: Name6;
   comment: Comment;
   color: Color1;

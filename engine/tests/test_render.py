@@ -186,3 +186,19 @@ def test_export_cancel_leaves_no_partial_file(media):
     assert not out.exists() and not list(media["dir"].glob("cancel.partial*"))
     assert any(ev.get("type") == "job" and ev["job"]["id"] == job["id"] for ev in events)
     json.dumps(e.dispatch("jobs.list"))  # serializable for the RPC/MCP layers
+
+
+def test_audio_constant_power_fade_out(media):
+    e, (vid,) = engine_with([media["video"]])
+    r = run(e, "sequence.create_from_media", media_id=vid)
+    run(e, "transition.add", clip_id=r["audio_clip_id"], edge="end", duration="1s")
+    out = media["dir"] / "fade.wav"
+    job = e.dispatch("export.start", {"path": str(out), "preset": "wav", "wait": True})
+    assert job["status"] == "done", job["error"]
+    p = subprocess.run(["ffmpeg", "-v", "error", "-i", str(out), "-ac", "1", "-f", "f32le", "-"], capture_output=True, check=True)
+    pcm = np.frombuffer(p.stdout, dtype=np.float32)
+    rms = lambda x: float(np.sqrt(np.mean(x ** 2)))  # noqa: E731
+    sr = 48000
+    full, mid, end = rms(pcm[sr // 2:sr]), rms(pcm[int(2.45 * sr):int(2.55 * sr)]), rms(pcm[-sr // 50:])
+    assert mid / full == pytest.approx(np.cos(np.pi / 4), rel=0.08)  # equal power at the midpoint
+    assert end / full < 0.1

@@ -20,6 +20,7 @@ from typing import Any, Callable
 from pydantic import ValidationError
 
 from . import commands as _commands  # noqa: F401  (registers commands)
+from .commands.effects import prune_transitions
 from .commands.registry import REGISTRY, CommandError, Context
 from .model import new_project, validate_project
 from .patch import Mutator, Patch, apply_all
@@ -97,6 +98,8 @@ class Session:
             m = Mutator(self.doc)
             try:
                 result = spec.handler(Context(m=m, services=self.services), parsed)
+                if m.forward and spec.undoable:
+                    prune_transitions(Context(m=m, services=self.services))
             except CommandError:
                 m.rollback()
                 raise

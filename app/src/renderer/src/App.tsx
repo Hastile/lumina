@@ -12,7 +12,8 @@ import { ProgramMonitor, SourceMonitor } from './panels/Monitors'
 import { TimelinePanel } from './timeline/TimelinePanel'
 import { EffectControlsPanel } from './panels/EffectControls'
 import { ToolsPanel } from './panels/ToolsPanel'
-import { AudioMeters, AudioMixerPanel, EffectsPanel, MediaBrowserPanel } from './panels/Placeholders'
+import { AudioMeters, AudioMixerPanel, MediaBrowserPanel } from './panels/Placeholders'
+import { EffectsPanel } from './panels/EffectsPanel'
 import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel, TextPanel } from './panels/RightPanels'
 
 const panel = (id: PanelId, C: React.FC) => {

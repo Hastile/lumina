@@ -246,7 +246,7 @@ def graphic_clip(name: str, start: int, end: int, layers: list[dict], source: st
         "enabled": True, "link_id": None, "label": label, "opacity": 100.0, "volume_db": 0.0,
         "motion": {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0, "anchor": None,
                    "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0},
-        "keyframes": {}, "graphic": {"layers": layers, "source": source},
+        "keyframes": {}, "graphic": {"layers": layers, "source": source}, "effects": [],
     }
 
 

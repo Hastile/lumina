@@ -188,6 +188,13 @@
             }
           ],
           "default": null
+        },
+        "effects": {
+          "items": {
+            "$ref": "#/$defs/Effect"
+          },
+          "title": "Effects",
+          "type": "array"
         }
       },
       "required": [
@@ -205,9 +212,72 @@
         "volume_db",
         "motion",
         "keyframes",
-        "graphic"
+        "graphic",
+        "effects"
       ],
       "title": "Clip",
+      "type": "object"
+    },
+    "Effect": {
+      "additionalProperties": false,
+      "description": "A standard effect, applied in order before the intrinsic Motion/Opacity\n(Premiere's render order). Params and keyframes are keyed by the names in\n``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "enum": [
+            "transform",
+            "gaussian_blur"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "params": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "title": "Params",
+          "type": "object"
+        },
+        "keyframes": {
+          "additionalProperties": {
+            "items": {
+              "$ref": "#/$defs/Keyframe"
+            },
+            "type": "array"
+          },
+          "title": "Keyframes",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "enabled",
+        "params",
+        "keyframes"
+      ],
+      "title": "Effect",
       "type": "object"
     },
     "Graphic": {
@@ -911,6 +981,13 @@
           },
           "title": "Clips",
           "type": "object"
+        },
+        "transitions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Transition"
+          },
+          "title": "Transitions",
+          "type": "object"
         }
       },
       "required": [
@@ -923,9 +1000,83 @@
         "muted",
         "solo",
         "targeted",
-        "clips"
+        "clips",
+        "transitions"
       ],
       "title": "Track",
+      "type": "object"
+    },
+    "Transition": {
+      "additionalProperties": false,
+      "description": "A transition at an edit point. Its position follows the clips: the cut is\n``clip_a``'s end (or ``clip_b``'s start for a single-sided one).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "default": "cross_dissolve",
+          "enum": [
+            "cross_dissolve",
+            "dip_to_black",
+            "dip_to_white",
+            "constant_power"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "clip_a": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "outgoing clip (ends at the cut)",
+          "title": "Clip A"
+        },
+        "clip_b": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "incoming clip (starts at the cut)",
+          "title": "Clip B"
+        },
+        "duration": {
+          "description": "ticks",
+          "title": "Duration",
+          "type": "integer"
+        },
+        "alignment": {
+          "default": "center",
+          "description": "center at cut / start at cut (over clip_b) / end at cut (over clip_a)",
+          "enum": [
+            "center",
+            "start",
+            "end"
+          ],
+          "title": "Alignment",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "clip_a",
+        "clip_b",
+        "duration",
+        "alignment"
+      ],
+      "title": "Transition",
       "type": "object"
     },
     "VideoStream": {

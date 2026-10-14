@@ -8,7 +8,7 @@ import { engine } from './engine/client'
 import { useStore } from './state/store'
 
 // test/automation hook (used by scripts/e2e.mjs)
-;(window as unknown as Record<string, unknown>).__lumina = { get: useStore.getState, engine }
+;(window as unknown as Record<string, unknown>).__lumina = { get: useStore.getState, set: useStore.setState, engine }
 
 let locale: Locale = 'ko'
 try {

@@ -334,6 +334,10 @@ def('edit.clear', t('Clear'), async () => {
   }
   const seq = activeSequence()
   if (seq && s.selectedClips.length) await exec('clip.remove', { sequence_id: seq.id, clip_ids: s.selectedClips, include_linked: false }, 'Clear')
+  else if (seq && s.selectedTransition) {
+    await exec('transition.remove', { sequence_id: seq.id, transition_id: s.selectedTransition }, t('Clear'))
+    set({ selectedTransition: null })
+  }
 })
 def('edit.rippleDelete', t('Ripple Delete'), async () => {
   const seq = activeSequence()
@@ -384,6 +388,17 @@ def('sequence.addEditAll', t('Add Edit to All Tracks'), async () => {
 })
 def('sequence.lift', t('Lift'), () => liftExtract(false))
 def('sequence.extract', t('Extract'), () => liftExtract(true))
+
+// Ctrl+D / Ctrl+Shift+D / Shift+D: default transitions (selected clips, else the edit point nearest the playhead)
+async function applyDefaultTransition(kind: 'video' | 'audio' | 'both'): Promise<void> {
+  const seq = activeSequence()
+  if (!seq) return
+  const sel = get().selectedClips
+  await exec('transition.apply_default', { sequence_id: seq.id, kind, clip_ids: sel.length ? sel : null }, t('Apply Transition'))
+}
+def('sequence.applyVideoTransition', t('Apply Video Transition'), () => applyDefaultTransition('video'))
+def('sequence.applyAudioTransition', t('Apply Audio Transition'), () => applyDefaultTransition('audio'))
+def('sequence.applyDefaultTransitions', t('Apply Default Transitions to Selection'), () => applyDefaultTransition('both'))
 def('sequence.rippleTrimPrev', t('Ripple Trim Previous Edit to Playhead'), () => rippleTrimToPlayhead('prev'))
 def('sequence.rippleTrimNext', t('Ripple Trim Next Edit to Playhead'), () => rippleTrimToPlayhead('next'))
 def('sequence.toggleSnap', t('Snap in Timeline'), () => set((s) => ({ snap: !s.snap })))

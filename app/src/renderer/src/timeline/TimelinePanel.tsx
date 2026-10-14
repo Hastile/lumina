@@ -1,3 +1,6 @@
+import { EFFECT_MIME, type EffectDrag } from '../panels/EffectsPanel'
+import { EFFECTS, TRANSITIONS, trackTransitions, type TransitionWindow } from '../util/effects'
+import { transitionDurationDialog } from './transitionDialog'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t as tx } from '@shared/i18n'
 import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw } from 'lucide-react'
@@ -83,6 +86,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const tool = useStore((s) => s.tool)
   const snapOn = useStore((s) => s.snap)
   const selected = useStore((s) => s.selectedClips)
+  const selectedTransition = useStore((s) => s.selectedTransition)
   const playing = useStore((s) => s.playing === 'program')
 
   const lanesRef = useRef<HTMLDivElement>(null)
@@ -323,6 +327,23 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const dropOnLanes = async (e: React.DragEvent) => {
     e.preventDefault()
     setDropTarget(null)
+    const fxRaw = e.dataTransfer.getData(EFFECT_MIME)
+    if (fxRaw) {
+      const item = JSON.parse(fxRaw) as EffectDrag
+      const { x, y } = laneXY(e)
+      const r = rows[rowAt(y)]
+      const at = toT(x)
+      const clip = r && Object.values(r.track.clips).find((c) => c.start <= at && at < c.end)
+      if (!r || !clip) return toast(tx('Drop onto a clip'), 'info')
+      if (item.kind === 'effect') {
+        if (r.kind !== 'video') return toast(tx('Video effects go on video clips'), 'info')
+        await exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, tx('Apply Effect'))
+      } else {
+        const edge = at - clip.start < clip.end - at ? 'start' : 'end'
+        await exec('transition.add', { sequence_id: seq.id, clip_id: clip.id, edge, type: item.type }, tx('Apply Transition'))
+      }
+      return
+    }
     const ids = JSON.parse(e.dataTransfer.getData(DRAG_MIME) || '[]') as string[]
     const doc = get().doc!
     const items = ids.map((id) => doc.media[id]).filter((m): m is MediaItem => !!m)
@@ -420,7 +441,43 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {clip.speed !== 1 && <b>{Math.round(clip.speed * 100)}% </b>}
           {clip.name}
         </span>
-        {row.kind === 'video' && (clip.opacity !== 100 || Object.keys(clip.keyframes).length > 0 || clip.motion.position || clip.motion.scale !== 100 || clip.motion.rotation !== 0) && <span className="fx">fx</span>}
+        {row.kind === 'video' && (clip.effects?.length ?? 0) > 0 ? (
+          <span className="fx on" title={(clip.effects ?? []).map((f) => tx(EFFECTS[f.type].label)).join(', ')}>fx</span>
+        ) : (
+          row.kind === 'video' && (clip.opacity !== 100 || Object.keys(clip.keyframes).length > 0 || clip.motion.scale !== 100 || clip.motion.rotation !== 0) && <span className="fx">fx</span>
+        )}
+      </div>
+    )
+  }
+
+  const renderTransition = (w: TransitionWindow, row: (typeof rows)[number]) => {
+    const x0 = toX(w.start)
+    const x1 = toX(w.end)
+    if (x1 < -50 || x0 > width + 50) return null
+    const isSel = selectedTransition === w.tr.id && !selected.length
+    const label = tx(TRANSITIONS[w.tr.type].label)
+    return (
+      <div
+        key={w.tr.id}
+        data-transition={w.tr.id}
+        className={`lm-transition ${isSel ? 'selected' : ''} ${w.a && w.b ? '' : 'single'}`}
+        style={{ left: x0, width: Math.max(4, x1 - x0), top: row.top + 1, height: Math.max(10, (row.height - 2) / 2) }}
+        title={`${label} · ${timecode(w.end - w.start, st)}`}
+        onMouseDown={(e) => {
+          e.stopPropagation()
+          if (e.button === 0) set({ selectedTransition: w.tr.id, selectedClips: [] })
+        }}
+        onDoubleClick={() => transitionDurationDialog(seq.id, w.tr.id, w.end - w.start, st)}
+        onContextMenu={(e) => {
+          set({ selectedTransition: w.tr.id, selectedClips: [] })
+          openContextMenu(e, [
+            { label: tx('Set Transition Duration...'), run: () => transitionDurationDialog(seq.id, w.tr.id, w.end - w.start, st) },
+            'sep',
+            { label: tx('Clear'), run: () => void exec('transition.remove', { sequence_id: seq.id, transition_id: w.tr.id }, tx('Clear')) }
+          ])
+        }}
+      >
+        <span>{label}</span>
       </div>
     )
   }
@@ -494,6 +551,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
               <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''}`} style={{ top: r.top, height: r.height }} />
             ))}
             {rows.map((r, i) => Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
+            {rows.map((r) => trackTransitions(r.track).map((w) => renderTransition(w, r)))}
             {inOut && <div className="lm-lane-inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0), height: layout.height }} />}
             <div className="lm-playhead" style={{ left: toX(time), height: layout.height + 40 }} />
             {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: layout.height }} />}

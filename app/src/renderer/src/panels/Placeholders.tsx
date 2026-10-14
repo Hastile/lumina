@@ -1,7 +1,5 @@
 // Panels that exist in Premiere's Editing workspace but whose features land in
 // later milestones (see plan: M3 effects/audio). They keep the layout faithful.
-import { Folder, Search } from 'lucide-react'
-import { t } from '@shared/i18n'
 import { activeSequence, exec, useStore } from '../state/store'
 
 export function AudioMixerPanel() {
@@ -23,24 +21,6 @@ export function AudioMixerPanel() {
           </div>
         )
       })}
-    </div>
-  )
-}
-
-const EFFECT_TREE = ['Presets', 'Lumetri Presets', 'Audio Effects', 'Audio Transitions', 'Video Effects', 'Video Transitions']
-
-export function EffectsPanel() {
-  return (
-    <div className="lm-panel">
-      <div className="lm-toolbar">
-        <div className="lm-search"><Search size={13} /><input disabled placeholder="" /></div>
-      </div>
-      <div className="lm-tree">
-        {EFFECT_TREE.map((n) => (
-          <div key={n} className="node"><Folder size={13} color="#c9a64a" /> {n}</div>
-        ))}
-        <div className="lm-empty">{t('Effects arrive with the GPU compositor (milestone M3).')}</div>
-      </div>
     </div>
   )
 }

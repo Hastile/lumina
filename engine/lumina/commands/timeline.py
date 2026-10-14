@@ -259,6 +259,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,
+            "effects": [],
         }
         write_clip(ctx, seq, tid, clip)
         created[f"{kind}_clip_id"] = clip["id"]

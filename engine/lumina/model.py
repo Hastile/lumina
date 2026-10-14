@@ -122,6 +122,33 @@ class Graphic(_Model):
     source: str | None = Field(default=None, description="origin, e.g. 'mogrt:Title' for imported Premiere graphics")
 
 
+EffectType = Literal["transform", "gaussian_blur"]
+TransitionType = Literal["cross_dissolve", "dip_to_black", "dip_to_white", "constant_power"]
+
+
+class Effect(_Model):
+    """A standard effect, applied in order before the intrinsic Motion/Opacity
+    (Premiere's render order). Params and keyframes are keyed by the names in
+    ``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's."""
+    id: str
+    type: EffectType
+    enabled: bool = True
+    params: dict[str, float | bool | list[float]] = Field(default_factory=dict)
+    keyframes: dict[str, list[Keyframe]] = Field(default_factory=dict)
+
+
+class Transition(_Model):
+    """A transition at an edit point. Its position follows the clips: the cut is
+    ``clip_a``'s end (or ``clip_b``'s start for a single-sided one)."""
+    id: str
+    type: TransitionType = "cross_dissolve"
+    clip_a: str | None = Field(default=None, description="outgoing clip (ends at the cut)")
+    clip_b: str | None = Field(default=None, description="incoming clip (starts at the cut)")
+    duration: int = Field(description="ticks")
+    alignment: Literal["center", "start", "end"] = Field(
+        default="center", description="center at cut / start at cut (over clip_b) / end at cut (over clip_a)")
+
+
 class Clip(_Model):
     id: str
     media_id: str | None = Field(description="null for graphics")
@@ -138,6 +165,7 @@ class Clip(_Model):
     motion: Motion = Field(default_factory=Motion)
     keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
     graphic: Graphic | None = None
+    effects: list[Effect] = Field(default_factory=list)
 
 
 class Track(_Model):
@@ -151,6 +179,7 @@ class Track(_Model):
     solo: bool = False
     targeted: bool = True
     clips: dict[str, Clip] = Field(default_factory=dict)
+    transitions: dict[str, Transition] = Field(default_factory=dict)
 
 
 class Marker(_Model):

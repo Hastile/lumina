@@ -277,6 +277,7 @@ def _make_track(kind: str, index: int) -> dict:
         "solo": False,
         "targeted": index == 1,
         "clips": {},
+        "transitions": {},
     }
 
 

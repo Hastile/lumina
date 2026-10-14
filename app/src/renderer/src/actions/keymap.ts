@@ -32,6 +32,9 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   'Ctrl+L': 'clip.link',
   // Sequence
   'Ctrl+K': 'sequence.addEdit',
+  'Ctrl+D': 'sequence.applyVideoTransition',
+  'Ctrl+Shift+D': 'sequence.applyAudioTransition',
+  'Shift+D': 'sequence.applyDefaultTransitions',
   'Ctrl+Shift+K': 'sequence.addEditAll',
   ';': 'sequence.lift',
   "'": 'sequence.extract',
