@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { t } from '@shared/i18n'
 import { DockviewReact, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react'
 import { Home } from 'lucide-react'
 import { installKeymap } from './actions/keymap'
@@ -62,7 +63,7 @@ function TopBar() {
         {history.dirty ? ' *' : ''}
       </span>
       <span className="status">
-        {history.in_transaction && <span>Transaction open</span>}
+        {history.in_transaction && <span>{t('Transaction open')}</span>}
         <span>
           <span className={`dot ${connected ? '' : 'off'}`} />
           {connected ? 'Engine' : 'Engine offline'}
@@ -104,7 +105,7 @@ export function App() {
       {fatal && (
         <div className="lm-fatal">
           <div>
-            <b>The Lumina engine could not start.</b>
+            <b>{t('The Lumina engine could not start.')}</b>
             {'\n\n'}
             {fatal}
             {'\n\n'}Check that uv and FFmpeg are installed, or set LUMINA_ENGINE_CMD.

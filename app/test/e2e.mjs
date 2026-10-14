@@ -121,6 +121,63 @@ try {
   assert.ok(Math.abs(check.actual - check.expected) < 0.005, `monitor frame ${check.actual} vs ${check.expected}`)
   log('program monitor on exact frame:', check.expected.toFixed(3), 's')
 
+  // ---- graphics: Type tool (T) + click in the Program monitor creates a text layer
+  await page.keyboard.press('Home')
+  await page.keyboard.press('t')
+  const stage = page.locator('.lm-stage')
+  const sb = await stage.boundingBox()
+  await page.mouse.click(sb.x + sb.width * 0.5, sb.y + sb.height * 0.25)
+  const g = await page.waitForFunction(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    for (const tid of seq.video_tracks) for (const c of Object.values(seq.tracks[tid].clips)) if (c.graphic) return { id: c.id, layer: c.graphic.layers[0] }
+    return null
+  }, null, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.ok(Math.abs(g.layer.position[1] - 720 * 0.25) < 4, `text placed where clicked (${g.layer.position})`)
+  log('Type tool created a text layer at', g.layer.position.map(Math.round))
+
+  // edit the text in the Properties panel
+  const ta = page.locator('.lm-props textarea').first()
+  await ta.fill('자막 테스트')
+  await ta.press('Control+Enter')
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks).some((tr) => tr.clips[id]?.graphic.layers[0].text === '자막 테스트')
+  }, g.id, { timeout: 10000 })
+  await page.locator('.lm-stage [data-layer]').filter({ hasText: '자막 테스트' }).waitFor()
+  log('text edited in Properties and rendered in the Program monitor')
+
+  // drag the selected graphic in the Program monitor -> Motion position changes
+  const lb = await page.locator('.lm-stage [data-layer]').first().boundingBox()
+  await page.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(lb.x + lb.width / 2 + 40, lb.y + lb.height / 2 + 20, { steps: 5 })
+  await page.mouse.up()
+  const moved = await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).map((tr) => tr.clips[id]).find(Boolean)
+    return c.motion.position && c.motion.position
+  }, g.id, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.ok(moved[0] > 640 + 10 && moved[1] > 360 + 5, `dragged position ${moved}`)
+  log('dragging in the Program monitor moved the clip to', moved.map(Math.round))
+
+  // keyframes: opacity 100 -> 0 over the first second, rendered by the stage
+  const vclipId = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks[seq.video_tracks[0]].clips).sort((a, b) => a.start - b.start)[0].id
+  })
+  await page.evaluate((id) => window.__lumina.engine.exec('clip.set_keyframes', { clip_id: id, prop: 'opacity', keyframes: [{ t: 0, v: 100 }, { t: '1s', v: 0 }] }), vclipId)
+  await page.keyboard.press('Home')
+  for (let i = 0; i < 15; i++) await page.keyboard.press('ArrowRight')
+  await page.waitForTimeout(300)
+  const op = await page.evaluate((id) => getComputedStyle(document.querySelector(`.lm-stage [data-clip="${id}"]`)).opacity, vclipId)
+  assert.ok(Math.abs(Number(op) - 0.5) < 0.02, `opacity at 0.5s should be ~0.5, got ${op}`)
+  log('opacity keyframes render: 0.5s ->', op)
+  await page.keyboard.press('Control+z')
+
   if (shot) await page.screenshot({ path: shot })
   log('PASS')
 } catch (err) {

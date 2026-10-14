@@ -1,4 +1,5 @@
 import { ArrowRightToLine, Hand, MousePointer2, MoveHorizontal, PenTool, Scissors, Type, ZoomIn, Columns2, ArrowLeftRight, Gauge, SplitSquareHorizontal } from 'lucide-react'
+import { t } from '@shared/i18n'
 import { runAction } from '../actions/actions'
 import { useStore, type Tool } from '../state/store'
 
@@ -21,8 +22,8 @@ export function ToolsPanel() {
   const tool = useStore((s) => s.tool)
   return (
     <div className="lm-panel lm-tools">
-      {TOOLS.map(({ tool: t, title, key, Icon }) => (
-        <button key={t} className={`lm-iconbtn ${tool === t ? 'on' : ''}`} title={`${title} (${key})`} onClick={() => runAction(`tool.${t}`)}>
+      {TOOLS.map(({ tool: id, title, key, Icon }) => (
+        <button key={id} className={`lm-iconbtn ${tool === id ? 'on' : ''}`} title={`${t(title)} (${key})`} onClick={() => runAction(`tool.${id}`)}>
           <Icon size={16} />
         </button>
       ))}

@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { t } from '@shared/i18n'
 import { ChevronLeft, Film, Folder, FolderPlus, Image, LayoutGrid, List, Music, Search, Clapperboard, FilePlus2 } from 'lucide-react'
 import type { MediaItem, Sequence } from '../engine/document'
 import { mediaUrl } from '../engine/client'
@@ -112,20 +113,20 @@ export function ProjectPanel() {
   const rowMenu = (e: React.MouseEvent, r?: Row) => {
     if (r && !selected.includes(r.id)) set({ selectedItems: [r.id] })
     openContextMenu(e, [
-      { label: 'New Bin', action: 'file.newBin' },
-      { label: 'New Sequence...', action: 'file.newSequence' },
+      { label: t('New Bin'), action: 'file.newBin' },
+      { label: t('New Sequence...'), action: 'file.newSequence' },
       'sep',
-      { label: 'Import...', action: 'file.import' },
+      { label: t('Import...'), action: 'file.import' },
       'sep',
-      { label: 'Rename', action: 'clip.rename', disabled: !r },
-      { label: 'Clear', action: 'edit.clear', disabled: !r },
+      { label: t('Rename'), action: 'clip.rename', disabled: !r },
+      { label: t('Clear'), action: 'edit.clear', disabled: !r },
       'sep',
       {
-        label: 'New Sequence From Clip',
+        label: t('New Sequence From Clip'),
         disabled: !r || r.kind !== 'media',
         run: () => r && r.kind === 'media' && void exec('sequence.create_from_media', { media_id: r.id }).then(() => focusPanel('timeline'))
       },
-      { label: 'Duplicate', disabled: !r || r.kind !== 'sequence', run: () => r && void exec('sequence.duplicate', { sequence_id: r.id }) }
+      { label: t('Duplicate'), disabled: !r || r.kind !== 'sequence', run: () => r && void exec('sequence.duplicate', { sequence_id: r.id }) }
     ])
   }
 
@@ -142,12 +143,12 @@ export function ProjectPanel() {
     >
       <div className="lm-toolbar lm-project-head">
         {bin?.parent_id ? (
-          <button className="lm-iconbtn" title="Up one level" onClick={() => set({ currentBin: bin.parent_id })}>
+          <button className="lm-iconbtn" title={t('Up one level')} onClick={() => set({ currentBin: bin.parent_id })}>
             <ChevronLeft size={15} />
           </button>
         ) : null}
         <span className="lm-project-title">{bin?.name ?? doc.name}.lumina</span>
-        <span className="lm-count">{rows.length} items</span>
+        <span className="lm-count">{rows.length} {t('items')}</span>
       </div>
       <div className="lm-toolbar">
         <div className="lm-search">
@@ -158,10 +159,10 @@ export function ProjectPanel() {
       {view === 'list' ? (
         <div className="lm-project-list" onMouseDown={(e) => e.target === e.currentTarget && set({ selectedItems: [] })}>
           <div className="lm-project-row header">
-            <span className="name">Name</span>
-            <span>Frame Rate</span>
-            <span>Media Duration</span>
-            <span>Video Info</span>
+            <span className="name">{t('Name')}</span>
+            <span>{t('Frame Rate')}</span>
+            <span>{t('Media Duration')}</span>
+            <span>{t('Video Info')}</span>
           </div>
           {rows.map((r) => (
             <div
@@ -184,7 +185,7 @@ export function ProjectPanel() {
                 <span className="swatch" style={{ background: r.kind === 'media' ? `var(--label-${r.item.label})` : r.kind === 'sequence' ? 'var(--label-forest)' : 'transparent' }} />
                 <RowIcon r={r} />
                 <span className="text">{r.name}</span>
-                {r.kind === 'media' && busy.has(r.id) && <span className="busy">processing</span>}
+                {r.kind === 'media' && busy.has(r.id) && <span className="busy">{t('processing')}</span>}
               </span>
               <span>{r.kind === 'media' ? rateLabel(r.item.video?.fps_num, r.item.video?.fps_den) : r.kind === 'sequence' ? rateLabel(r.seq.settings.fps_num, r.seq.settings.fps_den) : ''}</span>
               <span>{durationLabel(r)}</span>
@@ -193,7 +194,7 @@ export function ProjectPanel() {
               </span>
             </div>
           ))}
-          {!rows.length && <div className="lm-empty">Import media to start<br />(drag files here, or Ctrl+I)</div>}
+          {!rows.length && <div className="lm-empty">{t('Import media to start')}<br />{t('(drag files here, or Ctrl+I)')}</div>}
         </div>
       ) : (
         <div className="lm-project-grid" onMouseDown={(e) => e.target === e.currentTarget && set({ selectedItems: [] })}>
@@ -220,17 +221,17 @@ export function ProjectPanel() {
         </div>
       )}
       <div className="lm-toolbar lm-project-foot">
-        <button className={`lm-iconbtn ${view === 'list' ? 'on' : ''}`} title="List View" onClick={() => setView('list')}>
+        <button className={`lm-iconbtn ${view === 'list' ? 'on' : ''}`} title={t('List View')} onClick={() => setView('list')}>
           <List size={15} />
         </button>
-        <button className={`lm-iconbtn ${view === 'icon' ? 'on' : ''}`} title="Icon View" onClick={() => setView('icon')}>
+        <button className={`lm-iconbtn ${view === 'icon' ? 'on' : ''}`} title={t('Icon View')} onClick={() => setView('icon')}>
           <LayoutGrid size={15} />
         </button>
         <span style={{ flex: 1 }} />
-        <button className="lm-iconbtn" title="New Bin" onClick={() => runAction('file.newBin')}>
+        <button className="lm-iconbtn" title={t('New Bin')} onClick={() => runAction('file.newBin')}>
           <FolderPlus size={15} />
         </button>
-        <button className="lm-iconbtn" title="New Item" onClick={(e) => openContextMenu(e, [{ label: 'Sequence...', action: 'file.newSequence' }, { label: 'Import...', action: 'file.import' }])}>
+        <button className="lm-iconbtn" title={t('New Item')} onClick={(e) => openContextMenu(e, [{ label: t('Sequence...'), action: 'file.newSequence' }, { label: t('Import...'), action: 'file.import' }])}>
           <FilePlus2 size={15} />
         </button>
       </div>

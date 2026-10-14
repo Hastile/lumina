@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { t as tx } from '@shared/i18n'
 import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw } from 'lucide-react'
 import type { Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
@@ -58,7 +59,7 @@ export function TimelinePanel() {
     return (
       <div className="lm-panel lm-timeline" onDragOver={(e) => e.preventDefault()} onDrop={(e) => void dropOnEmpty(e)}>
         <div className="lm-empty" style={{ marginTop: 40 }}>
-          Drop media here to create a sequence.
+          {tx('Drop media here to create a sequence.')}
         </div>
       </div>
     )
@@ -390,7 +391,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       <div
         key={clip.id}
         data-clip={clip.id}
-        className={`lm-clip ${row.kind} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost ? 'ghost' : ''}`}
+        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
         onMouseDown={(e) => clipMouseDown(e, clip, rowIdx)}
         onDoubleClick={() => {
@@ -401,16 +402,16 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         onContextMenu={(e) => {
           if (!selected.includes(clip.id)) set({ selectedClips: [clip.id] })
           openContextMenu(e, [
-            { label: 'Enable', action: 'clip.enable' },
+            { label: tx('Enable'), action: 'clip.enable' },
             { label: clip.link_id ? 'Unlink' : 'Link', action: 'clip.link' },
             'sep',
-            { label: 'Speed/Duration...', action: 'clip.speed' },
+            { label: tx('Speed/Duration...'), action: 'clip.speed' },
             'sep',
-            { label: 'Clear', action: 'edit.clear' },
-            { label: 'Ripple Delete', action: 'edit.rippleDelete' },
+            { label: tx('Clear'), action: 'edit.clear' },
+            { label: tx('Ripple Delete'), action: 'edit.rippleDelete' },
             'sep',
-            { label: 'Rename...', action: 'clip.rename' },
-            { label: 'Reveal in Project', run: () => m && set({ selectedItems: [m.id], currentBin: m.bin_id }) }
+            { label: tx('Rename...'), action: 'clip.rename' },
+            { label: tx('Reveal in Project'), run: () => m && set({ selectedItems: [m.id], currentBin: m.bin_id }) }
           ])
         }}
       >
@@ -419,7 +420,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {clip.speed !== 1 && <b>{Math.round(clip.speed * 100)}% </b>}
           {clip.name}
         </span>
-        {clip.opacity !== 100 && row.kind === 'video' && <span className="fx">fx</span>}
+        {row.kind === 'video' && (clip.opacity !== 100 || Object.keys(clip.keyframes).length > 0 || clip.motion.position || clip.motion.scale !== 100 || clip.motion.rotation !== 0) && <span className="fx">fx</span>}
       </div>
     )
   }
@@ -442,13 +443,13 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             <button className={`lm-iconbtn ${snapOn ? 'on' : ''}`} title="Snap in Timeline (S)" onClick={() => runAction('sequence.toggleSnap')}>
               <Magnet size={14} />
             </button>
-            <button className="lm-iconbtn on" title="Linked Selection">
+            <button className="lm-iconbtn on" title={tx('Linked Selection')}>
               <Link2 size={14} />
             </button>
             <button className="lm-iconbtn" title="Add Marker (M)" onClick={() => runAction('markers.add')}>
               <Bookmark size={14} />
             </button>
-            <button className="lm-iconbtn" title="Timeline Display Settings" onClick={(e) => openContextMenu(e, [{ label: 'Add Tracks...', action: 'sequence.addTracks' }, { label: 'Zoom to Sequence', action: 'view.zoomFit' }])}>
+            <button className="lm-iconbtn" title={tx('Timeline Display Settings')} onClick={(e) => openContextMenu(e, [{ label: tx('Add Tracks...'), action: 'sequence.addTracks' }, { label: tx('Zoom to Sequence'), action: 'view.zoomFit' }])}>
               <Wrench size={14} />
             </button>
           </div>
@@ -546,46 +547,46 @@ function TrackHeader({ row, seq }: { row: Row; seq: Sequence }) {
       style={{ top: row.top, height: row.height }}
       onContextMenu={(e) =>
         openContextMenu(e, [
-          { label: 'Rename', run: () => renameTrack(seq, t) },
+          { label: tx('Rename'), run: () => renameTrack(seq, t) },
           'sep',
-          { label: 'Add Tracks...', action: 'sequence.addTracks' },
-          { label: 'Delete Track', run: () => void exec('track.remove', { sequence_id: seq.id, track_id: t.id }) }
+          { label: tx('Add Tracks...'), action: 'sequence.addTracks' },
+          { label: tx('Delete Track'), run: () => void exec('track.remove', { sequence_id: seq.id, track_id: t.id }) }
         ])
       }
     >
       <span className="patch">{row.label}</span>
-      <button className={`target ${t.targeted ? 'on' : ''}`} onClick={() => toggle('targeted')} title="Toggle Track Targeting">
+      <button className={`target ${t.targeted ? 'on' : ''}`} onClick={() => toggle('targeted')} title={tx('Toggle Track Targeting')}>
         {row.label}
       </button>
-      <button className={`lm-iconbtn ${t.locked ? 'on' : ''}`} onClick={() => toggle('locked')} title="Toggle Track Lock">
+      <button className={`lm-iconbtn ${t.locked ? 'on' : ''}`} onClick={() => toggle('locked')} title={tx('Toggle Track Lock')}>
         {t.locked ? <Lock size={13} /> : <LockOpen size={13} />}
       </button>
-      <button className={`lm-iconbtn ${t.sync_lock ? 'on' : ''}`} onClick={() => toggle('sync_lock')} title="Toggle Sync Lock">
+      <button className={`lm-iconbtn ${t.sync_lock ? 'on' : ''}`} onClick={() => toggle('sync_lock')} title={tx('Toggle Sync Lock')}>
         <RefreshCcw size={12} />
       </button>
       {row.kind === 'video' ? (
-        <button className="lm-iconbtn" onClick={() => toggle('hidden')} title="Toggle Track Output">
+        <button className="lm-iconbtn" onClick={() => toggle('hidden')} title={tx('Toggle Track Output')}>
           {t.hidden ? <EyeOff size={13} /> : <Eye size={13} />}
         </button>
       ) : (
         <>
-          <button className={`lm-ms m ${t.muted ? 'on' : ''}`} onClick={() => toggle('muted')} title="Mute Track">
+          <button className={`lm-ms m ${t.muted ? 'on' : ''}`} onClick={() => toggle('muted')} title={tx('Mute Track')}>
             M
           </button>
-          <button className={`lm-ms s ${t.solo ? 'on' : ''}`} onClick={() => toggle('solo')} title="Solo Track">
+          <button className={`lm-ms s ${t.solo ? 'on' : ''}`} onClick={() => toggle('solo')} title={tx('Solo Track')}>
             S
           </button>
         </>
       )}
-      <span className="tname">{t.name}</span>
+      <span className="tname">{t.name.replace(/^(Video|Audio) (\d+)$/, (_, k: string, n: string) => `${tx(k)} ${n}`)}</span>
     </div>
   )
 }
 
 function renameTrack(seq: Sequence, t: Track) {
   openDialog({
-    title: 'Rename Track',
-    fields: [{ key: 'name', label: 'Name', type: 'text', value: t.name }],
+    title: tx('Rename Track'),
+    fields: [{ key: 'name', label: tx('Name'), type: 'text', value: t.name }],
     onSubmit: async (v) => void (await exec('track.set', { sequence_id: seq.id, track_id: t.id, name: String(v.name) }))
   })
 }

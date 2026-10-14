@@ -4,6 +4,7 @@ import { createReadStream, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { createInterface } from 'node:readline'
+import { setLocale, t, type Locale } from '../shared/i18n'
 
 // ---------------------------------------------------------------- media protocol
 // Renderer loads media as lumina-media://file/<encodeURIComponent(path)>, with
@@ -120,7 +121,7 @@ function stopEngine(): void {
 // (registerAccelerator: false): the renderer's keymap owns every shortcut so
 // panels can scope them, exactly like Premiere's keyboard shortcut contexts.
 
-type Item = { label: string; action?: string; accel?: string; enabled?: boolean } | 'sep'
+type Item = { label: string; action?: string; accel?: string; enabled?: boolean; submenu?: { label: string; action: string }[] } | 'sep'
 
 const MENU: Record<string, Item[]> = {
   File: [
@@ -187,11 +188,14 @@ const MENU: Record<string, Item[]> = {
     'sep',
     { label: 'Add Marker', action: 'markers.add', accel: 'M' }
   ],
-  'Graphics and Titles': [{ label: 'New Layer', enabled: false }],
+  'Graphics and Titles': [{ label: 'New Layer > Text', action: 'graphics.newText', accel: 'Ctrl+T' }],
   View: [
     { label: 'Zoom In', action: 'view.zoomIn', accel: '=' },
     { label: 'Zoom Out', action: 'view.zoomOut', accel: '-' },
     { label: 'Zoom to Sequence', action: 'view.zoomFit', accel: '\\' },
+    'sep',
+    'sep',
+    { label: 'Language', submenu: [{ label: '한국어', action: 'view.locale.ko' }, { label: 'English', action: 'view.locale.en' }] },
     'sep',
     { label: 'Toggle Developer Tools', action: 'app.devtools', accel: 'Ctrl+Shift+I' }
   ],
@@ -229,12 +233,14 @@ function buildMenu(win: BrowserWindow): void {
     win.webContents.send('menu:action', action)
   }
   const template: MenuItemConstructorOptions[] = Object.entries(MENU).map(([label, items]) => ({
-    label,
+    label: t(label, { menu: true }),
     submenu: items.map((it): MenuItemConstructorOptions =>
       it === 'sep'
         ? { type: 'separator' }
-        : {
-            label: it.label,
+        : it.submenu
+          ? { label: t(it.label), submenu: it.submenu.map((sub) => ({ label: sub.label, click: send(sub.action) })) }
+          : {
+            label: t(it.label),
             enabled: it.enabled ?? true,
             accelerator: it.accel && /^(Ctrl|Alt|Shift)/.test(it.accel) && it.accel.includes('+') ? it.accel.replace('Ctrl', 'CmdOrCtrl') : undefined,
             registerAccelerator: false,
@@ -305,6 +311,12 @@ ipcMain.handle('dialog:save', async (e, opts: Electron.SaveDialogOptions) => {
   const win = BrowserWindow.fromWebContents(e.sender)!
   const res = await dialog.showSaveDialog(win, opts)
   return res.canceled ? null : res.filePath
+})
+
+ipcMain.handle('app:setLocale', (e, locale: Locale) => {
+  setLocale(locale)
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (win) buildMenu(win)
 })
 
 ipcMain.handle('window:setTitle', (e, title: string) => {

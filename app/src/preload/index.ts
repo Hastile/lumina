@@ -7,6 +7,7 @@ const api = {
   openDialog: (opts: Electron.OpenDialogOptions): Promise<string[]> => ipcRenderer.invoke('dialog:open', opts),
   saveDialog: (opts: Electron.SaveDialogOptions): Promise<string | null> => ipcRenderer.invoke('dialog:save', opts),
   setTitle: (title: string): Promise<void> => ipcRenderer.invoke('window:setTitle', title),
+  setLocale: (locale: 'ko' | 'en'): Promise<void> => ipcRenderer.invoke('app:setLocale', locale),
   onMenuAction: (fn: (action: string) => void): (() => void) => {
     const listener = (_: unknown, action: string) => fn(action)
     ipcRenderer.on('menu:action', listener)

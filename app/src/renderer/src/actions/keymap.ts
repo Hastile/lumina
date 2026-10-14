@@ -12,6 +12,7 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   'Ctrl+S': 'file.save',
   'Ctrl+Shift+S': 'file.saveAs',
   'Ctrl+I': 'file.import',
+  'Ctrl+T': 'graphics.newText',
   // Edit
   'Ctrl+Z': 'edit.undo',
   'Ctrl+Shift+Z': 'edit.redo',

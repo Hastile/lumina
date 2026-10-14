@@ -1,6 +1,7 @@
 import type { DockviewApi } from 'dockview-react'
 import type { PanelId } from '../state/store'
 import { set } from '../state/store'
+import { t } from '@shared/i18n'
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   project: 'Project',
@@ -41,7 +42,7 @@ export function buildEditingLayout(a: DockviewApi): void {
   a.clear()
   const narrow = new Set<PanelId>(['tools', 'audioMeters'])
   const add = (id: PanelId, position?: Parameters<DockviewApi['addPanel']>[0]['position']) =>
-    a.addPanel({ id, component: id, title: PANEL_TITLES[id], position, minimumWidth: narrow.has(id) ? 36 : 120 })
+    a.addPanel({ id, component: id, title: t(PANEL_TITLES[id]), position, minimumWidth: narrow.has(id) ? 36 : 120 })
 
   // bottom row
   add('project')
@@ -93,7 +94,7 @@ function sizeEditingLayout(a: DockviewApi): void {
 export function focusPanel(id: PanelId): void {
   const panel = api?.getPanel(id)
   if (!panel) {
-    api?.addPanel({ id, component: id, title: PANEL_TITLES[id], floating: { width: 480, height: 360 } })
+    api?.addPanel({ id, component: id, title: t(PANEL_TITLES[id]), floating: { width: 480, height: 360 } })
   } else {
     panel.api.setActive()
   }

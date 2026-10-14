@@ -3,6 +3,7 @@
 // only talk to the engine through commands - never by editing state locally.
 
 import type { Clip, Sequence } from '../engine/document'
+import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { dockApi, buildEditingLayout, focusPanel, toggleMaximize } from '../layout/dock'
 import { openDialog } from '../state/dialog'
@@ -40,7 +41,7 @@ function monitor(): Monitor {
 
 function seqOrToast(): Sequence | null {
   const seq = activeSequence()
-  if (!seq) toast('No sequence is open', 'info')
+  if (!seq) toast(t('No sequence is open'), 'info')
   return seq
 }
 
@@ -81,8 +82,8 @@ async function importPremiere(path: string, intoRoot = false): Promise<void> {
   toast(`Imported ${res.sequences.length} sequence(s), ${res.media} media, ${res.bins} bin(s)`, 'info')
   if (res.warnings.length) {
     openDialog({
-      title: 'Premiere Import Report',
-      okLabel: 'OK',
+      title: t('Premiere Import Report'),
+      okLabel: t('OK'),
       fields: res.warnings.map((w, i) => ({ key: `w${i}`, label: '', type: 'note' as const, value: w })),
       onSubmit: () => undefined
     })
@@ -112,12 +113,12 @@ export { importFiles }
 
 function newSequenceDialog(): void {
   openDialog({
-    title: 'New Sequence',
-    okLabel: 'OK',
+    title: t('New Sequence'),
+    okLabel: t('OK'),
     fields: [
-      { key: 'name', label: 'Sequence Name', type: 'text', value: `Sequence ${String(Object.keys(get().doc?.sequences ?? {}).length + 1).padStart(2, '0')}` },
+      { key: 'name', label: t('Sequence Name'), type: 'text', value: `Sequence ${String(Object.keys(get().doc?.sequences ?? {}).length + 1).padStart(2, '0')}` },
       {
-        key: 'preset', label: 'Preset', type: 'select', value: '1080p30',
+        key: 'preset', label: t('Preset'), type: 'select', value: '1080p30',
         options: [
           { value: '1080p30', label: 'HD 1080p 30 fps' },
           { value: '1080p2997', label: 'HD 1080p 29.97 fps' },
@@ -128,8 +129,8 @@ function newSequenceDialog(): void {
           { value: 'v1080p30', label: 'Vertical 1080x1920 30 fps' }
         ]
       },
-      { key: 'video', label: 'Video Tracks', type: 'number', value: 3, min: 1, max: 99 },
-      { key: 'audio', label: 'Audio Tracks', type: 'number', value: 3, min: 1, max: 99 }
+      { key: 'video', label: t('Video Tracks'), type: 'number', value: 3, min: 1, max: 99 },
+      { key: 'audio', label: t('Audio Tracks'), type: 'number', value: 3, min: 1, max: 99 }
     ],
     onSubmit: async (v) => {
       const presets: Record<string, [number, number, number, number]> = {
@@ -149,13 +150,13 @@ function speedDialog(): void {
   const seq = seqOrToast()
   if (!seq) return
   const clips = selectedClipObjects(seq)
-  if (!clips.length) return toast('Select a clip first', 'info')
+  if (!clips.length) return toast(t('Select a clip first'), 'info')
   const c = clips[0]
   openDialog({
-    title: 'Clip Speed / Duration',
+    title: t('Clip Speed / Duration'),
     fields: [
-      { key: 'speed', label: 'Speed', type: 'number', value: Math.round(c.speed * 10000) / 100, min: 1, max: 10000, step: 1, suffix: '%' },
-      { key: 'ripple', label: 'Ripple Edit, Shifting Trailing Clips', type: 'checkbox', value: true }
+      { key: 'speed', label: t('Speed'), type: 'number', value: Math.round(c.speed * 10000) / 100, min: 1, max: 10000, step: 1, suffix: '%' },
+      { key: 'ripple', label: t('Ripple Edit, Shifting Trailing Clips'), type: 'checkbox', value: true }
     ],
     onSubmit: async (v) => {
       await exec('clip.set_speed', { sequence_id: seq.id, clip_id: c.id, speed: Number(v.speed) / 100, ripple: Boolean(v.ripple) })
@@ -172,7 +173,7 @@ function rename(): void {
     const current = doc.media[id]?.name ?? doc.sequences[id]?.name ?? doc.bins[id]?.name
     if (current === undefined) return
     openDialog({
-      title: 'Rename', fields: [{ key: 'name', label: 'Name', type: 'text', value: current }],
+      title: t('Rename'), fields: [{ key: 'name', label: t('Name'), type: 'text', value: current }],
       onSubmit: async (v) => {
         const name = String(v.name)
         if (doc.media[id]) await exec('media.rename', { media_id: id, name })
@@ -186,7 +187,7 @@ function rename(): void {
     const clip = selectedClipObjects(seq)[0]
     if (!clip) return
     openDialog({
-      title: 'Rename Clip', fields: [{ key: 'name', label: 'Clip Name', type: 'text', value: clip.name }],
+      title: t('Rename Clip'), fields: [{ key: 'name', label: t('Clip Name'), type: 'text', value: clip.name }],
       onSubmit: async (v) => void (await exec('clip.set', { sequence_id: seq.id, clip_ids: [clip.id], name: String(v.name) }))
     })
   }
@@ -196,7 +197,7 @@ async function placeFromSource(mode: 'insert' | 'overwrite'): Promise<void> {
   const seq = seqOrToast()
   const media = sourceMedia()
   if (!seq) return
-  if (!media) return toast('Open a clip in the Source Monitor first (double-click it in the Project panel)', 'info')
+  if (!media) return toast(t('Open a clip in the Source Monitor first (double-click it in the Project panel)'), 'info')
   const v = targetedTracks(seq, 'video')[0]
   const a = targetedTracks(seq, 'audio')[0]
   const res = await exec<{ end: number }>('clip.place', {
@@ -209,7 +210,7 @@ async function placeFromSource(mode: 'insert' | 'overwrite'): Promise<void> {
 async function liftExtract(ripple: boolean): Promise<void> {
   const seq = seqOrToast()
   if (!seq) return
-  if (seq.in_point == null || seq.out_point == null) return toast('Set sequence In and Out points first (I / O)', 'info')
+  if (seq.in_point == null || seq.out_point == null) return toast(t('Set sequence In and Out points first (I / O)'), 'info')
   const label = ripple ? 'Extract' : 'Lift'
   const inPoint = seq.in_point
   // one undo step, like Premiere: remove the range and clear the marks
@@ -286,8 +287,8 @@ def('file.newProject', 'New Project', async () => {
   if (get().history.dirty) toast('Previous project had unsaved changes (autosave op-log keeps them if it was saved before)', 'info')
   await call('project.new', { name: 'Untitled' })
 })
-def('file.newSequence', 'New Sequence', newSequenceDialog)
-def('file.newBin', 'New Bin', async () => void (await exec('bin.create', { name: 'New Bin', parent_id: get().currentBin })))
+def('file.newSequence', t('New Sequence'), newSequenceDialog)
+def('file.newBin', t('New Bin'), async () => void (await exec('bin.create', { name: 'New Bin', parent_id: get().currentBin })))
 def('file.open', 'Open Project', async () => {
   const [path] = await window.lumina.openDialog({
     title: 'Open Project',
@@ -309,14 +310,14 @@ def('file.open', 'Open Project', async () => {
   const r = await call<{ recovered_patches?: number }>('project.open', { path })
   if (r?.recovered_patches) toast(`Recovered ${r.recovered_patches} unsaved change(s) from the op-log`, 'info')
 })
-def('file.save', 'Save', async () => (get().path ? void (await call('project.save', {})) : saveAs()))
+def('file.save', t('Save'), async () => (get().path ? void (await call('project.save', {})) : saveAs()))
 def('file.saveAs', 'Save As', saveAs)
 def('file.import', 'Import', () => importFiles())
 
 // Edit
-def('edit.undo', 'Undo', async () => void (await call('undo')))
-def('edit.redo', 'Redo', async () => void (await call('redo')))
-def('edit.clear', 'Clear', async () => {
+def('edit.undo', t('Undo'), async () => void (await call('undo')))
+def('edit.redo', t('Redo'), async () => void (await call('redo')))
+def('edit.clear', t('Clear'), async () => {
   const s = get()
   if (s.focusedPanel === 'project') {
     const doc = s.doc!
@@ -331,12 +332,12 @@ def('edit.clear', 'Clear', async () => {
   const seq = activeSequence()
   if (seq && s.selectedClips.length) await exec('clip.remove', { sequence_id: seq.id, clip_ids: s.selectedClips, include_linked: false }, 'Clear')
 })
-def('edit.rippleDelete', 'Ripple Delete', async () => {
+def('edit.rippleDelete', t('Ripple Delete'), async () => {
   const seq = activeSequence()
   const ids = get().selectedClips
   if (seq && ids.length) await exec('clip.remove', { sequence_id: seq.id, clip_ids: ids, ripple: true, include_linked: false }, 'Ripple Delete')
 })
-def('edit.selectAll', 'Select All', () => {
+def('edit.selectAll', t('Select All'), () => {
   const s = get()
   if (s.focusedPanel === 'project') {
     const doc = s.doc!
@@ -347,20 +348,20 @@ def('edit.selectAll', 'Select All', () => {
   const seq = activeSequence()
   if (seq) set({ selectedClips: Object.values(seq.tracks).flatMap((t) => (t.locked ? [] : Object.keys(t.clips))) })
 })
-def('edit.deselectAll', 'Deselect All', () => set({ selectedClips: [], selectedItems: [] }))
+def('edit.deselectAll', t('Deselect All'), () => set({ selectedClips: [], selectedItems: [] }))
 
 // Clip
-def('clip.rename', 'Rename', rename)
+def('clip.rename', t('Rename'), rename)
 def('clip.speed', 'Speed/Duration', speedDialog)
-def('clip.insert', 'Insert', () => placeFromSource('insert'))
-def('clip.overwrite', 'Overwrite', () => placeFromSource('overwrite'))
-def('clip.enable', 'Enable', async () => {
+def('clip.insert', t('Insert'), () => placeFromSource('insert'))
+def('clip.overwrite', t('Overwrite'), () => placeFromSource('overwrite'))
+def('clip.enable', t('Enable'), async () => {
   const seq = activeSequence()
   if (!seq) return
   const clips = selectedClipObjects(seq)
   if (clips.length) await exec('clip.set', { sequence_id: seq.id, clip_ids: clips.map((c) => c.id), enabled: !clips[0].enabled }, 'Enable')
 })
-def('clip.link', 'Link', async () => {
+def('clip.link', t('Link'), async () => {
   const seq = activeSequence()
   if (!seq) return
   const clips = selectedClipObjects(seq)
@@ -370,27 +371,27 @@ def('clip.link', 'Link', async () => {
 })
 
 // Sequence
-def('sequence.addEdit', 'Add Edit', async () => {
+def('sequence.addEdit', t('Add Edit'), async () => {
   const seq = seqOrToast()
   if (seq) await exec('clip.razor', { sequence_id: seq.id, at: get().programTime, track_ids: targetedTracks(seq) }, 'Add Edit')
 })
-def('sequence.addEditAll', 'Add Edit to All Tracks', async () => {
+def('sequence.addEditAll', t('Add Edit to All Tracks'), async () => {
   const seq = seqOrToast()
   if (seq) await exec('clip.razor', { sequence_id: seq.id, at: get().programTime }, 'Add Edit to All Tracks')
 })
-def('sequence.lift', 'Lift', () => liftExtract(false))
-def('sequence.extract', 'Extract', () => liftExtract(true))
-def('sequence.rippleTrimPrev', 'Ripple Trim Previous Edit to Playhead', () => rippleTrimToPlayhead('prev'))
-def('sequence.rippleTrimNext', 'Ripple Trim Next Edit to Playhead', () => rippleTrimToPlayhead('next'))
-def('sequence.toggleSnap', 'Snap in Timeline', () => set((s) => ({ snap: !s.snap })))
+def('sequence.lift', t('Lift'), () => liftExtract(false))
+def('sequence.extract', t('Extract'), () => liftExtract(true))
+def('sequence.rippleTrimPrev', t('Ripple Trim Previous Edit to Playhead'), () => rippleTrimToPlayhead('prev'))
+def('sequence.rippleTrimNext', t('Ripple Trim Next Edit to Playhead'), () => rippleTrimToPlayhead('next'))
+def('sequence.toggleSnap', t('Snap in Timeline'), () => set((s) => ({ snap: !s.snap })))
 def('sequence.addTracks', 'Add Tracks', () => {
   const seq = seqOrToast()
   if (!seq) return
   openDialog({
     title: 'Add Tracks',
     fields: [
-      { key: 'video', label: 'Add Video Track(s)', type: 'number', value: 1, min: 0, max: 20 },
-      { key: 'audio', label: 'Add Audio Track(s)', type: 'number', value: 0, min: 0, max: 20 }
+      { key: 'video', label: t('Add Video Track(s)'), type: 'number', value: 1, min: 0, max: 20 },
+      { key: 'audio', label: t('Add Audio Track(s)'), type: 'number', value: 0, min: 0, max: 20 }
     ],
     onSubmit: async (v) => {
       await engine.call('transaction.begin', { label: 'Add Tracks' })
@@ -407,32 +408,32 @@ def('sequence.addTracks', 'Add Tracks', () => {
 })
 
 // Markers
-def('markers.markIn', 'Mark In', () => markInOut('in'))
-def('markers.markOut', 'Mark Out', () => markInOut('out'))
-def('markers.markClip', 'Mark Clip', () => markInOut('clip'))
-def('markers.clearInOut', 'Clear In and Out', () => markInOut('clear'))
-def('markers.goIn', 'Go to In', () => {
+def('markers.markIn', t('Mark In'), () => markInOut('in'))
+def('markers.markOut', t('Mark Out'), () => markInOut('out'))
+def('markers.markClip', t('Mark Clip'), () => markInOut('clip'))
+def('markers.clearInOut', t('Clear In and Out'), () => markInOut('clear'))
+def('markers.goIn', t('Go to In'), () => {
   const m = monitor()
   const t = m === 'source' ? sourceMedia()?.in_point : activeSequence()?.in_point
   if (t != null) goTo(m, t)
 })
-def('markers.goOut', 'Go to Out', () => {
+def('markers.goOut', t('Go to Out'), () => {
   const m = monitor()
   const t = m === 'source' ? sourceMedia()?.out_point : activeSequence()?.out_point
   if (t != null) goTo(m, t)
 })
-def('markers.add', 'Add Marker', async () => {
+def('markers.add', t('Add Marker'), async () => {
   const seq = seqOrToast()
   if (seq) await exec('marker.add', { sequence_id: seq.id, at: get().programTime }, 'Add Marker')
 })
 
 // Transport
-def('transport.playStop', 'Play-Stop Toggle', () => togglePlay(monitor()))
+def('transport.playStop', t('Play-Stop Toggle'), () => togglePlay(monitor()))
 def('transport.shuttleLeft', 'Shuttle Left', () => shuttle(monitor(), -1))
 def('transport.shuttleStop', 'Shuttle Stop', () => stop())
 def('transport.shuttleRight', 'Shuttle Right', () => shuttle(monitor(), 1))
-def('transport.stepBack', 'Step Back 1 Frame', () => step(monitor(), -1))
-def('transport.stepForward', 'Step Forward 1 Frame', () => step(monitor(), 1))
+def('transport.stepBack', t('Step Back 1 Frame'), () => step(monitor(), -1))
+def('transport.stepForward', t('Step Forward 1 Frame'), () => step(monitor(), 1))
 def('transport.stepBack5', 'Step Back Five Frames', () => step(monitor(), -5))
 def('transport.stepForward5', 'Step Forward Five Frames', () => step(monitor(), 5))
 def('transport.goStart', 'Go to Start', () => goTo(monitor(), 0))
@@ -446,54 +447,77 @@ def('transport.goEnd', 'Go to End', () => {
     if (media) goTo('source', media.duration)
   }
 })
-def('transport.prevEdit', 'Go to Previous Edit Point', () => goEdit(-1))
-def('transport.nextEdit', 'Go to Next Edit Point', () => goEdit(1))
+def('transport.prevEdit', t('Go to Previous Edit Point'), () => goEdit(-1))
+def('transport.nextEdit', t('Go to Next Edit Point'), () => goEdit(1))
 
 // Tools
-def('tool.select', 'Selection Tool', tool('select'))
-def('tool.trackSelect', 'Track Select Forward Tool', tool('trackSelect'))
-def('tool.ripple', 'Ripple Edit Tool', tool('ripple'))
-def('tool.rolling', 'Rolling Edit Tool', tool('rolling'))
-def('tool.rate', 'Rate Stretch Tool', tool('rate'))
-def('tool.razor', 'Razor Tool', tool('razor'))
-def('tool.slip', 'Slip Tool', tool('slip'))
-def('tool.slide', 'Slide Tool', tool('slide'))
-def('tool.pen', 'Pen Tool', tool('pen'))
-def('tool.hand', 'Hand Tool', tool('hand'))
-def('tool.zoom', 'Zoom Tool', tool('zoom'))
-def('tool.type', 'Type Tool', tool('type'))
+def('tool.select', t('Selection Tool'), tool('select'))
+def('tool.trackSelect', t('Track Select Forward Tool'), tool('trackSelect'))
+def('tool.ripple', t('Ripple Edit Tool'), tool('ripple'))
+def('tool.rolling', t('Rolling Edit Tool'), tool('rolling'))
+def('tool.rate', t('Rate Stretch Tool'), tool('rate'))
+def('tool.razor', t('Razor Tool'), tool('razor'))
+def('tool.slip', t('Slip Tool'), tool('slip'))
+def('tool.slide', t('Slide Tool'), tool('slide'))
+def('tool.pen', t('Pen Tool'), tool('pen'))
+def('tool.hand', t('Hand Tool'), tool('hand'))
+def('tool.zoom', t('Zoom Tool'), tool('zoom'))
+def('tool.type', t('Type Tool'), tool('type'))
 
 // View
-def('view.zoomIn', 'Zoom In', () => set((s) => ({ pxPerSecond: Math.min(4000, s.pxPerSecond * 1.5) })))
-def('view.zoomOut', 'Zoom Out', () => set((s) => ({ pxPerSecond: Math.max(0.5, s.pxPerSecond / 1.5) })))
-def('view.zoomFit', 'Zoom to Sequence', () => void window.dispatchEvent(new CustomEvent('timeline:zoomFit')))
+// Graphics
+def('graphics.newText', t('New Layer > Text'), async () => {
+  const seq = seqOrToast()
+  if (!seq) return
+  const res = await exec<{ clip_id: string }>('graphic.create_text', { sequence_id: seq.id, at: get().programTime, text: t('New Text Layer') }, t('New Layer > Text'))
+  if (res) {
+    set({ selectedClips: [res.clip_id] })
+    focusPanel('properties')
+  }
+})
+
+// Language (reload so every module re-reads its strings)
+for (const l of ['ko', 'en'] as const) {
+  def(`view.locale.${l}`, l, () => {
+    try {
+      localStorage.setItem('lumina.locale', l)
+    } catch {
+      /* ignore */
+    }
+    location.reload()
+  })
+}
+
+def('view.zoomIn', t('Zoom In'), () => set((s) => ({ pxPerSecond: Math.min(4000, s.pxPerSecond * 1.5) })))
+def('view.zoomOut', t('Zoom Out'), () => set((s) => ({ pxPerSecond: Math.max(0.5, s.pxPerSecond / 1.5) })))
+def('view.zoomFit', t('Zoom to Sequence'), () => void window.dispatchEvent(new CustomEvent('timeline:zoomFit')))
 
 // Window
 def('window.workspace.editing', 'Editing', () => {
   const api = dockApi()
   if (api) buildEditingLayout(api)
 })
-def('window.resetLayout', 'Reset to Saved Layout', () => {
+def('window.resetLayout', t('Reset to Saved Layout'), () => {
   const api = dockApi()
   if (api) buildEditingLayout(api)
 })
-def('window.project', 'Project', panel('project'))
-def('window.source', 'Source Monitor', panel('source'))
-def('window.timeline', 'Timelines', panel('timeline'))
-def('window.program', 'Program Monitor', panel('program'))
-def('window.effectControls', 'Effect Controls', panel('effectControls'))
-def('window.audioMixer', 'Audio Clip Mixer', panel('audioMixer'))
-def('window.effects', 'Effects', panel('effects'))
-def('window.mediaBrowser', 'Media Browser', panel('mediaBrowser'))
-def('window.tools', 'Tools', panel('tools'))
-def('window.audioMeters', 'Audio Meters', panel('audioMeters'))
-def('window.essentialSound', 'Essential Sound', panel('essentialSound'))
-def('window.lumetri', 'Lumetri Color', panel('lumetri'))
-def('window.properties', 'Properties', panel('properties'))
-def('window.metadata', 'Metadata', panel('metadata'))
-def('window.text', 'Text', panel('text'))
-def('window.audioTrackMixer', 'Audio Track Mixer', panel('audioTrackMixer'))
-def('window.graphicTemplates', 'Graphic Templates', panel('graphicTemplates'))
+def('window.project', t('Project'), panel('project'))
+def('window.source', t('Source Monitor'), panel('source'))
+def('window.timeline', t('Timelines'), panel('timeline'))
+def('window.program', t('Program Monitor'), panel('program'))
+def('window.effectControls', t('Effect Controls'), panel('effectControls'))
+def('window.audioMixer', t('Audio Clip Mixer'), panel('audioMixer'))
+def('window.effects', t('Effects'), panel('effects'))
+def('window.mediaBrowser', t('Media Browser'), panel('mediaBrowser'))
+def('window.tools', t('Tools'), panel('tools'))
+def('window.audioMeters', t('Audio Meters'), panel('audioMeters'))
+def('window.essentialSound', t('Essential Sound'), panel('essentialSound'))
+def('window.lumetri', t('Lumetri Color'), panel('lumetri'))
+def('window.properties', t('Properties'), panel('properties'))
+def('window.metadata', t('Metadata'), panel('metadata'))
+def('window.text', t('Text'), panel('text'))
+def('window.audioTrackMixer', t('Audio Track Mixer'), panel('audioTrackMixer'))
+def('window.graphicTemplates', t('Graphic Templates'), panel('graphicTemplates'))
 def('window.maximize', 'Maximize or Restore Frame Under Cursor', () => toggleMaximize(get().focusedPanel))
 
 // small util used by panels

@@ -1,5 +1,6 @@
 // Shared overlay UI: modal dialogs, toasts, context menus.
 import { useEffect, useRef, useState } from 'react'
+import { t } from '@shared/i18n'
 import { create } from 'zustand'
 import { closeDialog, useDialog } from '../state/dialog'
 import { useStore } from '../state/store'
@@ -74,7 +75,7 @@ export function DialogHost() {
         </div>
         <div className="actions">
           <button type="button" className="lm-btn" onClick={closeDialog}>
-            Cancel
+            {t('Cancel')}
           </button>
           <button type="submit" className="lm-btn primary">
             {dialog.okLabel ?? 'OK'}

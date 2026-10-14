@@ -56,7 +56,21 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Sequences: frame rate, frame size, track count, clip placement, source in, speed | ✓ |
 | Video+audio link groups, label colors, track mute, sequence markers, playhead | ✓ |
 | Duplicate sequence names → disambiguated with the bin name | ✓ |
-| Motion/opacity/effects/keyframes | ✗ (M3), so scaled shorts footage shows letterboxed |
+| Motion (position/scale/rotation/anchor/crop), Opacity, their keyframes | ✓ |
+| Native text layers (text, font, position; size where decodable) and MOGRT text fields | ✓ approximate styling, flagged in Properties |
+| Other effects (blur, Transform effect, …), shape layers | ✗ (reported) |
 | Transitions | ✗ (reported) |
-| MOGRT / Essential Graphics / captions (.aegraphic, .srt) | ✗ (M4, reported) |
+| Captions (.srt items) | ✗ (reported) |
 | Nested sequences | ✗ (M2, reported) |
+
+## Motion & graphics
+| Item | Status |
+|---|---|
+| Clips render at native size like Premiere (no auto-fit); Properties > Fill / Fit | ✓ |
+| Effect Controls: Motion / Opacity / Time Remapping, stopwatch, keyframe navigator, keyframe lane | ✓ |
+| Drag a clip in the Program monitor to move it | ✓ (scale/rotate handles ✗) |
+| Type tool (T) / Ctrl+T new text layer, text editing in Properties (font, size, bold/italic, align, fill, stroke, background) | ✓ |
+| Keyframe interpolation: linear / ease (≈ Premiere's default Bezier) / hold | ✓ (custom Bezier handles ✗) |
+
+## Language
+Korean (Premiere's Korean terminology) is the default; View > Language switches to English.
