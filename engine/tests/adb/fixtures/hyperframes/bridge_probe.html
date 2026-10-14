@@ -1,0 +1,14 @@
+<div id="root" data-composition-id="bridge-probe" data-start="0" data-duration="12">
+  <video id="a" class="clip" data-start="0" data-duration="3" data-track-index="0"
+         data-media-start="1.5" data-treatment="full-bleed/hold-escalate/ramp" src="a.mp4" muted></video>
+  <img id="b" class="clip" data-start="a + 0.5" data-duration="2" data-track-index="0"
+       data-treatment="split/rapid-fire/burst-settle" src="b.png">
+  <h1 id="t" data-start="1" data-duration="4" data-track-index="5">HEADLINE</h1>
+  <div id="sub" data-composition-id="bridge-child" data-composition-src="bridge_child.html"
+       data-start="6" data-duration="4" data-track-index="2"></div>
+  <script>
+    const tl = gsap.timeline({ paused: true });
+    tl.to("#a", { scale: 1.2, duration: 3, ease: "power2.out" }, 0);
+    window.__timelines["bridge-probe"] = tl;
+  </script>
+</div>

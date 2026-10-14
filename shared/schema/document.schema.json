@@ -1,0 +1,641 @@
+{
+  "$defs": {
+    "AudioStream": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "title": "Channels",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "title": "Sample Rate",
+          "type": "integer"
+        },
+        "codec": {
+          "default": "",
+          "title": "Codec",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channels",
+        "sample_rate"
+      ],
+      "title": "AudioStream",
+      "type": "object"
+    },
+    "Bin": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Id"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "parent_id"
+      ],
+      "title": "Bin",
+      "type": "object"
+    },
+    "Clip": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "start": {
+          "description": "timeline start, ticks (inclusive)",
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "description": "timeline end, ticks (exclusive)",
+          "title": "End",
+          "type": "integer"
+        },
+        "source_in": {
+          "description": "source time at `start`, ticks",
+          "title": "Source In",
+          "type": "integer"
+        },
+        "speed": {
+          "default": 1.0,
+          "title": "Speed",
+          "type": "number"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "link_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "clips sharing a link_id move/trim together",
+          "title": "Link Id"
+        },
+        "label": {
+          "default": "iris",
+          "enum": [
+            "violet",
+            "iris",
+            "caribbean",
+            "lavender",
+            "cerulean",
+            "forest",
+            "rose",
+            "mango",
+            "purple",
+            "blue",
+            "teal",
+            "magenta",
+            "tan",
+            "green",
+            "brown",
+            "yellow"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "opacity": {
+          "default": 100.0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "volume_db": {
+          "default": 0.0,
+          "title": "Volume Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "media_id",
+        "name",
+        "start",
+        "end",
+        "source_in"
+      ],
+      "title": "Clip",
+      "type": "object"
+    },
+    "Marker": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "start": {
+          "title": "Start",
+          "type": "integer"
+        },
+        "duration": {
+          "default": 0,
+          "title": "Duration",
+          "type": "integer"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "color": {
+          "default": "green",
+          "enum": [
+            "green",
+            "red",
+            "purple",
+            "orange",
+            "yellow",
+            "white",
+            "blue",
+            "cyan"
+          ],
+          "title": "Color",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "start"
+      ],
+      "title": "Marker",
+      "type": "object"
+    },
+    "MediaItem": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "video",
+            "audio",
+            "image"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "duration": {
+          "description": "ticks; 0 for stills",
+          "title": "Duration",
+          "type": "integer"
+        },
+        "video": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoStream"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "audio": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioStream"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "label": {
+          "default": "iris",
+          "enum": [
+            "violet",
+            "iris",
+            "caribbean",
+            "lavender",
+            "cerulean",
+            "forest",
+            "rose",
+            "mango",
+            "purple",
+            "blue",
+            "teal",
+            "magenta",
+            "tan",
+            "green",
+            "brown",
+            "yellow"
+          ],
+          "title": "Label",
+          "type": "string"
+        },
+        "proxy_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proxy Path"
+        },
+        "thumbnail_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Path"
+        },
+        "waveform_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Waveform Path"
+        },
+        "in_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source monitor In mark, ticks",
+          "title": "In Point"
+        },
+        "out_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source monitor Out mark, ticks",
+          "title": "Out Point"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "path",
+        "bin_id",
+        "kind",
+        "duration"
+      ],
+      "title": "MediaItem",
+      "type": "object"
+    },
+    "Sequence": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        },
+        "settings": {
+          "$ref": "#/$defs/SequenceSettings"
+        },
+        "tracks": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Track"
+          },
+          "title": "Tracks",
+          "type": "object"
+        },
+        "video_tracks": {
+          "description": "bottom (V1) to top",
+          "items": {
+            "type": "string"
+          },
+          "title": "Video Tracks",
+          "type": "array"
+        },
+        "audio_tracks": {
+          "description": "top (A1) to bottom",
+          "items": {
+            "type": "string"
+          },
+          "title": "Audio Tracks",
+          "type": "array"
+        },
+        "markers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Marker"
+          },
+          "title": "Markers",
+          "type": "object"
+        },
+        "playhead": {
+          "default": 0,
+          "title": "Playhead",
+          "type": "integer"
+        },
+        "in_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Point"
+        },
+        "out_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Out Point"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "bin_id"
+      ],
+      "title": "Sequence",
+      "type": "object"
+    },
+    "SequenceSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "default": 1920,
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "default": 1080,
+          "title": "Height",
+          "type": "integer"
+        },
+        "fps_num": {
+          "default": 30,
+          "title": "Fps Num",
+          "type": "integer"
+        },
+        "fps_den": {
+          "default": 1,
+          "title": "Fps Den",
+          "type": "integer"
+        },
+        "sample_rate": {
+          "default": 48000,
+          "title": "Sample Rate",
+          "type": "integer"
+        }
+      },
+      "title": "SequenceSettings",
+      "type": "object"
+    },
+    "Track": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "video",
+            "audio"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "locked": {
+          "default": false,
+          "title": "Locked",
+          "type": "boolean"
+        },
+        "sync_lock": {
+          "default": true,
+          "title": "Sync Lock",
+          "type": "boolean"
+        },
+        "hidden": {
+          "default": false,
+          "description": "video: eye toggle off",
+          "title": "Hidden",
+          "type": "boolean"
+        },
+        "muted": {
+          "default": false,
+          "title": "Muted",
+          "type": "boolean"
+        },
+        "solo": {
+          "default": false,
+          "title": "Solo",
+          "type": "boolean"
+        },
+        "targeted": {
+          "default": true,
+          "title": "Targeted",
+          "type": "boolean"
+        },
+        "clips": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Clip"
+          },
+          "title": "Clips",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "name"
+      ],
+      "title": "Track",
+      "type": "object"
+    },
+    "VideoStream": {
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "title": "Width",
+          "type": "integer"
+        },
+        "height": {
+          "title": "Height",
+          "type": "integer"
+        },
+        "fps_num": {
+          "title": "Fps Num",
+          "type": "integer"
+        },
+        "fps_den": {
+          "title": "Fps Den",
+          "type": "integer"
+        },
+        "codec": {
+          "default": "",
+          "title": "Codec",
+          "type": "string"
+        },
+        "pix_fmt": {
+          "default": "",
+          "title": "Pix Fmt",
+          "type": "string"
+        }
+      },
+      "required": [
+        "width",
+        "height",
+        "fps_num",
+        "fps_den"
+      ],
+      "title": "VideoStream",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "default": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "id": {
+      "title": "Id",
+      "type": "string"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "root_bin_id": {
+      "title": "Root Bin Id",
+      "type": "string"
+    },
+    "bins": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Bin"
+      },
+      "title": "Bins",
+      "type": "object"
+    },
+    "media": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MediaItem"
+      },
+      "title": "Media",
+      "type": "object"
+    },
+    "sequences": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Sequence"
+      },
+      "title": "Sequences",
+      "type": "object"
+    },
+    "active_sequence_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Active Sequence Id"
+    }
+  },
+  "required": [
+    "id",
+    "name",
+    "root_bin_id"
+  ],
+  "title": "Project",
+  "type": "object"
+}

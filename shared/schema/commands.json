@@ -1,0 +1,1728 @@
+[
+  {
+    "name": "project.rename",
+    "description": "Rename the project.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "RenameProject",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bin.create",
+    "description": "Create a bin in the Project panel (root when parent_id is omitted).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "Bin",
+          "title": "Name",
+          "type": "string"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Id"
+        }
+      },
+      "title": "CreateBin",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bin.rename",
+    "description": "Rename a bin.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bin_id",
+        "name"
+      ],
+      "title": "RenameBin",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bin.delete",
+    "description": "Delete an empty bin.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bin_id"
+      ],
+      "title": "DeleteBin",
+      "type": "object"
+    }
+  },
+  {
+    "name": "bin.move_items",
+    "description": "Move project items into a bin.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "item_ids": {
+          "description": "media, sequence or bin ids",
+          "items": {
+            "type": "string"
+          },
+          "title": "Item Ids",
+          "type": "array"
+        },
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "item_ids",
+        "bin_id"
+      ],
+      "title": "MoveItems",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.import",
+    "description": "Import media files into the project (probes each with ffprobe).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Paths",
+          "type": "array"
+        },
+        "bin_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bin Id"
+        }
+      },
+      "required": [
+        "paths"
+      ],
+      "title": "ImportMedia",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.set_marks",
+    "description": "Set the source monitor In/Out marks (ticks; null clears).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "in_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Point"
+        },
+        "out_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Out Point"
+        }
+      },
+      "required": [
+        "media_id"
+      ],
+      "title": "SetMediaMarks",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.rename",
+    "description": "Rename a project media item and optionally change its label color.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "enum": [
+                "violet",
+                "iris",
+                "caribbean",
+                "lavender",
+                "cerulean",
+                "forest",
+                "rose",
+                "mango",
+                "purple",
+                "blue",
+                "teal",
+                "magenta",
+                "tan",
+                "green",
+                "brown",
+                "yellow"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        }
+      },
+      "required": [
+        "media_id",
+        "name"
+      ],
+      "title": "RenameMedia",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.remove",
+    "description": "Remove media from the project.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Media Ids",
+          "type": "array"
+        },
+        "remove_clips": {
+          "default": false,
+          "description": "also remove timeline clips that use the media",
+          "title": "Remove Clips",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "media_ids"
+      ],
+      "title": "RemoveMedia",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.set_derived",
+    "description": "Record generated proxy/thumbnail/waveform files (cache data, not undoable).",
+    "undoable": false,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "proxy_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proxy Path"
+        },
+        "thumbnail_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thumbnail Path"
+        },
+        "waveform_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Waveform Path"
+        }
+      },
+      "required": [
+        "media_id"
+      ],
+      "title": "SetDerived",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.create",
+    "description": "Create an empty sequence (File > New > Sequence).",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "SequenceSettingsParams": {
+          "additionalProperties": false,
+          "properties": {
+            "width": {
+              "default": 1920,
+              "title": "Width",
+              "type": "integer"
+            },
+            "height": {
+              "default": 1080,
+              "title": "Height",
+              "type": "integer"
+            },
+            "fps_num": {
+              "default": 30,
+              "title": "Fps Num",
+              "type": "integer"
+            },
+            "fps_den": {
+              "default": 1,
+              "title": "Fps Den",
+              "type": "integer"
+            },
+            "sample_rate": {
+              "default": 48000,
+              "title": "Sample Rate",
+              "type": "integer"
+            }
+          },
+          "title": "SequenceSettingsParams",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "default": "Sequence 01",
+          "title": "Name",
+          "type": "string"
+        },
+        "bin_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bin Id"
+        },
+        "settings": {
+          "$ref": "#/$defs/SequenceSettingsParams"
+        },
+        "video_tracks": {
+          "default": 3,
+          "maximum": 99,
+          "minimum": 1,
+          "title": "Video Tracks",
+          "type": "integer"
+        },
+        "audio_tracks": {
+          "default": 3,
+          "maximum": 99,
+          "minimum": 1,
+          "title": "Audio Tracks",
+          "type": "integer"
+        },
+        "activate": {
+          "default": true,
+          "title": "Activate",
+          "type": "boolean"
+        }
+      },
+      "title": "CreateSequence",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.create_from_media",
+    "description": "New Sequence From Clip: match the clip's settings and place it at 0.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "required": [
+        "media_id"
+      ],
+      "title": "CreateSequenceFromMedia",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.rename",
+    "description": "Rename a sequence.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "title": "Sequence Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence_id",
+        "name"
+      ],
+      "title": "RenameSequence",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.delete",
+    "description": "Delete a sequence.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "title": "Sequence Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence_id"
+      ],
+      "title": "SequenceRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.duplicate",
+    "description": "Duplicate a sequence (new ids for every track, clip and marker).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "title": "Sequence Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence_id"
+      ],
+      "title": "SequenceRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.set_active",
+    "description": "Open a sequence in the Timeline / Program monitor.",
+    "undoable": false,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "title": "Sequence Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sequence_id"
+      ],
+      "title": "SequenceRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.set_playhead",
+    "description": "Move the playhead (current time indicator).",
+    "undoable": false,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "time": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Time"
+        }
+      },
+      "required": [
+        "time"
+      ],
+      "title": "SetPlayhead",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.set_in_out",
+    "description": "Set or clear the sequence In/Out marks.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "in_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "In Point"
+        },
+        "out_point": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Out Point"
+        }
+      },
+      "title": "SetSequenceInOut",
+      "type": "object"
+    }
+  },
+  {
+    "name": "track.add",
+    "description": "Add a video or audio track.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "kind": {
+          "enum": [
+            "video",
+            "audio"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "position in the track list; default appends (top video / bottom audio)",
+          "title": "Index"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AddTrack",
+      "type": "object"
+    }
+  },
+  {
+    "name": "track.remove",
+    "description": "Delete a track and its clips.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track_id"
+      ],
+      "title": "RemoveTrack",
+      "type": "object"
+    }
+  },
+  {
+    "name": "track.set",
+    "description": "Set track header toggles (lock, sync lock, eye, mute, solo, target) or name.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "locked": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Locked"
+        },
+        "sync_lock": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sync Lock"
+        },
+        "hidden": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hidden"
+        },
+        "muted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Muted"
+        },
+        "solo": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Solo"
+        },
+        "targeted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Targeted"
+        }
+      },
+      "required": [
+        "track_id"
+      ],
+      "title": "SetTrack",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.place",
+    "description": "Place media on the timeline (Insert ',' / Overwrite '.'), video and audio linked.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "timeline time; default playhead",
+          "title": "At"
+        },
+        "mode": {
+          "default": "overwrite",
+          "enum": [
+            "overwrite",
+            "insert"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "source_in": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source time; default media In mark or 0",
+          "title": "Source In"
+        },
+        "source_out": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source time; default media Out mark or end",
+          "title": "Source Out"
+        },
+        "video_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Track Id"
+        },
+        "audio_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Track Id"
+        },
+        "take_video": {
+          "default": true,
+          "title": "Take Video",
+          "type": "boolean"
+        },
+        "take_audio": {
+          "default": true,
+          "title": "Take Audio",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "media_id"
+      ],
+      "title": "PlaceMedia",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.razor",
+    "description": "Razor / Add Edit (Ctrl+K) at a time.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "track_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: all unlocked tracks (Add Edit to All Tracks)",
+          "title": "Track Ids"
+        }
+      },
+      "title": "Razor",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.remove_ranges",
+    "description": "Lift or Extract one or more time ranges across tracks (e.g. silence cuts).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "ranges": {
+          "description": "[start, end) pairs",
+          "items": {
+            "maxItems": 2,
+            "minItems": 2,
+            "prefixItems": [
+              {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            ],
+            "type": "array"
+          },
+          "minItems": 1,
+          "title": "Ranges",
+          "type": "array"
+        },
+        "track_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: all unlocked tracks",
+          "title": "Track Ids"
+        },
+        "ripple": {
+          "default": true,
+          "description": "true = Extract (close gap), false = Lift (leave gap)",
+          "title": "Ripple",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "ranges"
+      ],
+      "title": "RangeEdit",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.remove",
+    "description": "Delete clips (Clear) or Ripple Delete them.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "ripple": {
+          "default": false,
+          "description": "Ripple Delete (Shift+Delete) instead of Clear",
+          "title": "Ripple",
+          "type": "boolean"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "RemoveClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.move",
+    "description": "Drag clips in time and/or across tracks (overwrite, or Ctrl-drag insert).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "delta": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "time offset, may be negative (e.g. '-1.5s')",
+          "title": "Delta"
+        },
+        "track_delta": {
+          "default": 0,
+          "description": "move up (+) / down (-) within the same track kind",
+          "title": "Track Delta",
+          "type": "integer"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        },
+        "mode": {
+          "default": "overwrite",
+          "enum": [
+            "overwrite",
+            "insert"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "delta"
+      ],
+      "title": "MoveClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.trim",
+    "description": "Trim a clip's In (start) or Out (end) edge, optionally rippling.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "edge": {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        },
+        "delta": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "description": "positive moves the edge later; may be negative",
+          "title": "Delta"
+        },
+        "ripple": {
+          "default": false,
+          "description": "Ripple Edit (B / Q / W): shift later clips",
+          "title": "Ripple",
+          "type": "boolean"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id",
+        "edge",
+        "delta"
+      ],
+      "title": "TrimClip",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set_speed",
+    "description": "Clip Speed/Duration (Ctrl+R).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "speed": {
+          "description": "1.0 = 100%",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Speed",
+          "type": "number"
+        },
+        "ripple": {
+          "default": true,
+          "title": "Ripple",
+          "type": "boolean"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id",
+        "speed"
+      ],
+      "title": "SetSpeed",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set",
+    "description": "Set clip name, Enable (Shift+E), label color, opacity or volume.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "enabled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enabled"
+        },
+        "label": {
+          "anyOf": [
+            {
+              "enum": [
+                "violet",
+                "iris",
+                "caribbean",
+                "lavender",
+                "cerulean",
+                "forest",
+                "rose",
+                "mango",
+                "purple",
+                "blue",
+                "teal",
+                "magenta",
+                "tan",
+                "green",
+                "brown",
+                "yellow"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Opacity"
+        },
+        "volume_db": {
+          "anyOf": [
+            {
+              "maximum": 15,
+              "minimum": -96,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Volume Db"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "SetClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.link",
+    "description": "Link clips so they select, move and trim together.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "LinkClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.unlink",
+    "description": "Unlink clips.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "LinkClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "marker.add",
+    "description": "Add a sequence marker (M).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": 0,
+          "title": "Duration"
+        },
+        "name": {
+          "default": "",
+          "title": "Name",
+          "type": "string"
+        },
+        "comment": {
+          "default": "",
+          "title": "Comment",
+          "type": "string"
+        },
+        "color": {
+          "default": "green",
+          "enum": [
+            "green",
+            "red",
+            "purple",
+            "orange",
+            "yellow",
+            "white",
+            "blue",
+            "cyan"
+          ],
+          "title": "Color",
+          "type": "string"
+        }
+      },
+      "title": "AddMarker",
+      "type": "object"
+    }
+  },
+  {
+    "name": "marker.update",
+    "description": "Edit a marker.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "marker_id": {
+          "title": "Marker Id",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duration"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "color": {
+          "anyOf": [
+            {
+              "enum": [
+                "green",
+                "red",
+                "purple",
+                "orange",
+                "yellow",
+                "white",
+                "blue",
+                "cyan"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Color"
+        }
+      },
+      "required": [
+        "marker_id"
+      ],
+      "title": "UpdateMarker",
+      "type": "object"
+    }
+  },
+  {
+    "name": "marker.remove",
+    "description": "Delete markers.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "marker_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Marker Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "marker_ids"
+      ],
+      "title": "RemoveMarkers",
+      "type": "object"
+    }
+  }
+]
