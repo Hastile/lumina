@@ -131,3 +131,26 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .lm-fatal { position: fixed; inset: 0; display: grid; place-items: center; background: var(--bg-app); z-index: 2000; }
 .lm-fatal div { max-width: 640px; white-space: pre-wrap; color: var(--text); line-height: 1.6; }
 .lm-fatal b { color: var(--danger); }
+
+/* export */
+.lm-export { width: 860px; max-width: 94vw; }
+.lm-export .cols { display: grid; grid-template-columns: 1fr 360px; gap: 0; }
+.lm-export .body { grid-template-columns: 96px 1fr; align-content: start; }
+.lm-export .body input:not([type=checkbox]), .lm-export .body select { width: 100%; box-sizing: border-box; }
+.lm-export .row { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.lm-export .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.lm-export .summary { line-height: 1.6; min-width: 0; }
+.lm-export .summary .dim { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-export .preview { padding: 14px 16px 14px 0; display: grid; place-items: center; }
+.lm-export .preview img, .lm-export .preview .ph { max-width: 100%; max-height: 360px; background: #000; border: 1px solid #3a3a3a; }
+.lm-export .preview .ph { width: 100%; aspect-ratio: 16 / 9; }
+.lm-renderq { position: fixed; right: 16px; bottom: 16px; width: 340px; display: flex; flex-direction: column; gap: 8px; z-index: 1050; }
+.lm-renderq .card { background: #2d2d2d; border: 1px solid #444; border-radius: 6px; padding: 8px 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.55); }
+.lm-renderq .head { display: flex; align-items: center; gap: 6px; }
+.lm-renderq .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lm-renderq .bar { height: 4px; background: #1a1a1a; border-radius: 2px; margin: 8px 0 6px; overflow: hidden; }
+.lm-renderq .bar > div { height: 100%; background: var(--accent); transition: width 0.25s linear; }
+.lm-renderq .meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-dim); margin-top: 4px; }
+.lm-renderq .meta.error { color: var(--danger); display: block; word-break: break-word; }
+.lm-renderq .spin { animation: lm-spin 1s linear infinite; }
+@keyframes lm-spin { to { transform: rotate(360deg); } }

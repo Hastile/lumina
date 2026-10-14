@@ -30,7 +30,7 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+I, Ctrl+N, Ctrl+Alt+N | File / Edit | ✓ |
 | Shift+1…8 | Focus panels | ✓ |
 | Ctrl+C / Ctrl+V / Ctrl+Shift+V | Copy / paste / paste attributes | ✗ |
-| Ctrl+M | Export Media | ✗ (M5) |
+| Ctrl+M, Ctrl+Shift+E | Export Media, Export Frame | ✓ |
 | Ctrl+Alt+K editor, `.kys` import | Keyboard shortcuts | ✗ |
 
 ## Timeline
@@ -71,6 +71,16 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Drag a clip in the Program monitor to move it | ✓ (scale/rotate handles ✗) |
 | Type tool (T) / Ctrl+T new text layer, text editing in Properties (font, size, bold/italic, align, fill, stroke, background) | ✓ |
 | Keyframe interpolation: linear / ease (≈ Premiere's default Bezier) / hold | ✓ (custom Bezier handles ✗) |
+
+## Export
+| Item | Status |
+|---|---|
+| File > Export > Media (Ctrl+M): file name, location, format, range (entire / In-Out), hardware encoding, preview frame | ✓ |
+| Formats: H.264, HEVC, ProRes 422 HQ, WAV; NVENC / AMF / Quick Sync auto-detected | ✓ |
+| Render queue card: progress, fps, ETA, cancel, Show in Explorer | ✓ |
+| Output verified with ffprobe (duration, size, streams) before "done" | ✓ |
+| What renders: Motion, crop, opacity, keyframes, speed, text graphics, track eye/mute/solo, clip volume + keyframes | ✓ |
+| Effects, transitions, nested sequences, blend modes, audio pan / track volume | ✗ (not rendered yet) |
 
 ## Language
 Korean (Premiere's Korean terminology) is the default; View > Language switches to English.

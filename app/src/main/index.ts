@@ -75,6 +75,7 @@ function startEngine(): Promise<EngineInfo> {
     const [cmd, args] = custom
       ? [custom.split(' ')[0], [...custom.split(' ').slice(1), 'serve']]
       : ['uv', ['run', '--project', engineDir(), 'lumina', 'serve']]
+    args.push('--parent-pid', String(process.pid))
     const proc = spawn(cmd, args, { cwd: engineDir(), windowsHide: true, env: { ...process.env, PYTHONUNBUFFERED: '1' } })
     engineProc = proc
     let stderr = ''
@@ -136,7 +137,8 @@ const MENU: Record<string, Item[]> = {
     { label: 'Save As...', action: 'file.saveAs', accel: 'Ctrl+Shift+S' },
     'sep',
     { label: 'Import...', action: 'file.import', accel: 'Ctrl+I' },
-    { label: 'Export Media...', action: 'file.export', accel: 'Ctrl+M', enabled: false },
+    { label: 'Export Media...', action: 'file.export', accel: 'Ctrl+M' },
+    { label: 'Export Frame...', action: 'file.exportFrame', accel: 'Ctrl+Shift+E' },
     'sep',
     { label: 'Exit', action: 'app.quit', accel: 'Ctrl+Q' }
   ],
@@ -318,6 +320,9 @@ ipcMain.handle('app:setLocale', (e, locale: Locale) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   if (win) buildMenu(win)
 })
+
+ipcMain.handle('shell:showItem', (_e, path: string) => shell.showItemInFolder(path))
+ipcMain.handle('app:videosDir', () => app.getPath('videos'))
 
 ipcMain.handle('window:setTitle', (e, title: string) => {
   BrowserWindow.fromWebContents(e.sender)?.setTitle(title)

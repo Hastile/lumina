@@ -28,8 +28,11 @@ With no GUI running, they start a headless engine instead.
 - MCP: `.mcp.json` in this repo registers `lumina mcp`. It exposes one tool per
   command (`clip_place`, `clip_razor`, `sequence_remove_ranges`, …) plus
   `get_timeline_state`, `undo`, `begin_transaction` / `commit_transaction` /
-  `rollback_transaction`, and `save_project`.
+  `rollback_transaction`, `save_project`, `export_media` (render + ffprobe
+  verification) and `get_frame_image` (returns the rendered frame as an image so
+  an agent can look at its edit).
 - CLI: `uv run lumina exec clip.razor '{"at":"5s"}'` and `uv run lumina call timeline.state`.
+- Headless export: `uv run lumina render project.lumina out.mp4 [--sequence NAME] [--preset h264|hevc|prores|wav] [--range in_out]`.
 - Time values accept ticks, `"12.5s"`, `"45f"` or `"00:00:12:15"`.
 
 ## Test

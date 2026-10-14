@@ -20,7 +20,8 @@ from .commands.registry import REGISTRY, CommandError
 INSTRUCTIONS = """Lumina is a Premiere-style video editor. Every edit is an undoable command.
 Times accept ticks (int) or strings: "12.5s", "45f", "00:01:02:15". Omitted sequence_id = active sequence.
 Typical flow: open_project/new_project -> media_import -> sequence_create_from_media -> edits -> get_timeline_state -> save_project.
-Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure)."""
+Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure).
+Use get_frame_image to look at the result, and export_media to render a verified file."""
 
 _OBJ = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -40,7 +41,35 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                      {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, None),
     "save_project": ("project.save", "Save the project (path required the first time).",
                      {"type": "object", "properties": {"path": {"type": "string"}}}, None),
-    "list_jobs": ("jobs.list", "Background proxy/thumbnail/waveform jobs and their status.", _OBJ, None),
+    "list_jobs": ("jobs.list", "Background jobs (proxy/thumbnail/waveform/export) with status and progress.", _OBJ, None),
+    "export_media": ("export.start",
+                     "Export a sequence to a file (File > Export > Media). Renders exactly what the Program monitor shows "
+                     "(motion, keyframes, opacity, crop, text graphics, audio volume), encodes, then verifies the output "
+                     "with ffprobe. wait=true blocks until done and returns the result; otherwise poll list_jobs.",
+                     {"type": "object", "properties": {
+                         "path": {"type": "string", "description": "output file; extension defaults from the preset"},
+                         "sequence_id": {"type": "string"},
+                         "preset": {"type": "string", "enum": ["h264", "hevc", "prores", "wav"], "default": "h264"},
+                         "range": {"type": "string", "enum": ["entire", "in_out"], "default": "entire"},
+                         "start": {"type": ["string", "integer"], "description": "custom range start (overrides range)"},
+                         "end": {"type": ["string", "integer"]},
+                         "hardware": {"type": "string", "enum": ["auto", "on", "off"], "default": "auto",
+                                      "description": "GPU encoder (NVENC/AMF/QSV) when available"},
+                         "wait": {"type": "boolean", "default": True}},
+                      "required": ["path"]}, lambda a: {"wait": True, **a}),
+    "cancel_export": ("export.cancel", "Cancel a queued or running export job.",
+                      {"type": "object", "properties": {"job_id": {"type": "string"}}, "required": ["job_id"]}, None),
+    "list_export_presets": ("export.presets", "Export formats/presets and whether a hardware encoder applies.", _OBJ, None),
+    "export_frame": ("export.frame", "Export Frame (Ctrl+Shift+E): render one sequence frame to a PNG/JPEG file.",
+                     {"type": "object", "properties": {"time": {"type": ["string", "integer"], "description": "default playhead"},
+                                                       "sequence_id": {"type": "string"}, "path": {"type": "string"}},
+                      "required": ["path"]}, None),
+    "get_frame_image": ("export.frame",
+                        "Look at the edit: returns the rendered sequence frame at a time (default playhead) as an image, "
+                        "exactly as it will export.",
+                        {"type": "object", "properties": {"time": {"type": ["string", "integer"]}, "sequence_id": {"type": "string"},
+                                                          "max_size": {"type": "integer", "default": 960}}},
+                        lambda a: {"max_size": 960, **a}),
     "convert_time": ("time.convert", "Convert a time value to ticks/seconds/frame/timecode in a sequence's frame rate.",
                      {"type": "object", "properties": {"time": {"type": ["string", "integer"]}, "sequence_id": {"type": "string"}},
                       "required": ["time"]}, None),
@@ -63,6 +92,27 @@ def build_tools() -> list[types.Tool]:
     return tools
 
 
+def _image_result(info: dict) -> types.CallToolResult:
+    import base64
+    import io
+    import os
+
+    from PIL import Image
+
+    with Image.open(info["path"]) as im:
+        buf = io.BytesIO()
+        im.convert("RGB").save(buf, "JPEG", quality=85)
+    try:
+        os.unlink(info["path"])
+    except OSError:
+        pass
+    meta = {k: v for k, v in info.items() if k != "path"}
+    return types.CallToolResult(content=[
+        types.ImageContent(type="image", data=base64.b64encode(buf.getvalue()).decode("ascii"), mime_type="image/jpeg"),
+        types.TextContent(type="text", text=json.dumps(meta, ensure_ascii=False)),
+    ])
+
+
 def make_server(engine) -> Server:
     tools = build_tools()
     by_tool = {tool_name(n): n for n in REGISTRY.commands}
@@ -78,12 +128,15 @@ def make_server(engine) -> Server:
                     lambda: engine.dispatch("execute", {"name": by_tool[params.name], "params": args, "label": f"Agent: {params.name}"})
                 )
             elif params.name in EXTRA_TOOLS:
-                method = EXTRA_TOOLS[params.name][0]
-                result = await anyio.to_thread.run_sync(lambda: engine.dispatch(method, args))
+                method, _, _, mapper = EXTRA_TOOLS[params.name]
+                mapped = mapper(args) if mapper else args
+                result = await anyio.to_thread.run_sync(lambda: engine.dispatch(method, mapped))
             else:
                 raise CommandError("UNKNOWN_TOOL", f"unknown tool {params.name}")
         except CommandError as exc:
             return types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps({"error": exc.to_dict()}, ensure_ascii=False))], is_error=True)
+        if params.name == "get_frame_image":
+            return _image_result(result)
         if params.name in ("open_project", "new_project") and isinstance(result, dict):
             result = {k: v for k, v in result.items() if k != "document"}
         return types.CallToolResult(content=[types.TextContent(type="text", text=json.dumps(result, ensure_ascii=False, default=str))])

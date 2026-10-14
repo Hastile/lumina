@@ -7,6 +7,7 @@ import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { dockApi, buildEditingLayout, focusPanel, toggleMaximize } from '../layout/dock'
 import { openDialog } from '../state/dialog'
+import { exportFrame, openExportDialog } from '../layout/ExportDialog'
 import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, type PanelId, type Tool } from '../state/store'
 import { goTo, shuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
 import { secondsToTicks, ticksPerFrame, ticksToSeconds } from '../util/time'
@@ -313,6 +314,8 @@ def('file.open', 'Open Project', async () => {
 def('file.save', t('Save'), async () => (get().path ? void (await call('project.save', {})) : saveAs()))
 def('file.saveAs', 'Save As', saveAs)
 def('file.import', 'Import', () => importFiles())
+def('file.export', t('Export Media...'), () => openExportDialog())
+def('file.exportFrame', t('Export Frame...'), () => exportFrame())
 
 // Edit
 def('edit.undo', t('Undo'), async () => void (await call('undo')))

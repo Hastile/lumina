@@ -15,6 +15,7 @@ from . import timebase
 from .commands.registry import REGISTRY, CommandError
 from .media import probe as probe_mod
 from .media.jobs import JobRunner
+from .render import export as export_mod
 from .session import Session
 
 
@@ -29,6 +30,7 @@ class Engine:
         self.run_jobs = run_jobs
         self._queued: set[str] = set()
         self.jobs = JobRunner(record=self._record_derived, emit=self.session._emit)
+        self.exports = export_mod.ExportQueue(emit=self.session._emit)
         self.methods: dict[str, Callable[[dict], Any]] = {
             "hello": lambda p: {"engine": "lumina", "api": 1, "commands": REGISTRY.describe(), **self.session.snapshot()},
             "commands.list": lambda p: REGISTRY.describe(),
@@ -44,7 +46,11 @@ class Engine:
             "project.save": lambda p: self.session.save(p.get("path")),
             "project.summary": lambda p: views.project_summary(self.session.doc),
             "timeline.state": lambda p: views.timeline_state(self.session.doc, p.get("sequence_id")),
-            "jobs.list": lambda p: self.jobs.list(),
+            "jobs.list": lambda p: self.jobs.list() + self.exports.list(),
+            "export.presets": lambda p: export_mod.presets(),
+            "export.start": self._export_start,
+            "export.cancel": lambda p: self.exports.cancel(p["job_id"]),
+            "export.frame": self._export_frame,
             "time.convert": self._convert_time,
         }
 
@@ -92,6 +98,32 @@ class Engine:
     def _record_derived(self, media_id: str, fields: dict) -> None:
         if media_id in self.session.doc["media"]:
             self.session.execute("media.set_derived", {"media_id": media_id, **fields})
+
+    def _export_start(self, p: dict) -> dict:
+        from .commands.project import seq_of
+
+        seq = seq_of(self.session.doc, p.get("sequence_id"))
+        if not p.get("path"):
+            raise CommandError("BAD_PARAMS", "export.start needs 'path'")
+        params = {**p, "sequence_id": seq["id"]}
+        export_mod.resolve_range(seq, p.get("range"), p.get("start"), p.get("end"))  # fail fast on an empty range
+        return self.exports.submit(self.session.doc, params, wait=bool(p.get("wait")))
+
+    def _export_frame(self, p: dict) -> dict:
+        """Premiere's Export Frame (Ctrl+Shift+E). ``time`` defaults to the playhead."""
+        import tempfile
+
+        from .commands.project import seq_of
+        from .commands.registry import resolve_time
+
+        seq = seq_of(self.session.doc, p.get("sequence_id"))
+        st = seq["settings"]
+        t = resolve_time(p["time"], st) if p.get("time") is not None else seq["playhead"]
+        t = timebase.ticks_to_frames(t, st["fps_num"], st["fps_den"]) * timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+        path = p.get("path") or str(Path(tempfile.gettempdir()) / f"lumina-frame-{seq['id'][:8]}-{t}.png")
+        img = export_mod.export_frame(self.session.doc, seq["id"], t, path, p.get("max_size"))
+        return {"path": path, "time": t, "seconds": timebase.ticks_to_seconds(t),
+                "timecode": timebase.timecode(t, st["fps_num"], st["fps_den"]), "width": img.width, "height": img.height}
 
     def _convert_time(self, p: dict) -> dict:
         from .commands.project import seq_of

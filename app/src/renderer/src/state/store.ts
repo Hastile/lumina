@@ -157,7 +157,7 @@ function onEvent(e: EngineEvent): void {
     }
     case 'job':
       set((s) => ({ jobs: { ...s.jobs, [e.job.id]: e.job } }))
-      if (e.job.status === 'failed') toast(`${e.job.kind} failed: ${e.job.error}`)
+      if (e.job.status === 'failed' && e.job.kind !== 'export') toast(`${e.job.kind} failed: ${e.job.error}`)
       break
   }
 }

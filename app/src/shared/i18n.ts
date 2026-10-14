@@ -242,7 +242,35 @@ const ko: Record<string, string> = {
   'Open a clip in the Source Monitor first (double-click it in the Project panel)': '먼저 소스 모니터에서 클립을 여세요(프로젝트 패널에서 더블클릭)',
   'Set sequence In and Out points first (I / O)': '먼저 시퀀스 시작/종료 지점을 설정하세요(I / O)',
   'Not implemented yet': '아직 구현되지 않음',
-  'New Text Layer': '새 텍스트 레이어'
+  'New Text Layer': '새 텍스트 레이어',
+  // export
+  'Export Frame...': '내보내기 > 프레임...',
+  Export: '내보내기',
+  'Export Settings': '내보내기 설정',
+  'File Name': '파일 이름',
+  Location: '위치',
+  'Browse...': '찾아보기...',
+  Format: '형식',
+  Range: '범위',
+  'Entire Source': '전체 소스',
+  'Source In/Out': '소스 인/아웃',
+  'Hardware Encoding': '하드웨어 인코딩',
+  Summary: '요약',
+  'Audio only': '오디오만',
+  Exporting: '내보내는 중',
+  'Export complete': '내보내기 완료',
+  'Export failed': '내보내기 실패',
+  'Export cancelled': '내보내기 취소됨',
+  'Show in Explorer': '탐색기에서 보기',
+  'Mixing audio': '오디오 믹싱',
+  'Rendering video': '비디오 렌더링',
+  Verifying: '확인 중',
+  Queued: '대기 중',
+  'Frame exported': '프레임을 내보냈습니다',
+  'remaining': '남음',
+  'Output verified with ffprobe': 'ffprobe로 출력 확인됨',
+  Close: '닫기',
+  Stereo: '스테레오'
 }
 
 let locale: Locale = 'ko'

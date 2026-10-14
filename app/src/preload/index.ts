@@ -13,7 +13,9 @@ const api = {
     ipcRenderer.on('menu:action', listener)
     return () => ipcRenderer.removeListener('menu:action', listener)
   },
-  pathForFile: (file: File): string => webUtils.getPathForFile(file)
+  pathForFile: (file: File): string => webUtils.getPathForFile(file),
+  showItemInFolder: (path: string): Promise<void> => ipcRenderer.invoke('shell:showItem', path),
+  videosDir: (): Promise<string> => ipcRenderer.invoke('app:videosDir')
 }
 
 contextBridge.exposeInMainWorld('lumina', api)

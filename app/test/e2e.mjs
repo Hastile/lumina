@@ -2,7 +2,9 @@
 // and mouse input, then checks the engine document.
 //   npm run build && node test/e2e.mjs [screenshot.png]
 import { _electron as electron } from 'playwright'
-import { resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+import { existsSync, mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 
 const SAMPLE = resolve('../samples/test30.mp4')
@@ -177,6 +179,23 @@ try {
   assert.ok(Math.abs(Number(op) - 0.5) < 0.02, `opacity at 0.5s should be ~0.5, got ${op}`)
   log('opacity keyframes render: 0.5s ->', op)
   await page.keyboard.press('Control+z')
+
+  // ---- export: Ctrl+M -> Export dialog -> render queue -> verified file
+  const outDir = mkdtempSync(join(tmpdir(), 'lumina-e2e-'))
+  await page.locator('.lm-tl-lanes').click({ position: { x: 5, y: 2 } })
+  await page.keyboard.press('Control+m')
+  await page.locator('.lm-export').waitFor()
+  await page.locator('.lm-export .preview img').waitFor({ timeout: 15000 })
+  await page.locator('#ex-name').fill('e2e export')
+  await page.locator('#ex-dir').fill(outDir)
+  await page.locator('#ex-range').selectOption('entire')
+  await page.locator('.lm-export button[type=submit]').click()
+  await page.locator('.lm-renderq .card.done').waitFor({ timeout: 120000 })
+  const job = await page.evaluate(() => Object.values(window.__lumina.get().jobs).find((j) => j.kind === 'export'))
+  assert.equal(job.status, 'done', job.error)
+  assert.ok(existsSync(job.result.path) && job.result.path.startsWith(outDir), job.result.path)
+  assert.ok(Math.abs(job.result.verification.durationSeconds - job.result.range.seconds) < 0.05)
+  log('Ctrl+M export:', job.result.frames, 'frames,', job.result.encoder, `${job.result.elapsed_seconds}s, verified with ffprobe`)
 
   if (shot) await page.screenshot({ path: shot })
   log('PASS')

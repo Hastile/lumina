@@ -28,7 +28,21 @@ export type EngineEvent =
   | ({ type: 'history' } & HistoryState)
   | { type: 'job'; job: Job }
 
-export type Job = { id: string; kind: string; media_id: string; status: 'queued' | 'running' | 'done' | 'failed'; error: string | null }
+export type ExportResult = { path: string; encoder: string | null; elapsed_seconds: number; size_bytes: number; frames: number; warnings: string[] }
+export type Job = {
+  id: string
+  kind: string
+  media_id: string | null
+  status: 'queued' | 'running' | 'done' | 'failed' | 'cancelled'
+  error: string | null
+  // export jobs
+  path?: string
+  phase?: string
+  progress?: number
+  fps?: number
+  eta_seconds?: number | null
+  result?: ExportResult | null
+}
 
 export type CommandSpec = { name: string; description: string; undoable: boolean; params: Record<string, unknown> }
 

@@ -5,6 +5,7 @@ import { Home } from 'lucide-react'
 import { installKeymap } from './actions/keymap'
 import { buildEditingLayout, setDockApi } from './layout/dock'
 import { ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
+import { ExportDialog, RenderQueue } from './layout/ExportDialog'
 import { connectEngine, set, useStore, type PanelId } from './state/store'
 import { ProjectPanel } from './panels/ProjectPanel'
 import { ProgramMonitor, SourceMonitor } from './panels/Monitors'
@@ -100,6 +101,8 @@ export function App() {
         <DockviewReact theme={LUMINA_THEME} components={components} onReady={onReady} />
       </div>
       <DialogHost />
+      <ExportDialog />
+      <RenderQueue />
       <ContextMenuHost />
       <Toasts />
       {fatal && (

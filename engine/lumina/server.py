@@ -97,6 +97,33 @@ async def _safe_send(ws: ServerConnection, msg: str) -> None:
         pass
 
 
+def _exit_with_parent(pid: int) -> None:
+    """The GUI may die without running its quit handler (crash, test runner
+    kill); don't leave an orphaned engine behind."""
+    import threading
+
+    def watch() -> None:
+        if os.name == "nt":
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x00100000, False, pid)  # SYNCHRONIZE
+            if handle:
+                kernel32.WaitForSingleObject(handle, 0xFFFFFFFF)
+        else:
+            import time
+
+            while True:
+                try:
+                    os.kill(pid, 0)
+                except OSError:
+                    break
+                time.sleep(1)
+        os._exit(0)
+
+    threading.Thread(target=watch, name="lumina-parent-watch", daemon=True).start()
+
+
 def main(argv: list[str] | None = None) -> None:
     import argparse
 
@@ -105,7 +132,10 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--port", type=int, default=0)
     ap.add_argument("--token")
     ap.add_argument("--project", help="open this project on start")
+    ap.add_argument("--parent-pid", type=int, help="exit when this process (the GUI) exits")
     args = ap.parse_args(argv)
+    if args.parent_pid:
+        _exit_with_parent(args.parent_pid)
     engine = Engine()
     if args.project:
         engine.dispatch("project.open", {"path": args.project})
