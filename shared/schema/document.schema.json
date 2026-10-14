@@ -19,7 +19,8 @@
       },
       "required": [
         "channels",
-        "sample_rate"
+        "sample_rate",
+        "codec"
       ],
       "title": "AudioStream",
       "type": "object"
@@ -148,7 +149,13 @@
         "name",
         "start",
         "end",
-        "source_in"
+        "source_in",
+        "speed",
+        "enabled",
+        "link_id",
+        "label",
+        "opacity",
+        "volume_db"
       ],
       "title": "Clip",
       "type": "object"
@@ -197,7 +204,11 @@
       },
       "required": [
         "id",
-        "start"
+        "start",
+        "duration",
+        "name",
+        "comment",
+        "color"
       ],
       "title": "Marker",
       "type": "object"
@@ -349,7 +360,15 @@
         "path",
         "bin_id",
         "kind",
-        "duration"
+        "duration",
+        "video",
+        "audio",
+        "label",
+        "proxy_path",
+        "thumbnail_path",
+        "waveform_path",
+        "in_point",
+        "out_point"
       ],
       "title": "MediaItem",
       "type": "object"
@@ -435,7 +454,15 @@
       "required": [
         "id",
         "name",
-        "bin_id"
+        "bin_id",
+        "settings",
+        "tracks",
+        "video_tracks",
+        "audio_tracks",
+        "markers",
+        "playhead",
+        "in_point",
+        "out_point"
       ],
       "title": "Sequence",
       "type": "object"
@@ -469,6 +496,13 @@
           "type": "integer"
         }
       },
+      "required": [
+        "width",
+        "height",
+        "fps_num",
+        "fps_den",
+        "sample_rate"
+      ],
       "title": "SequenceSettings",
       "type": "object"
     },
@@ -533,7 +567,14 @@
       "required": [
         "id",
         "kind",
-        "name"
+        "name",
+        "locked",
+        "sync_lock",
+        "hidden",
+        "muted",
+        "solo",
+        "targeted",
+        "clips"
       ],
       "title": "Track",
       "type": "object"
@@ -572,7 +613,9 @@
         "width",
         "height",
         "fps_num",
-        "fps_den"
+        "fps_den",
+        "codec",
+        "pix_fmt"
       ],
       "title": "VideoStream",
       "type": "object"
@@ -632,9 +675,14 @@
     }
   },
   "required": [
+    "schema_version",
     "id",
     "name",
-    "root_bin_id"
+    "root_bin_id",
+    "bins",
+    "media",
+    "sequences",
+    "active_sequence_id"
   ],
   "title": "Project",
   "type": "object"

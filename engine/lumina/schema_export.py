@@ -12,6 +12,6 @@ from .model import Project
 def write_schemas(out_dir: str) -> None:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / "document.schema.json").write_text(json.dumps(Project.model_json_schema(), indent=2), encoding="utf-8")
+    (out / "document.schema.json").write_text(json.dumps(Project.model_json_schema(mode="serialization"), indent=2), encoding="utf-8")
     (out / "commands.json").write_text(json.dumps(REGISTRY.describe(), indent=2), encoding="utf-8")
     print(f"wrote schemas to {out.resolve()}")

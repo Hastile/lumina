@@ -165,20 +165,36 @@ def media_import(ctx: Context, p: ImportMedia):
 
 class SetMediaMarks(Params):
     media_id: str
-    in_point: int | None = None
-    out_point: int | None = None
+    in_point: int | None = Field(default=None, description="source ticks; omitted = keep")
+    out_point: int | None = Field(default=None, description="source ticks; omitted = keep")
+    clear_in: bool = False
+    clear_out: bool = False
+
+
+def _merge_marks(cur_in, cur_out, p) -> tuple[int | None, int | None]:
+    """Premiere semantics: only the given mark changes; a mark that would cross the other clears it."""
+    new_in = None if p.clear_in else (p.in_point if p.in_point is not None else cur_in)
+    new_out = None if p.clear_out else (p.out_point if p.out_point is not None else cur_out)
+    if new_in is not None and new_out is not None and new_out <= new_in:
+        if p.in_point is not None and p.out_point is None:
+            new_out = None
+        elif p.out_point is not None and p.in_point is None:
+            new_in = None
+        else:
+            raise CommandError("BAD_RANGE", "out must be after in")
+    return new_in, new_out
 
 
 @command("media.set_marks", SetMediaMarks)
 def media_set_marks(ctx: Context, p: SetMediaMarks):
-    """Set the source monitor In/Out marks (ticks; null clears)."""
+    """Set or clear the source monitor In/Out marks (only the given mark changes)."""
     item = media_of(ctx.doc, p.media_id)
-    if p.in_point is not None and p.out_point is not None and p.out_point <= p.in_point:
-        raise CommandError("BAD_RANGE", "out must be after in")
-    if item["in_point"] != p.in_point:
-        ctx.m.set(["media", p.media_id, "in_point"], p.in_point)
-    if item["out_point"] != p.out_point:
-        ctx.m.set(["media", p.media_id, "out_point"], p.out_point)
+    new_in, new_out = _merge_marks(item["in_point"], item["out_point"], p)
+    if item["in_point"] != new_in:
+        ctx.m.set(["media", p.media_id, "in_point"], new_in)
+    if item["out_point"] != new_out:
+        ctx.m.set(["media", p.media_id, "out_point"], new_out)
+    return {"in_point": new_in, "out_point": new_out}
 
 
 class RenameMedia(Params):
@@ -420,20 +436,28 @@ def sequence_set_playhead(ctx: Context, p: SetPlayhead):
 
 class SetSequenceInOut(Params):
     sequence_id: str | None = None
-    in_point: TimeValue | None = None
-    out_point: TimeValue | None = None
+    in_point: TimeValue | None = Field(default=None, description="omitted = keep")
+    out_point: TimeValue | None = Field(default=None, description="omitted = keep")
+    clear_in: bool = False
+    clear_out: bool = False
 
 
 @command("sequence.set_in_out", SetSequenceInOut)
 def sequence_set_in_out(ctx: Context, p: SetSequenceInOut):
-    """Set or clear the sequence In/Out marks."""
+    """Set or clear the sequence In/Out marks (only the given mark changes)."""
     seq = seq_of(ctx.doc, p.sequence_id)
-    i = None if p.in_point is None else resolve_time(p.in_point, seq["settings"])
-    o = None if p.out_point is None else resolve_time(p.out_point, seq["settings"])
-    if i is not None and o is not None and o <= i:
-        raise CommandError("BAD_RANGE", "out must be after in")
-    ctx.m.set(["sequences", seq["id"], "in_point"], i)
-    ctx.m.set(["sequences", seq["id"], "out_point"], o)
+    resolved = SetMediaMarks(
+        media_id="-",
+        in_point=None if p.in_point is None else resolve_time(p.in_point, seq["settings"]),
+        out_point=None if p.out_point is None else resolve_time(p.out_point, seq["settings"]),
+        clear_in=p.clear_in, clear_out=p.clear_out,
+    )
+    new_in, new_out = _merge_marks(seq["in_point"], seq["out_point"], resolved)
+    if seq["in_point"] != new_in:
+        ctx.m.set(["sequences", seq["id"], "in_point"], new_in)
+    if seq["out_point"] != new_out:
+        ctx.m.set(["sequences", seq["id"], "out_point"], new_out)
+    return {"in_point": new_in, "out_point": new_out}
 
 
 # ---------------------------------------------------------------- tracks

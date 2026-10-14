@@ -206,3 +206,18 @@ def test_random_edits_keep_invariants_and_undo_exactly(data):
     while s.redo_stack:
         s.redo()
         check_sequence(s.doc, s.doc["sequences"][sid])
+
+
+def test_in_out_marks_are_partial_updates():
+    s, sid, (a, *_ ) = make()
+    s.execute("sequence.set_in_out", {"in_point": "1s"})
+    s.execute("sequence.set_in_out", {"out_point": "3s"})
+    seq = s.doc["sequences"][sid]
+    assert (seq["in_point"], seq["out_point"]) == (SEC, 3 * SEC)
+    s.execute("sequence.set_in_out", {"in_point": "4s"})  # In after Out clears Out
+    assert (seq["in_point"], seq["out_point"]) == (4 * SEC, None)
+    s.execute("sequence.set_in_out", {"clear_in": True})
+    assert seq["in_point"] is None
+    s.execute("media.set_marks", {"media_id": a, "out_point": 2 * SEC})
+    s.execute("media.set_marks", {"media_id": a, "in_point": SEC})
+    assert (s.doc["media"][a]["in_point"], s.doc["media"][a]["out_point"]) == (SEC, 2 * SEC)

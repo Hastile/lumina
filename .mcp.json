@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lumina": {
+      "command": "uv",
+      "args": ["run", "--project", "engine", "lumina", "mcp"]
+    }
+  }
+}
