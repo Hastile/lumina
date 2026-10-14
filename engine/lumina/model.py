@@ -78,9 +78,19 @@ KeyframeProp = Literal[
 
 
 class Keyframe(_Model):
+    """Temporal interpolation follows After Effects/Premiere: each side of a
+    keyframe is linear, hold, or a Bezier handle given as [speed, influence]
+    (value units per second of source time, fraction 0-1 of the segment).
+    "ease" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).
+    Point values may also carry spatial tangents (value units, relative to
+    the keyframe) shaping the motion path."""
     t: int = Field(description="source time in ticks (Premiere convention: keyframes follow the content when trimmed)")
     v: float | list[float]
-    interp: Literal["linear", "ease", "hold"] = "linear"
+    interp: Literal["linear", "ease", "hold", "bezier"] = "linear"
+    ease_in: list[float] | None = Field(default=None, description="[speed, influence] of the incoming Bezier handle")
+    ease_out: list[float] | None = Field(default=None, description="[speed, influence] of the outgoing Bezier handle")
+    tangent_in: list[float] | None = Field(default=None, description="spatial in-tangent for point values")
+    tangent_out: list[float] | None = Field(default=None, description="spatial out-tangent for point values")
 
 
 class Motion(_Model):

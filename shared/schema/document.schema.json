@@ -328,6 +328,7 @@
     },
     "Keyframe": {
       "additionalProperties": false,
+      "description": "Temporal interpolation follows After Effects/Premiere: each side of a\nkeyframe is linear, hold, or a Bezier handle given as [speed, influence]\n(value units per second of source time, fraction 0-1 of the segment).\n\"ease\" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).\nPoint values may also carry spatial tangents (value units, relative to\nthe keyframe) shaping the motion path.",
       "properties": {
         "t": {
           "description": "source time in ticks (Premiere convention: keyframes follow the content when trimmed)",
@@ -353,16 +354,85 @@
           "enum": [
             "linear",
             "ease",
-            "hold"
+            "hold",
+            "bezier"
           ],
           "title": "Interp",
           "type": "string"
+        },
+        "ease_in": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "[speed, influence] of the incoming Bezier handle",
+          "title": "Ease In"
+        },
+        "ease_out": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "[speed, influence] of the outgoing Bezier handle",
+          "title": "Ease Out"
+        },
+        "tangent_in": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "spatial in-tangent for point values",
+          "title": "Tangent In"
+        },
+        "tangent_out": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "spatial out-tangent for point values",
+          "title": "Tangent Out"
         }
       },
       "required": [
         "t",
         "v",
-        "interp"
+        "interp",
+        "ease_in",
+        "ease_out",
+        "tangent_in",
+        "tangent_out"
       ],
       "title": "Keyframe",
       "type": "object"

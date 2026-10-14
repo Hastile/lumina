@@ -491,12 +491,45 @@ def _param_keyframes(pe: ET.Element | None) -> list[dict]:
         if len(f) < 3:
             continue
         try:
-            # interpolation code: 0 = linear, 1 = hold, others = Bezier variants (approximated as ease)
-            interp = "linear" if f[2] == "0" else ("hold" if f[2] == "1" else "ease")
-            kfs.append({"t": int(f[0]), "v": _parse_value(f[1]), "interp": interp})
+            # t, value, interpolation (0 linear, 1 hold, others Bezier), ?, in speed, in influence,
+            # out speed, out influence[, 5, 4, in tangent x, y, out tangent x, y] (point values)
+            interp = "linear" if f[2] == "0" else ("hold" if f[2] == "1" else "bezier")
+            k = {"t": int(f[0]), "v": _parse_value(f[1]), "interp": interp}
+            if len(f) >= 8:
+                k["ease_in"] = [float(f[4]), float(f[5])]
+                k["ease_out"] = [float(f[6]), float(f[7])]
+            if len(f) >= 14:
+                k["tangent_in"] = [float(f[10]), float(f[11])]
+                k["tangent_out"] = [float(f[12]), float(f[13])]
+            kfs.append(k)
         except ValueError:
             continue
     return sorted(kfs, key=lambda k: k["t"])
+
+
+def _point_keyframes(kfs: list[dict], sx: float, sy: float) -> list[dict]:
+    """Keyframes of a normalized point param in pixels: values and tangents scale
+    per axis; speeds (normalized units/s along the path) scale by the adjacent
+    segment's pixel/normalized length ratio."""
+    import math
+
+    out = [{**k, "v": [k["v"][0] * sx, k["v"][1] * sy]} for k in kfs]
+    for k in out:
+        for key in ("tangent_in", "tangent_out"):
+            if k.get(key):
+                k[key] = [k[key][0] * sx, k[key][1] * sy]
+
+    def ratio(i: int, j: int) -> float:
+        a, b = kfs[i]["v"], kfs[j]["v"]
+        n = math.dist(a, b)
+        return math.dist(out[i]["v"], out[j]["v"]) / n if n > 1e-12 else max(sx, sy)
+
+    for i, k in enumerate(out):
+        if k.get("ease_in") and i > 0:
+            k["ease_in"] = [k["ease_in"][0] * ratio(i - 1, i), k["ease_in"][1]]
+        if k.get("ease_out") and i + 1 < len(out):
+            k["ease_out"] = [k["ease_out"][0] * ratio(i, i + 1), k["ease_out"][1]]
+    return out
 
 
 MOTION_PARAMS = {
@@ -534,7 +567,9 @@ def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | Non
                     if v is not None:
                         motion[name] = conv(name, v)
                     kfs = _param_keyframes(pe)
-                    if kfs and name != "uniform":
+                    if kfs and name in ("position", "anchor"):
+                        keyframes[name] = _point_keyframes(kfs, *((seq_w, seq_h) if name == "position" else (sw, sh)))
+                    elif kfs and name != "uniform":
                         keyframes[name] = [{**k, "v": conv(name, k["v"])} for k in kfs]
                 except (TypeError, IndexError):
                     continue
@@ -590,7 +625,9 @@ def _effect(g: Graph, comp: ET.Element, spec: tuple, sw: float, sh: float) -> di
             if v is not None:
                 out["params"][name] = conv(ptype, v)
             kfs = _param_keyframes(pe)
-            if kfs and ptype != "bool":
+            if kfs and ptype == "point":
+                out["keyframes"][name] = _point_keyframes(kfs, sw, sh)
+            elif kfs and ptype != "bool":
                 out["keyframes"][name] = [{**k, "v": conv(ptype, k["v"])} for k in kfs]
         except (TypeError, IndexError, ValueError):
             continue

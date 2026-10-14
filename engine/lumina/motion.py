@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import math
 
+from .timebase import TICKS_PER_SECOND
+
 KEYFRAME_PROPS = (
     "position", "scale", "scale_width", "rotation", "anchor",
     "crop_left", "crop_top", "crop_right", "crop_bottom", "opacity", "volume_db",
@@ -23,9 +25,75 @@ def source_time(clip: dict, seq_time: int) -> int:
     return clip["source_in"] + round((seq_time - clip["start"]) * clip["speed"])
 
 
-def _ease(u: float) -> float:
-    # Premiere's default temporal ease (Bezier, 33% influence) is close to smoothstep
-    return u * u * (3 - 2 * u)
+EASY_EASE = (0.0, 1 / 3)  # Premiere's Easy Ease handle: speed 0, influence 33.3 %
+
+
+def _handle(k: dict, side: str):
+    """(speed, influence) of a keyframe's Bezier handle on ``side`` ('in'/'out'), or None for linear."""
+    if k.get("interp") not in ("bezier", "ease"):
+        return None
+    h = k.get("ease_" + side)
+    if h:
+        return float(h[0]), min(1.0, max(0.0, float(h[1])))
+    return EASY_EASE
+
+
+def _cubic(p0: float, p1: float, p2: float, p3: float, u: float) -> float:
+    v = 1 - u
+    return v * v * v * p0 + 3 * v * v * u * p1 + 3 * v * u * u * p2 + u * u * u * p3
+
+
+def _progress(a: dict, b: dict, u: float, dist: float) -> float:
+    """Temporal Bezier: distance covered (0..dist) at time fraction u of the segment.
+    Control points in (time fraction, distance); handle heights are speed x
+    influence x segment duration, as in After Effects."""
+    ha, hb = _handle(a, "out"), _handle(b, "in")
+    if ha is None and hb is None:
+        return u * dist
+    dt = (b["t"] - a["t"]) / TICKS_PER_SECOND
+    x1, y1 = (ha[1], ha[0] * ha[1] * dt) if ha else (1 / 3, dist / 3)
+    x2, y2 = (1 - hb[1], dist - hb[0] * hb[1] * dt) if hb else (2 / 3, 2 * dist / 3)
+    lo, hi = 0.0, 1.0
+    for _ in range(48):  # x(s) is monotonic for influences in [0, 1]
+        mid = (lo + hi) / 2
+        if _cubic(0.0, x1, x2, 1.0, mid) < u:
+            lo = mid
+        else:
+            hi = mid
+    return _cubic(0.0, y1, y2, dist, (lo + hi) / 2)
+
+
+PATH_STEPS = 64
+
+
+def _path_point(q: list[list[float]], s: float) -> list[float]:
+    return [_cubic(q[0][i], q[1][i], q[2][i], q[3][i], s) for i in range(len(q[0]))]
+
+
+def _point_at(a: dict, b: dict, u: float) -> list[float]:
+    pa, pb = [float(x) for x in a["v"]], [float(x) for x in b["v"]]
+    to, ti = a.get("tangent_out"), b.get("tangent_in")
+    if not to and not ti:
+        dist = math.dist(pa, pb)
+        if dist == 0:
+            return pa
+        f = _progress(a, b, u, dist) / dist
+        return [x + (y - x) * f for x, y in zip(pa, pb)]
+    q = [pa, [x + d for x, d in zip(pa, to or [0.0] * len(pa))], [x + d for x, d in zip(pb, ti or [0.0] * len(pb))], pb]
+    pts = [_path_point(q, i / PATH_STEPS) for i in range(PATH_STEPS + 1)]
+    cum = [0.0]
+    for p0, p1 in zip(pts, pts[1:]):
+        cum.append(cum[-1] + math.dist(p0, p1))
+    total = cum[-1]
+    if total == 0:
+        return pa
+    d = min(max(_progress(a, b, u, total), 0.0), total)
+    for i in range(PATH_STEPS):
+        if cum[i + 1] >= d:
+            seg = cum[i + 1] - cum[i]
+            f = (d - cum[i]) / seg if seg else 0.0
+            return [x + (y - x) * f for x, y in zip(pts[i], pts[i + 1])]
+    return pts[-1]
 
 
 def interpolate(keyframes: list[dict], t: int):
@@ -41,11 +109,14 @@ def interpolate(keyframes: list[dict], t: int):
             if a["interp"] == "hold":
                 return a["v"]
             u = (t - a["t"]) / (b["t"] - a["t"])
-            if a["interp"] == "ease" or b["interp"] == "ease":
-                u = _ease(u)
             if isinstance(a["v"], list):
-                return [x + (y - x) * u for x, y in zip(a["v"], b["v"])]
-            return a["v"] + (b["v"] - a["v"]) * u
+                return _point_at(a, b, u)
+            dv = b["v"] - a["v"]
+            ha, hb = _handle(a, "out"), _handle(b, "in")
+            if ha is None and hb is None:
+                return a["v"] + dv * u
+            # scalar: the "distance" is the value itself (speeds are signed)
+            return a["v"] + _progress(a, b, u, dv)
     return keyframes[-1]["v"]
 
 

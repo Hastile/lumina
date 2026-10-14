@@ -30,8 +30,16 @@ export function MediaLayer({ url, kind, time, playing, rate, volume = 1, muted =
     if (!el || kind === 'image') return
     const forward = playing && rate > 0
     if (forward) {
-      el.playbackRate = Math.min(16, rate)
-      if (Math.abs(el.currentTime - time) > 0.25 * Math.max(1, rate)) el.currentTime = time
+      // follow the clock without seeking mid-play (a seek shows as a stutter): only a big
+      // jump seeks; small drift is absorbed by nudging the playback rate up to +-10 %
+      const drift = el.currentTime - time
+      if (Math.abs(drift) > 0.5 * Math.max(1, rate) || el.paused) {
+        if (Math.abs(drift) > 1 / 60) el.currentTime = time
+        el.playbackRate = Math.min(16, rate)
+      } else {
+        const want = Math.min(16, rate * Math.max(0.9, Math.min(1.1, 1 - drift * 2)))
+        if (Math.abs(el.playbackRate - want) > 0.01) el.playbackRate = want
+      }
       if (el.paused) void el.play().catch(() => undefined)
     } else {
       if (!el.paused) el.pause()

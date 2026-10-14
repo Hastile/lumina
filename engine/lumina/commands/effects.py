@@ -11,7 +11,7 @@ from .. import timebase
 from ..effects import ANIMATABLE, EFFECTS, TRANSITIONS, default_params, param, transition_window
 from ..model import EffectType, TransitionType, new_id
 from ..motion import source_size, source_time
-from .motion import _at, _ctx, _interp_near
+from .motion import INTERPS, _at, _ctx, _interp_near, handles_of, with_interp
 from .project import seq_of
 from .registry import CommandError, Context, Params, TimeValue, command, resolve_time
 from .timeline import clip_path, clips_sorted, find_clip, require_unlocked
@@ -146,7 +146,8 @@ def effect_set_param(ctx: Context, p: SetParam):
         _update(ctx, seq, tid, clip, i, lambda x: x["params"].__setitem__(p.param, v))
         return {"animated": False}
     t = source_time(clip, _at(seq, clip, p.at))
-    new = sorted([k for k in kfs if k["t"] != t] + [{"t": t, "v": v, "interp": _interp_near(kfs, t)}], key=lambda k: k["t"])
+    old = next((k for k in kfs if k["t"] == t), None)
+    new = sorted([k for k in kfs if k["t"] != t] + [{**old, "v": v} if old else {"t": t, "v": v, "interp": _interp_near(kfs, t)}], key=lambda k: k["t"])
     _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, new))
     return {"animated": True, "keyframe_t": t}
 
@@ -184,7 +185,7 @@ def effect_toggle_animation(ctx: Context, p: ParamRef):
 
 class ParamKeyframe(ParamRef):
     op: Literal["add", "remove", "toggle"] = "toggle"
-    interp: Literal["linear", "ease", "hold"] | None = None
+    interp: Literal["linear", "ease", "hold", "bezier"] | None = None
 
 
 @command("effect.keyframe", ParamKeyframe)
@@ -212,7 +213,7 @@ def effect_keyframe(ctx: Context, p: ParamKeyframe):
         put(kfs)
         return {"removed": True}
     if hit and p.interp:
-        put([dict(k, interp=p.interp) if k is hit else k for k in kfs])
+        put([with_interp(k, p.interp) if k is hit else k for k in kfs])
         return {"interp": p.interp}
     if p.op == "remove":
         raise CommandError("NO_KEYFRAME", "no keyframe at that time")
@@ -247,9 +248,10 @@ def effect_set_keyframes(ctx: Context, p: SetParamKeyframes):
     for k in p.keyframes:
         rel = resolve_time(k["t"], seq["settings"])
         interp = k.get("interp", "linear")
-        if interp not in ("linear", "ease", "hold"):
-            raise CommandError("BAD_VALUE", "interp is linear | ease | hold")
-        out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_param(e["type"], p.param, k["v"]), "interp": interp})
+        if interp not in INTERPS:
+            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier")
+        out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_param(e["type"], p.param, k["v"]), "interp": interp,
+                    **handles_of(k)})
     out.sort(key=lambda k: k["t"])
     _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, out))
     return {"count": len(out)}

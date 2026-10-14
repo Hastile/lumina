@@ -281,6 +281,47 @@ try {
   await page.waitForFunction(() => document.querySelectorAll('.lm-stage svg[data-layer]').length === 1, null, { timeout: 10000 })
   log('Ctrl+Alt+E added an ellipse to the selected graphic; eye toggle hides the rectangle')
 
+  // ---- playback across cuts: same-media razor cuts and a different source; the next clip is
+  // prerolled so no visible frame waits on a load or a seek
+  const cutProbe = await page.evaluate(async () => {
+    const { engine, get, set, play, stop } = window.__lumina
+    const media = Object.values(get().doc.media).find((m) => m.video)
+    const { sequence_id: sid } = await engine.exec('sequence.create_from_media', { media_id: media.id })
+    for (const at of ['1s', '2s', '3s']) await engine.exec('clip.razor', { sequence_id: sid, at })
+    // shift the second piece's content so the cut jumps in source time (a same-element seek before the fix)
+    const seq = get().doc.sequences[sid]
+    const v = Object.values(seq.tracks[seq.video_tracks[0]].clips).sort((a, b) => a.start - b.start)
+    await engine.exec('clip.slip', { sequence_id: sid, clip_ids: [v[1].id], delta: '2s' }).catch(() => undefined)
+    await engine.exec('sequence.set_playhead', { sequence_id: sid, time: '0.5s' })
+    await new Promise((r) => setTimeout(r, 1500))
+    const out = { notReady: 0, seeks: 0, frames: 0 }
+    const hooked = new WeakSet()
+    const hook = (el) => {
+      if (hooked.has(el)) return
+      hooked.add(el)
+      el.addEventListener('seeking', () => { if (!el.paused) out.seeks++ })
+    }
+    play('program', 1)
+    const t0 = performance.now()
+    await new Promise((resolve) => {
+      const step = () => {
+        document.querySelectorAll('.lm-stage video').forEach(hook)
+        out.frames++
+        for (const el of document.querySelectorAll('.lm-stage .lm-layer[data-clip] video')) if (el.readyState < 2 || el.seeking) out.notReady++
+        if (performance.now() - t0 < 3000) requestAnimationFrame(step)
+        else resolve()
+      }
+      requestAnimationFrame(step)
+    })
+    stop()
+    out.time = get().programTime / 254016000000
+    return out
+  })
+  assert.ok(cutProbe.time > 2.5, `playback crossed the cuts (${cutProbe.time})`)
+  assert.equal(cutProbe.notReady, 0, `frames waiting on video at cuts: ${JSON.stringify(cutProbe)}`)
+  assert.equal(cutProbe.seeks, 0, `seeks while playing: ${JSON.stringify(cutProbe)}`)
+  log('playback across 3 cuts: no frame waited on a load or seek', cutProbe.frames, 'frames')
+
   if (shot) await page.screenshot({ path: shot })
   log('PASS')
 } catch (err) {

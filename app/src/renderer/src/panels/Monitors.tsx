@@ -166,17 +166,22 @@ type VisualLayer = {
   color?: string
   group?: string // transition group: children are summed (plus-lighter) inside an isolated group
   fade?: number
+  preroll?: boolean // upcoming clip: mounted hidden, paused on its first frame
 }
-type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number }
+type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number; preroll?: boolean }
 
-export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at: number): { visual: VisualLayer[]; audio: AudioLayer[] } {
+/** Layers visible at ``at``. Each clip gets its own media element (keyed by clip id), so a
+ * cut never makes a playing element seek; with ``lookahead`` (ticks) clips starting soon are
+ * added as hidden ``preroll`` layers already seeked to their first frame, so playback crosses
+ * a cut without loading or seeking. */
+export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at: number, lookahead = 0): { visual: VisualLayer[]; audio: AudioLayer[] } {
   const visual: VisualLayer[] = []
   const audio: AudioLayer[] = []
   const tpf = ticksPerFrame(seq.settings)
-  const clipLayer = (tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
+  const clipLayer = (_tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
     if (clip.graphic) return { key: `g-${clip.id}`, clip, media: null, z, ...extra }
     const m = clip.media_id ? media[clip.media_id] : undefined
-    if (m && (m.video || m.kind === 'image')) return { key: `v-${tid}-${m.id}${suffix}`, clip, media: m, z, ...extra }
+    if (m && (m.video || m.kind === 'image')) return { key: `v-${clip.id}${suffix}`, clip, media: m, z, ...extra }
     return null
   }
   seq.video_tracks.forEach((tid, z) => {
@@ -210,6 +215,13 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       const l = clipLayer(tid, clip, z)
       if (l) visual.push(l)
     }
+    if (lookahead > 0) {
+      for (const clip of Object.values(track.clips)) {
+        if (!clip.enabled || clip.graphic || clip.start <= at || clip.start - at > lookahead) continue
+        const l = clipLayer(tid, clip, z, { preroll: true })
+        if (l && l.media?.video) visual.push(l)
+      }
+    }
   })
   const anySolo = seq.audio_tracks.some((id) => seq.tracks[id].solo)
   for (const tid of seq.audio_tracks) {
@@ -235,23 +247,35 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       audio.push({
-        key: `a-${tid}-${m.id}-${at < clip.start ? 'in' : ''}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)),
+        key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)),
         volume: dbToGain(valueAt(clip, 'volume_db', at, seq, m) as number) * (gains.get(clip.id) ?? 1)
       })
+    }
+    if (lookahead > 0) {
+      for (const clip of Object.values(track.clips)) {
+        const s0 = ext.get(clip.id)?.[0] ?? clip.start
+        if (!clip.enabled || s0 <= at || s0 - at > lookahead) continue
+        const m = clip.media_id ? media[clip.media_id] : undefined
+        if (!m || (!m.audio && m.kind !== 'audio')) continue
+        audio.push({ key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, s0)), volume: 0, preroll: true })
+      }
     }
   }
   return { visual, audio }
 }
 
-function groupLayers(layers: VisualLayer[]): { group?: string; z: number; layers: VisualLayer[] }[] {
-  const out: { group?: string; z: number; layers: VisualLayer[] }[] = []
+function trackGroups(layers: VisualLayer[]): { z: number; transition: boolean; layers: VisualLayer[] }[] {
+  const out = new Map<number, { z: number; transition: boolean; layers: VisualLayer[] }>()
   for (const l of layers) {
-    const last = out[out.length - 1]
-    if (l.group && last?.group === l.group) last.layers.push(l)
-    else out.push({ group: l.group, z: l.z, layers: [l] })
+    const g = out.get(l.z) ?? { z: l.z, transition: false, layers: [] }
+    g.layers.push(l)
+    g.transition ||= !!l.group
+    out.set(l.z, g)
   }
-  return out
+  return [...out.values()].sort((a, b) => a.z - b.z)
 }
+
+const PREROLL = 2 * TICKS_PER_SECOND
 
 function Stage({ seq, media, at, playing, rate, scale }: {
   seq: Sequence; media: Record<string, MediaItem>; at: number; playing: boolean; rate: number; scale: number
@@ -261,7 +285,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const selected = useStore((s) => s.selectedClips)
   const [drag, setDrag] = useState<{ clipId: string; dx: number; dy: number } | null>(null)
   const [draw, setDraw] = useState<number[] | null>(null)
-  const { visual, audio } = activeLayers(seq, media, at)
+  const { visual, audio } = activeLayers(seq, media, at, playing ? PREROLL : 0)
 
   const toSeq = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -324,7 +348,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)
       setDrag(null)
-      const layer = visual.find((l) => l.clip?.id === clipId)
+      const layer = visual.find((l) => !l.preroll && l.clip?.id === clipId)
       if (!layer || (Math.abs(last.dx) < 0.5 && Math.abs(last.dy) < 0.5)) return
       const pos = valueAt(layer.clip!, 'position', at, seq, layer.media) as number[]
       void exec('clip.set_property', { sequence_id: seq.id, clip_id: clipId, prop: 'position', value: [pos[0] + last.dx, pos[1] + last.dy], at }, t('Position'))
@@ -346,8 +370,8 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       <MediaLayer
         url={mediaSrc(l.media!)}
         kind={l.media!.kind === 'image' ? 'image' : 'video'}
-        time={ticksToSeconds(sourceTime(clip, at))}
-        playing={playing}
+        time={ticksToSeconds(sourceTime(clip, l.preroll ? clip.start : at))}
+        playing={playing && !l.preroll}
         rate={rate * clip.speed}
         muted
         style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
@@ -359,7 +383,12 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       if (css) content = <div className="lm-fx" data-fx={fx.id} style={{ width: w, height: h, ...css }}>{content}</div>
     }
     return (
-      <div key={l.key} data-clip={clip.id} className={`lm-layer ${isSel ? 'selected' : ''}`} style={{ width: w, height: h, zIndex: l.z, ...transformCss(r) }}>
+      <div
+        key={l.key}
+        data-clip={l.preroll ? undefined : clip.id}
+        className={`lm-layer ${isSel && !l.preroll ? 'selected' : ''}`}
+        style={{ width: w, height: h, zIndex: l.z, ...transformCss(r), ...(l.preroll ? { opacity: 0, pointerEvents: 'none' } : null) }}
+      >
         {content}
         {isSel && <div className="lm-layer-box" style={{ borderWidth: 1 / scale }} />}
       </div>
@@ -368,19 +397,17 @@ function Stage({ seq, media, at, playing, rate, scale }: {
 
   return (
     <div className={`lm-stage ${tool === 'type' ? 'typing' : tool === 'rectangle' || tool === 'ellipse' ? 'drawing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
-      {groupLayers(visual).map((g) =>
-        g.group ? (
-          <div key={g.group} className="lm-tgroup" style={{ zIndex: g.z }}>
-            {g.layers.map((l) => (
-              <div key={l.key} className="lm-tpart" style={{ width: W, height: H, opacity: l.fade ?? 1 }}>
-                {renderLayer(l)}
-              </div>
-            ))}
-          </div>
-        ) : (
-          renderLayer(g.layers[0])
-        )
-      )}
+      {trackGroups(visual).map((g) => (
+        // one stable container per track and one slot per clip: a clip keeps its media element
+        // across cuts, preroll and the start/end of a transition (a remount would flash)
+        <div key={`track-${g.z}`} className={`lm-track ${g.transition ? 'lm-tgroup' : ''}`} style={{ zIndex: g.z }}>
+          {g.layers.map((l) => (
+            <div key={l.key} className={l.group ? 'lm-tpart' : 'lm-slot'} style={{ width: W, height: H, opacity: l.fade ?? 1 }}>
+              {renderLayer(l)}
+            </div>
+          ))}
+        </div>
+      ))}
       {draw && (
         <div
           className={`lm-draw ${tool === 'ellipse' ? 'ellipse' : ''}`}
@@ -391,7 +418,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         />
       )}
       {audio.map((a) => (
-        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing} rate={rate * a.clip.speed} volume={a.volume} />
+        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.volume} />
       ))}
     </div>
   )

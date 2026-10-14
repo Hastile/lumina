@@ -4,7 +4,15 @@
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 
 export type KfValue = number | number[]
-export type Kf = { t: number; v: KfValue; interp: 'linear' | 'ease' | 'hold' }
+export type Kf = {
+  t: number
+  v: KfValue
+  interp: 'linear' | 'ease' | 'hold' | 'bezier'
+  ease_in?: number[] | null
+  ease_out?: number[] | null
+  tangent_in?: number[] | null
+  tangent_out?: number[] | null
+}
 
 export const KEYFRAME_PROPS = [
   'position', 'scale', 'scale_width', 'rotation', 'anchor',
@@ -17,7 +25,70 @@ export const sourceTime = (clip: Clip, seqTime: number): number => clip.source_i
 /** Inverse of sourceTime (sequence time where a source-time keyframe sits). */
 export const seqTimeOf = (clip: Clip, srcTime: number): number => clip.start + (srcTime - clip.source_in) / clip.speed
 
-const ease = (u: number) => u * u * (3 - 2 * u)
+const TICKS_PER_SECOND = 254016000000
+const EASY_EASE: [number, number] = [0, 1 / 3] // Premiere's Easy Ease: speed 0, influence 33.3 %
+
+function handle(k: Kf, side: 'in' | 'out'): [number, number] | null {
+  if (k.interp !== 'bezier' && k.interp !== 'ease') return null
+  const h = side === 'in' ? k.ease_in : k.ease_out
+  if (h) return [h[0], Math.min(1, Math.max(0, h[1]))]
+  return EASY_EASE
+}
+
+const cubic = (p0: number, p1: number, p2: number, p3: number, u: number) => {
+  const v = 1 - u
+  return v * v * v * p0 + 3 * v * v * u * p1 + 3 * v * u * u * p2 + u * u * u * p3
+}
+
+/** Temporal Bezier (After Effects model): distance covered at time fraction u. */
+function progress(a: Kf, b: Kf, u: number, dist: number): number {
+  const ha = handle(a, 'out')
+  const hb = handle(b, 'in')
+  if (!ha && !hb) return u * dist
+  const dt = (b.t - a.t) / TICKS_PER_SECOND
+  const [x1, y1] = ha ? [ha[1], ha[0] * ha[1] * dt] : [1 / 3, dist / 3]
+  const [x2, y2] = hb ? [1 - hb[1], dist - hb[0] * hb[1] * dt] : [2 / 3, (2 * dist) / 3]
+  let lo = 0
+  let hi = 1
+  for (let i = 0; i < 48; i++) {
+    const mid = (lo + hi) / 2
+    if (cubic(0, x1, x2, 1, mid) < u) lo = mid
+    else hi = mid
+  }
+  return cubic(0, y1, y2, dist, (lo + hi) / 2)
+}
+
+const PATH_STEPS = 64
+const dist = (p: number[], q: number[]) => Math.hypot(...p.map((x, i) => x - q[i]))
+
+function pointAt(a: Kf, b: Kf, u: number): number[] {
+  const pa = a.v as number[]
+  const pb = b.v as number[]
+  const to = a.tangent_out
+  const ti = b.tangent_in
+  if (!to && !ti) {
+    const d = dist(pa, pb)
+    if (d === 0) return [...pa]
+    const f = progress(a, b, u, d) / d
+    return pa.map((x, i) => x + (pb[i] - x) * f)
+  }
+  const q = [pa, pa.map((x, i) => x + (to?.[i] ?? 0)), pb.map((x, i) => x + (ti?.[i] ?? 0)), pb]
+  const pts: number[][] = []
+  for (let i = 0; i <= PATH_STEPS; i++) pts.push(pa.map((_, j) => cubic(q[0][j], q[1][j], q[2][j], q[3][j], i / PATH_STEPS)))
+  const cum = [0]
+  for (let i = 0; i < PATH_STEPS; i++) cum.push(cum[i] + dist(pts[i], pts[i + 1]))
+  const total = cum[PATH_STEPS]
+  if (total === 0) return [...pa]
+  const d = Math.min(Math.max(progress(a, b, u, total), 0), total)
+  for (let i = 0; i < PATH_STEPS; i++) {
+    if (cum[i + 1] >= d) {
+      const seg = cum[i + 1] - cum[i]
+      const f = seg ? (d - cum[i]) / seg : 0
+      return pts[i].map((x, j) => x + (pts[i + 1][j] - x) * f)
+    }
+  }
+  return pts[PATH_STEPS]
+}
 
 export function interpolate(kfs: Kf[], t: number): KfValue {
   if (t <= kfs[0].t) return kfs[0].v
@@ -28,10 +99,11 @@ export function interpolate(kfs: Kf[], t: number): KfValue {
     const b = kfs[i + 1]
     if (a.t <= t && t < b.t) {
       if (a.interp === 'hold') return a.v
-      let u = (t - a.t) / (b.t - a.t)
-      if (a.interp === 'ease' || b.interp === 'ease') u = ease(u)
-      if (Array.isArray(a.v)) return a.v.map((x, j) => x + ((b.v as number[])[j] - x) * u)
-      return (a.v as number) + ((b.v as number) - (a.v as number)) * u
+      const u = (t - a.t) / (b.t - a.t)
+      if (Array.isArray(a.v)) return pointAt(a, b, u)
+      const dv = (b.v as number) - (a.v as number)
+      if (!handle(a, 'out') && !handle(b, 'in')) return (a.v as number) + dv * u
+      return (a.v as number) + progress(a, b, u, dv)
     }
   }
   return last.v

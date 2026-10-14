@@ -73,9 +73,35 @@ def clip_set_property(ctx: Context, p: SetProperty):
         _write_static(ctx, seq, tid, clip, p.prop, v)
         return {"animated": False}
     t = source_time(clip, _at(seq, clip, p.at))
-    new = [k for k in kfs if k["t"] != t] + [{"t": t, "v": v, "interp": _interp_near(kfs, t)}]
+    old = next((k for k in kfs if k["t"] == t), None)
+    new = [k for k in kfs if k["t"] != t] + [{**old, "v": v} if old else {"t": t, "v": v, "interp": _interp_near(kfs, t)}]
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["keyframes", p.prop], sorted(new, key=lambda k: k["t"]))
     return {"animated": True, "keyframe_t": t}
+
+
+INTERPS = ("linear", "ease", "hold", "bezier")
+HANDLE_KEYS = ("ease_in", "ease_out", "tangent_in", "tangent_out")
+
+
+def handles_of(k: dict) -> dict:
+    """Bezier handle fields of a user-supplied keyframe ([speed, influence] / [dx, dy])."""
+    out = {}
+    for key in HANDLE_KEYS:
+        v = k.get(key)
+        if v is not None:
+            if not isinstance(v, list) or len(v) != 2:
+                raise CommandError("BAD_VALUE", f"{key} needs two numbers")
+            out[key] = [float(v[0]), float(v[1])]
+    return out
+
+
+def with_interp(k: dict, interp: str) -> dict:
+    """Changing to Easy Ease resets the temporal handles; other types keep them."""
+    out = dict(k, interp=interp)
+    if interp == "ease":
+        out.pop("ease_in", None)
+        out.pop("ease_out", None)
+    return out
 
 
 def _interp_near(kfs: list[dict], t: int) -> str:
@@ -110,7 +136,7 @@ class KeyframeOp(Params):
     prop: KeyframeProp
     at: TimeValue | None = None
     op: Literal["add", "remove", "toggle"] = "toggle"
-    interp: Literal["linear", "ease", "hold"] | None = None
+    interp: Literal["linear", "ease", "hold", "bezier"] | None = None
 
 
 @command("clip.keyframe", KeyframeOp)
@@ -132,7 +158,7 @@ def clip_keyframe(ctx: Context, p: KeyframeOp):
             ctx.m.delete(path)
         return {"removed": True}
     if hit and p.interp:
-        ctx.m.set(path, [dict(k, interp=p.interp) if k is hit else k for k in kfs])
+        ctx.m.set(path, [with_interp(k, p.interp) if k is hit else k for k in kfs])
         return {"interp": p.interp}
     if p.op == "remove":
         raise CommandError("NO_KEYFRAME", "no keyframe at that time")
@@ -163,9 +189,9 @@ def clip_set_keyframes(ctx: Context, p: SetKeyframes):
     for k in p.keyframes:
         rel = resolve_time(k["t"], seq["settings"])
         out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_value(p.prop, k["v"]),
-                    "interp": k.get("interp", "linear")})
-        if out[-1]["interp"] not in ("linear", "ease", "hold"):
-            raise CommandError("BAD_VALUE", "interp is linear | ease | hold")
+                    "interp": k.get("interp", "linear"), **handles_of(k)})
+        if out[-1]["interp"] not in INTERPS:
+            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier")
     ctx.m.set(path, sorted(out, key=lambda k: k["t"]))
     return {"count": len(out)}
 

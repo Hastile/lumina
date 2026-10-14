@@ -42,7 +42,8 @@ function tick(now: number): void {
   last = now
   const t = getTime(m) + dt * s.shuttle * TICKS_PER_SECOND
   const end = duration(m)
-  if (t >= end || t <= 0) {
+  // stop at either end in the direction of travel (a 0 ms first frame at 0 must not stop forward play)
+  if ((s.shuttle > 0 && t >= end) || (s.shuttle < 0 && t <= 0)) {
     setTime(m, t)
     stop()
     return

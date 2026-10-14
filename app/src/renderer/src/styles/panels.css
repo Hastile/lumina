@@ -169,7 +169,7 @@
 .lm-ec-prop .lane { position: relative; height: 100%; border-left: 1px solid #333; background: #1f1f1f; }
 .lm-ec-prop .lane .kf { position: absolute; top: 50%; transform: translate(-50%, -50%); color: #d8d8d8; cursor: pointer; display: grid; }
 .lm-ec-prop .lane .kf.hold { color: #e3963b; }
-.lm-ec-prop .lane .kf.ease { color: #8fb8ff; }
+.lm-ec-prop .lane .kf.ease, .lm-ec-prop .lane .kf.bezier { color: #8fb8ff; }
 .lm-ec-prop .lane .head { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--playhead); }
 .lm-ec-head .toggle { display: flex; align-items: center; gap: 5px; cursor: default; }
 .lm-fitrow { display: flex; gap: 6px; padding: 2px 10px 6px; }

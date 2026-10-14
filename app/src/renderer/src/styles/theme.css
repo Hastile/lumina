@@ -156,6 +156,7 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 @keyframes lm-spin { to { transform: rotate(360deg); } }
 
 /* program monitor: transitions + effects */
+.lm-track, .lm-slot { position: absolute; left: 0; top: 0; }
 .lm-tgroup { position: absolute; left: 0; top: 0; isolation: isolate; }
 .lm-tpart { position: absolute; left: 0; top: 0; mix-blend-mode: plus-lighter; }
 .lm-fx { position: absolute; left: 0; top: 0; }

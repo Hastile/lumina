@@ -143,7 +143,23 @@ export type CropBottom = number;
  */
 export type T = number;
 export type V = number | number[];
-export type Interp = "linear" | "ease" | "hold";
+export type Interp = "linear" | "ease" | "hold" | "bezier";
+/**
+ * [speed, influence] of the incoming Bezier handle
+ */
+export type EaseIn = number[] | null;
+/**
+ * [speed, influence] of the outgoing Bezier handle
+ */
+export type EaseOut = number[] | null;
+/**
+ * spatial in-tangent for point values
+ */
+export type TangentIn = number[] | null;
+/**
+ * spatial out-tangent for point values
+ */
+export type TangentOut = number[] | null;
 export type Id6 = string;
 export type Type = "text";
 export type Text = string;
@@ -461,6 +477,13 @@ export interface Keyframes {
   [k: string]: Keyframe[];
 }
 /**
+ * Temporal interpolation follows After Effects/Premiere: each side of a
+ * keyframe is linear, hold, or a Bezier handle given as [speed, influence]
+ * (value units per second of source time, fraction 0-1 of the segment).
+ * "ease" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).
+ * Point values may also carry spatial tangents (value units, relative to
+ * the keyframe) shaping the motion path.
+ *
  * This interface was referenced by `Project`'s JSON-Schema
  * via the `definition` "Keyframe".
  */
@@ -468,6 +491,10 @@ export interface Keyframe {
   t: T;
   v: V;
   interp: Interp;
+  ease_in: EaseIn;
+  ease_out: EaseOut;
+  tangent_in: TangentIn;
+  tangent_out: TangentOut;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
