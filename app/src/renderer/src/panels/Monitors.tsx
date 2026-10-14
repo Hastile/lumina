@@ -155,7 +155,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, t:
     if (track.hidden) return
     for (const clip of Object.values(track.clips)) {
       if (!clip.enabled || t < clip.start || t >= clip.end) continue
-      const m = media[clip.media_id]
+      const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m) continue
       out.push({ key: `v-${tid}-${m.id}`, clip, media: m, kind: m.kind === 'image' ? 'image' : 'video', time: ticksToSeconds(clip.source_in + (t - clip.start) * clip.speed), z, volume: 0 })
     }
@@ -165,7 +165,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, t:
     if (track.muted || (anySolo && !track.solo)) continue
     for (const clip of Object.values(track.clips)) {
       if (!clip.enabled || t < clip.start || t >= clip.end) continue
-      const m = media[clip.media_id]
+      const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       out.push({ key: `a-${tid}-${m.id}`, clip, media: m, kind: 'audio', time: ticksToSeconds(clip.source_in + (t - clip.start) * clip.speed), z: -1, volume: dbToGain(clip.volume_db) })
     }

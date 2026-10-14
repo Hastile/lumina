@@ -90,7 +90,7 @@ export function EffectControlsPanel() {
   const found = seq && selected.length ? findClip(seq, selected[0]) : null
   if (!seq || !found) return <div className="lm-panel"><div className="lm-empty">(no clip selected)</div></div>
   const { clip, track } = found
-  const m = media?.[clip.media_id]
+  const m = clip.media_id ? media?.[clip.media_id] : undefined
   const set = (params: Record<string, unknown>, label: string) => void exec('clip.set', { sequence_id: seq.id, clip_ids: [clip.id], ...params }, label)
 
   return (

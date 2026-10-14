@@ -384,7 +384,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     const x1 = toX(stop)
     if (x1 < -50 || x0 > width + 50) return null
     const target = rows[rowIdx + (row.kind === 'video' ? -rowOffset : rowOffset)] ?? row
-    const m = media[clip.media_id]
+    const m = clip.media_id ? media[clip.media_id] : undefined
     const isSel = selected.includes(clip.id)
     return (
       <div

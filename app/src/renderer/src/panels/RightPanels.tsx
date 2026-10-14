@@ -95,7 +95,7 @@ export function MetadataPanel() {
   if (!media && doc && clips.length) {
     const seq = activeSequence(get())
     const f = seq ? findClip(seq, clips[0]) : null
-    media = f ? doc.media[f.clip.media_id] ?? null : null
+    media = f ? (f.clip.media_id ? doc.media[f.clip.media_id] : null) ?? null : null
   }
   if (!media) return <div className="lm-panel"><div className="lm-empty">Select a clip or project item.</div></div>
   const rows: [string, string][] = [
