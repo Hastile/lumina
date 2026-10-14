@@ -8,7 +8,7 @@ import { EFFECTS, effectParam } from '../util/effects'
 import type { Effect } from '../engine/document'
 import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
-import { TextLayerEditor } from './TextLayerEditor'
+import { GraphicLayers } from './GraphicLayers'
 
 function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, fxId }: {
   title: string; children: React.ReactNode; onReset?: () => void; enabled?: boolean; onToggleEnabled?: () => void; onDelete?: () => void; fxId?: string
@@ -127,9 +127,7 @@ export function EffectControlsPanel() {
             <div className="lm-ec-section">{t('Video')}</div>
             {clip.graphic && (
               <Group title={t('Graphic Parameters')}>
-                {clip.graphic.layers.map((l) => (
-                  <TextLayerEditor key={l.id} c={c} layer={l} compact />
-                ))}
+                <GraphicLayers c={c} compact />
               </Group>
             )}
             <Group title={t('Motion')} onReset={reset}>

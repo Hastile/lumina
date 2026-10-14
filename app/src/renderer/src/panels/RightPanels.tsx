@@ -1,13 +1,13 @@
 // Panels from Premiere 2025+'s Editing workspace right side and top-left tabs.
 // Properties and Metadata are functional; Essential Sound, Lumetri Color, Text
 // and Graphic Templates hold their place until their milestones.
-import { ChevronDown, AudioLines, MessageSquare, Music, Sparkles, Wind, RotateCcw, Plus, Maximize, Minimize } from 'lucide-react'
+import { ChevronDown, AudioLines, Circle, MessageSquare, Music, Sparkles, Square, Wind, RotateCcw, Plus, Maximize, Minimize } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { MediaItem } from '../engine/document'
 import { activeSequence, exec, findClip, get, useStore } from '../state/store'
 import { ticksToSeconds } from '../util/time'
 import { current, KeyframeRow, NumberScrub, setProp, useSelectedClip } from './PropertyControls'
-import { TextLayerEditor } from './TextLayerEditor'
+import { GraphicLayers } from './GraphicLayers'
 
 function Section({ title, children, reset }: { title: string; children: React.ReactNode; reset?: () => void }) {
   return (
@@ -39,13 +39,19 @@ export function PropertiesPanel() {
       <div className="lm-props-title">{clip.name}</div>
       <div className="lm-props-scroll lm-ec">
         {clip.graphic && (
-          <Section title={t('Text')}>
-            {clip.graphic.layers.map((l) => (
-              <TextLayerEditor key={l.id} c={c} layer={l} />
-            ))}
-            <button className="lm-btn small" onClick={() => void exec('graphic.add_layer', { sequence_id: seq.id, clip_id: clip.id, text: t('New Text Layer') }, t('Add Text Layer'))}>
-              <Plus size={12} /> {t('Add Text Layer')}
-            </button>
+          <Section title={t('Layers')}>
+            <GraphicLayers c={c} />
+            <div className="lm-glayer-add">
+              <button className="lm-btn small" onClick={() => void exec('graphic.add_layer', { sequence_id: seq.id, clip_id: clip.id, text: t('New Text Layer') }, t('Add Text Layer'))}>
+                <Plus size={12} /> {t('Text')}
+              </button>
+              <button className="lm-btn small" data-add-shape="rectangle" onClick={() => void exec('graphic.add_shape', { sequence_id: seq.id, clip_id: clip.id, shape: 'rectangle' }, t('New Layer > Rectangle'))}>
+                <Square size={12} /> {t('Rectangle')}
+              </button>
+              <button className="lm-btn small" onClick={() => void exec('graphic.add_shape', { sequence_id: seq.id, clip_id: clip.id, shape: 'ellipse' }, t('New Layer > Ellipse'))}>
+                <Circle size={12} /> {t('Ellipse')}
+              </button>
+            </div>
           </Section>
         )}
         {c.kind === 'video' ? (

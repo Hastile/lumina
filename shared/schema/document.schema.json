@@ -284,8 +284,23 @@
       "additionalProperties": false,
       "properties": {
         "layers": {
+          "description": "bottom to top",
           "items": {
-            "$ref": "#/$defs/TextLayer"
+            "discriminator": {
+              "mapping": {
+                "shape": "#/$defs/ShapeLayer",
+                "text": "#/$defs/TextLayer"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/TextLayer"
+              },
+              {
+                "$ref": "#/$defs/ShapeLayer"
+              }
+            ]
           },
           "title": "Layers",
           "type": "array"
@@ -792,6 +807,146 @@
       "title": "SequenceSettings",
       "type": "object"
     },
+    "ShapeLayer": {
+      "additionalProperties": false,
+      "description": "A vector shape. Its path lives in layer pixels; ``anchor`` (layer pixels)\nlands on ``position`` (sequence pixels), then scale and rotation apply\naround it, like Premiere's per-layer transform.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "shape",
+          "default": "shape",
+          "title": "Type",
+          "type": "string"
+        },
+        "shape": {
+          "default": "rectangle",
+          "enum": [
+            "rectangle",
+            "ellipse",
+            "path"
+          ],
+          "title": "Shape",
+          "type": "string"
+        },
+        "path": {
+          "description": "vertices [x, y, in_x, in_y, out_x, out_y]; tangent handles are absolute points",
+          "items": {
+            "items": {
+              "type": "number"
+            },
+            "type": "array"
+          },
+          "title": "Path",
+          "type": "array"
+        },
+        "closed": {
+          "default": true,
+          "title": "Closed",
+          "type": "boolean"
+        },
+        "fill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "#ffffff",
+          "description": "null = no fill",
+          "title": "Fill"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "default": 0.0,
+          "title": "Stroke Width",
+          "type": "number"
+        },
+        "position": {
+          "description": "sequence pixels where the anchor lands",
+          "items": {
+            "type": "number"
+          },
+          "title": "Position",
+          "type": "array"
+        },
+        "anchor": {
+          "description": "layer pixels",
+          "items": {
+            "type": "number"
+          },
+          "title": "Anchor",
+          "type": "array"
+        },
+        "scale": {
+          "default": 100.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "scale_width": {
+          "default": 100.0,
+          "description": "used when uniform is false",
+          "title": "Scale Width",
+          "type": "number"
+        },
+        "uniform": {
+          "default": true,
+          "title": "Uniform",
+          "type": "boolean"
+        },
+        "rotation": {
+          "default": 0.0,
+          "title": "Rotation",
+          "type": "number"
+        },
+        "opacity": {
+          "default": 100.0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "visible": {
+          "default": true,
+          "description": "the layer's eye toggle",
+          "title": "Visible",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "shape",
+        "path",
+        "closed",
+        "fill",
+        "stroke_color",
+        "stroke_width",
+        "position",
+        "anchor",
+        "scale",
+        "scale_width",
+        "uniform",
+        "rotation",
+        "opacity",
+        "visible"
+      ],
+      "title": "ShapeLayer",
+      "type": "object"
+    },
     "TextLayer": {
       "additionalProperties": false,
       "properties": {
@@ -896,6 +1051,12 @@
           "title": "Opacity",
           "type": "number"
         },
+        "visible": {
+          "default": true,
+          "description": "the layer's eye toggle",
+          "title": "Visible",
+          "type": "boolean"
+        },
         "approximate": {
           "default": false,
           "description": "imported with best-effort styling (e.g. from a MOGRT)",
@@ -920,6 +1081,7 @@
         "scale",
         "rotation",
         "opacity",
+        "visible",
         "approximate"
       ],
       "title": "TextLayer",

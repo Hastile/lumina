@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 
+from lumina import shapes
 from lumina.commands.registry import CommandError
 from lumina.commands.timeline import check_sequence
 from lumina.model import validate_project
@@ -105,5 +106,35 @@ def test_graphics_create_edit_and_undo():
     s.execute("clip.razor", {"at": "3s"})
     s.execute("clip.trim", {"clip_id": out["clip_id"], "edge": "end", "delta": "-0.5s"})
     for _ in range(5):
+        s.undo()
+    assert out["clip_id"] not in seq["tracks"][out["track_id"]]["clips"]
+
+
+def test_shape_layers_create_edit_reorder_and_undo():
+    s, sid, _ = make()
+    seq = s.doc["sequences"][sid]
+    out = s.execute("graphic.create_shape", {"shape": "rectangle", "rect": [100, 200, 500, 400], "at": 0, "fill": "#ff0000"})["result"]
+    clip = lambda: seq["tracks"][out["track_id"]]["clips"][out["clip_id"]]
+    (rect,) = clip()["graphic"]["layers"]
+    assert rect["type"] == "shape" and rect["position"] == [300, 300] and rect["fill"] == "#ff0000"
+    assert shapes.bounds(rect["path"]) == (-200, -100, 200, 100)
+    ell = s.execute("graphic.add_shape", {"clip_id": out["clip_id"], "shape": "ellipse", "stroke_color": "#000000", "stroke_width": 4})["result"]
+    t = s.execute("graphic.add_layer", {"clip_id": out["clip_id"], "text": "제목"})["result"]
+    assert [l["type"] for l in clip()["graphic"]["layers"]] == ["shape", "shape", "text"]
+    s.execute("graphic.set_shape", {"clip_id": out["clip_id"], "layer_id": rect["id"], "width": 800, "fill_enabled": False, "rotation": 15})
+    r = clip()["graphic"]["layers"][0]
+    assert r["fill"] is None and r["rotation"] == 15 and shapes.bounds(r["path"]) == (-400, -100, 400, 100)
+    with pytest.raises(CommandError) as e:
+        s.execute("graphic.set_shape", {"clip_id": out["clip_id"], "layer_id": t["layer_id"], "fill": "#00ff00"})
+    assert e.value.code == "NOT_SHAPE"
+    with pytest.raises(CommandError):
+        s.execute("graphic.set_layer", {"clip_id": out["clip_id"], "layer_id": ell["layer_id"], "text": "x"})
+    # set_layer without a layer id targets the first text layer, not a shape
+    s.execute("graphic.set_layer", {"clip_id": out["clip_id"], "text": "부제"})
+    assert clip()["graphic"]["layers"][2]["text"] == "부제"
+    s.execute("graphic.move_layer", {"clip_id": out["clip_id"], "layer_id": t["layer_id"], "index": 0})
+    assert [l["type"] for l in clip()["graphic"]["layers"]] == ["text", "shape", "shape"]
+    assert validate_project(s.doc).model_dump(mode="json") == s.doc
+    for _ in range(6):
         s.undo()
     assert out["clip_id"] not in seq["tracks"][out["track_id"]]["clips"]

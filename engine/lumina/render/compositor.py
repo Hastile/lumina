@@ -26,12 +26,14 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from .. import timebase
 from ..adb.quiet_process import NO_WINDOW
 from ..media.probe import ffmpeg_bin, ffprobe_bin
 from .. import effects as fx_
+from .. import shapes
 from ..motion import transform_at
 from . import fonts
 
@@ -245,16 +247,99 @@ def render_text_layer(layer: dict) -> tuple[Image.Image, float, float]:
     return img, align_x, margin + box_h / 2
 
 
+def _coverage(poly: list[tuple[float, float]], w: int, h: int, ss: int) -> np.ndarray:
+    """Exact nonzero-winding coverage of a polygon, sampled at ss x ss points
+    per pixel -> float32 (h, w) in 0..1. Pillow's polygon fill is inclusive of
+    its edges (an N-pixel box grows to N+1), which shows as a faint halo."""
+    n = len(poly)
+    p = np.asarray(poly, dtype=np.float64) * ss
+    q = np.roll(p, -1, axis=0)
+    x0, y0, x1, y1 = p[:, 0], p[:, 1], q[:, 0], q[:, 1]
+    keep = y0 != y1
+    x0, y0, x1, y1 = x0[keep], y0[keep], x1[keep], y1[keep]
+    mask = np.zeros((h * ss, w * ss), dtype=bool)
+    if not len(x0) or n < 3:
+        return np.zeros((h, w), dtype=np.float32)
+    ys = np.arange(h * ss) + 0.5
+    lo, hi = np.minimum(y0, y1), np.maximum(y0, y1)
+    hit = (ys[:, None] >= lo) & (ys[:, None] < hi)  # half-open: shared vertices count once
+    with np.errstate(divide="ignore", invalid="ignore"):
+        xs = x0 + (ys[:, None] - y0) * (x1 - x0) / (y1 - y0)
+    wind = np.where(y1 > y0, 1, -1)
+    cols = np.arange(w * ss) + 0.5
+    for r in np.nonzero(hit.any(axis=1))[0]:
+        e = np.nonzero(hit[r])[0]
+        order = np.argsort(xs[r, e])
+        acc = 0
+        for k in range(len(order) - 1):
+            acc += wind[e[order[k]]]
+            if acc:
+                a, b = xs[r, e[order[k]]], xs[r, e[order[k + 1]]]
+                i0, i1 = np.searchsorted(cols, a), np.searchsorted(cols, b)
+                mask[r, i0:i1] = True
+    return mask.reshape(h, ss, w, ss).mean(axis=(1, 3), dtype=np.float32)
+
+
+def render_shape_layer(layer: dict) -> tuple[Image.Image, float, float] | None:
+    """Rasterise one shape layer (untransformed) -> (image, anchor_x, anchor_y)
+    with the layer's anchor located inside the image. Antialiased by
+    supersampling; the stroke is centered on the path, as in the SVG preview."""
+    closed = layer.get("closed", True)
+    poly = shapes.flatten(layer["path"], closed)
+    if len(poly) < 2:
+        return None
+    fill = layer.get("fill") if closed else None
+    stroke = float(layer.get("stroke_width") or 0) if layer.get("stroke_color") else 0.0
+    if not fill and stroke <= 0:
+        return None
+    xs, ys = [x for x, _ in poly], [y for _, y in poly]
+    m = stroke / 2 + 2
+    ox, oy = math.floor(min(xs) - m), math.floor(min(ys) - m)
+    w, h = math.ceil(max(xs) + m) - ox, math.ceil(max(ys) + m) - oy
+    ss = max(1, min(4, 4096 // max(w, h, 1)))
+    local = [(x - ox, y - oy) for x, y in poly]
+    rgba = np.zeros((h, w, 4), dtype=np.float32)  # premultiplied
+    if fill:
+        cov = _coverage(local, w, h, ss)
+        c = np.asarray((*_color(fill), 255)[:4], dtype=np.float32) / 255
+        rgba += cov[..., None] * np.array([c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]], dtype=np.float32)
+    if stroke > 0:
+        line = Image.new("L", (w * ss, h * ss), 0)
+        pts = [(x * ss - 0.5, y * ss - 0.5) for x, y in local]
+        ImageDraw.Draw(line).line(pts + ([pts[0]] if closed else []), fill=255, width=max(1, round(stroke * ss)), joint="curve")
+        cov = np.asarray(line, dtype=np.float32).reshape(h, ss, w, ss).mean(axis=(1, 3)) / 255
+        c = np.asarray((*_color(layer["stroke_color"], (0, 0, 0, 255)), 255)[:4], dtype=np.float32) / 255
+        src = cov[..., None] * np.array([c[0] * c[3], c[1] * c[3], c[2] * c[3], c[3]], dtype=np.float32)
+        rgba = src + rgba * (1 - src[..., 3:4])
+    alpha = rgba[..., 3:4]
+    rgb = np.where(alpha > 0, rgba[..., :3] / np.maximum(alpha, 1e-6), 0)
+    out = np.concatenate([rgb, alpha], axis=2)
+    img = Image.fromarray(np.clip(out * 255 + 0.5, 0, 255).astype(np.uint8), "RGBA")
+    ax, ay = layer.get("anchor") or [0.0, 0.0]
+    return img, ax - ox, ay - oy
+
+
 def render_graphic(graphic: dict, width: int, height: int) -> Image.Image:
+    """Layers are bottom to top."""
     canvas = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     for layer in graphic.get("layers", []):
-        if not layer.get("text"):
+        if not layer.get("visible", True):
             continue
-        img, ax, ay = render_text_layer(layer)
-        s = layer.get("scale", 100.0)
+        if layer.get("type") == "shape":
+            out = render_shape_layer(layer)
+            if out is None:
+                continue
+            img, ax, ay = out
+            s = layer.get("scale", 100.0)
+            sx = s if layer.get("uniform", True) else layer.get("scale_width", 100.0)
+        else:
+            if not layer.get("text"):
+                continue
+            img, ax, ay = render_text_layer(layer)
+            s = sx = layer.get("scale", 100.0)
         place(canvas, img, (0, 0), {
             "src_w": img.width, "src_h": img.height, "crop_left": 0, "crop_top": 0, "crop_right": 0, "crop_bottom": 0,
-            "position": layer["position"], "anchor": [ax, ay], "scale_x": s, "scale_y": s,
+            "position": layer["position"], "anchor": [ax, ay], "scale_x": sx, "scale_y": s,
             "rotation": layer.get("rotation", 0.0), "opacity": layer.get("opacity", 100.0),
         })
     return canvas

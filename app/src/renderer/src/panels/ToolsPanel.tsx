@@ -1,4 +1,4 @@
-import { ArrowRightToLine, Hand, MousePointer2, MoveHorizontal, PenTool, Scissors, Type, ZoomIn, Columns2, ArrowLeftRight, Gauge, SplitSquareHorizontal } from 'lucide-react'
+import { Circle, Square, ArrowRightToLine, Hand, MousePointer2, MoveHorizontal, PenTool, Scissors, Type, ZoomIn, Columns2, ArrowLeftRight, Gauge, SplitSquareHorizontal } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { runAction } from '../actions/actions'
 import { useStore, type Tool } from '../state/store'
@@ -15,7 +15,9 @@ const TOOLS: { tool: Tool; title: string; key: string; Icon: React.FC<{ size?: n
   { tool: 'pen', title: 'Pen Tool', key: 'P', Icon: PenTool },
   { tool: 'hand', title: 'Hand Tool', key: 'H', Icon: Hand },
   { tool: 'zoom', title: 'Zoom Tool', key: 'Z', Icon: ZoomIn },
-  { tool: 'type', title: 'Type Tool', key: 'T', Icon: Type }
+  { tool: 'type', title: 'Type Tool', key: 'T', Icon: Type },
+  { tool: 'rectangle', title: 'Rectangle Tool', key: '', Icon: Square },
+  { tool: 'ellipse', title: 'Ellipse Tool', key: '', Icon: Circle }
 ]
 
 export function ToolsPanel() {
@@ -23,7 +25,7 @@ export function ToolsPanel() {
   return (
     <div className="lm-panel lm-tools">
       {TOOLS.map(({ tool: id, title, key, Icon }) => (
-        <button key={id} className={`lm-iconbtn ${tool === id ? 'on' : ''}`} title={`${t(title)} (${key})`} onClick={() => runAction(`tool.${id}`)}>
+        <button key={id} className={`lm-iconbtn ${tool === id ? 'on' : ''}`} title={key ? `${t(title)} (${key})` : t(title)} onClick={() => runAction(`tool.${id}`)}>
           <Icon size={16} />
         </button>
       ))}

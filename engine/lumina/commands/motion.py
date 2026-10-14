@@ -1,4 +1,4 @@
-"""Motion, opacity/volume keyframing and graphics (text layers)."""
+"""Motion, opacity/volume keyframing and graphics (text and shape layers)."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Literal
 
 from pydantic import Field
 
-from .. import timebase
+from .. import shapes, timebase
 from ..model import KeyframeProp, new_id
 from ..motion import POINT_PROPS, source_time, value_at
 from .project import seq_of
@@ -233,7 +233,7 @@ def _text_layer(text: str, position: list[float], **style) -> dict:
     layer = {"id": new_id(), "type": "text", "text": text, "font_family": "Pretendard", "font_size": 100.0,
              "bold": False, "italic": False, "color": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
              "background": None, "align": "center", "position": position, "scale": 100.0, "rotation": 0.0,
-             "opacity": 100.0, "approximate": False}
+             "opacity": 100.0, "visible": True, "approximate": False}
     for k, v in style.items():
         if v is not None:
             layer[k] = v
@@ -264,6 +264,7 @@ class TextStyle(Params):
     scale: float | None = Field(default=None, ge=0, le=10000)
     rotation: float | None = None
     opacity: float | None = Field(default=None, ge=0, le=100)
+    visible: bool | None = None
 
 
 class CreateText(TextStyle):
@@ -323,9 +324,11 @@ def graphic_set_layer(ctx: Context, p: SetLayer):
     if not clip.get("graphic"):
         raise CommandError("NOT_GRAPHIC", "clip is not a graphic")
     layers = copy.deepcopy(clip["graphic"]["layers"])
-    idx = next((i for i, l in enumerate(layers) if p.layer_id in (None, l["id"])), None)
+    idx = next((i for i, l in enumerate(layers) if (l["id"] == p.layer_id if p.layer_id else l.get("type", "text") == "text")), None)
     if idx is None:
         raise CommandError("NO_LAYER", f"layer not found: {p.layer_id}")
+    if layers[idx].get("type", "text") != "text":
+        raise CommandError("NOT_TEXT", "use graphic.set_shape for shape layers")
     changes = p.model_dump(exclude={"sequence_id", "clip_id", "layer_id"}, exclude_none=True)
     # explicit nulls for nullable colors are allowed through model_fields_set
     for k in ("stroke_color", "background"):
@@ -367,10 +370,166 @@ class RemoveLayer(Params):
 
 @command("graphic.remove_layer", RemoveLayer)
 def graphic_remove_layer(ctx: Context, p: RemoveLayer):
-    """Remove a text layer from a graphic clip."""
+    """Remove a text or shape layer from a graphic clip."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
     layers = [l for l in (clip.get("graphic") or {}).get("layers", []) if l["id"] != p.layer_id]
     if len(layers) == len((clip.get("graphic") or {}).get("layers", [])):
         raise CommandError("NO_LAYER", f"layer not found: {p.layer_id}")
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
 
+
+
+# ---------------------------------------------------------------- shape layers
+
+class ShapeStyle(Params):
+    fill: str | None = Field(default=None, description="fill color; null (or fill_enabled=false) = no fill")
+    fill_enabled: bool | None = None
+    stroke_color: str | None = Field(default=None, description="null = no stroke")
+    stroke_width: float | None = Field(default=None, ge=0, le=500)
+    position: list[float] | None = None
+    anchor: list[float] | None = None
+    scale: float | None = Field(default=None, ge=0, le=10000)
+    scale_width: float | None = Field(default=None, ge=0, le=10000)
+    uniform: bool | None = None
+    rotation: float | None = None
+    opacity: float | None = Field(default=None, ge=0, le=100)
+    visible: bool | None = None
+
+
+def _shape_changes(p: ShapeStyle) -> dict:
+    changes = p.model_dump(include=set(ShapeStyle.model_fields) - {"fill_enabled"}, exclude_none=True)
+    if p.fill_enabled is False or ("fill" in p.model_fields_set and p.fill is None):
+        changes["fill"] = None
+    elif p.fill_enabled and "fill" not in changes:
+        changes["fill"] = "#ffffff"
+    if "stroke_color" in p.model_fields_set and p.stroke_color is None:
+        changes["stroke_color"] = None
+    for k in ("position", "anchor"):
+        if k in changes:
+            if len(changes[k]) != 2:
+                raise CommandError("BAD_VALUE", f"{k} needs [x, y]")
+            changes[k] = [float(v) for v in changes[k]]
+    return changes
+
+
+class NewShape(ShapeStyle):
+    shape: Literal["rectangle", "ellipse"] = "rectangle"
+    rect: list[float] | None = Field(default=None, description="[x0, y0, x1, y1] sequence pixels; default a centered box")
+
+
+def _shape_layer(p: NewShape, st: dict) -> dict:
+    if p.rect is not None and len(p.rect) != 4:
+        raise CommandError("BAD_VALUE", "rect needs [x0, y0, x1, y1]")
+    W, H = st["width"], st["height"]
+    x0, y0, x1, y1 = p.rect if p.rect else (W * 0.3, H * 0.35, W * 0.7, H * 0.65)
+    x0, x1 = sorted((float(x0), float(x1)))
+    y0, y1 = sorted((float(y0), float(y1)))
+    w, h = max(x1 - x0, 1.0), max(y1 - y0, 1.0)
+    layer = {
+        "id": new_id(), "type": "shape", "shape": p.shape, "path": shapes.make(p.shape, -w / 2, -h / 2, w / 2, h / 2),
+        "closed": True, "fill": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
+        "position": [x0 + w / 2, y0 + h / 2], "anchor": [0.0, 0.0], "scale": 100.0, "scale_width": 100.0,
+        "uniform": True, "rotation": 0.0, "opacity": 100.0, "visible": True,
+    }
+    layer.update(_shape_changes(p))
+    return layer
+
+
+class CreateShape(NewShape):
+    sequence_id: str | None = None
+    at: TimeValue | None = Field(default=None, description="default playhead")
+    duration: TimeValue = "5s"
+    track_id: str | None = Field(default=None, description="default: first empty video track above the clips at that time")
+
+
+@command("graphic.create_shape", CreateShape)
+def graphic_create_shape(ctx: Context, p: CreateShape):
+    """Rectangle/Ellipse tool: create a graphic clip with one shape layer."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
+    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video":
+        raise CommandError("BAD_TRACK", "graphics go on a video track")
+    require_unlocked(seq, tid)
+    layer = _shape_layer(p, st)
+    from .timeline import clear_range
+    clear_range(ctx, seq, tid, start, end)
+    clip = graphic_clip("Graphic", start, end, [layer])
+    write_clip(ctx, seq, tid, clip)
+    return {"clip_id": clip["id"], "layer_id": layer["id"], "track_id": tid}
+
+
+class AddShape(NewShape):
+    sequence_id: str | None = None
+    clip_id: str
+
+
+@command("graphic.add_shape", AddShape)
+def graphic_add_shape(ctx: Context, p: AddShape):
+    """Add a rectangle or ellipse layer on top of a graphic clip's layers."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    if not clip.get("graphic"):
+        raise CommandError("NOT_GRAPHIC", "clip is not a graphic")
+    layer = _shape_layer(p, seq["settings"])
+    ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], clip["graphic"]["layers"] + [layer])
+    return {"layer_id": layer["id"]}
+
+
+class SetShape(ShapeStyle):
+    sequence_id: str | None = None
+    clip_id: str
+    layer_id: str | None = Field(default=None, description="default: first shape layer")
+    width: float | None = Field(default=None, gt=0, le=100000, description="resize the path about its center")
+    height: float | None = Field(default=None, gt=0, le=100000)
+    path: list[list[float]] | None = Field(default=None, description="replace the path (vertices [x, y, in_x, in_y, out_x, out_y])")
+    closed: bool | None = None
+
+
+@command("graphic.set_shape", SetShape)
+def graphic_set_shape(ctx: Context, p: SetShape):
+    """Edit a shape layer: fill, stroke, size, path, position, anchor, scale, rotation, opacity."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    if not clip.get("graphic"):
+        raise CommandError("NOT_GRAPHIC", "clip is not a graphic")
+    layers = copy.deepcopy(clip["graphic"]["layers"])
+    idx = next((i for i, l in enumerate(layers) if (l["id"] == p.layer_id if p.layer_id else l.get("type") == "shape")), None)
+    if idx is None:
+        raise CommandError("NO_LAYER", f"shape layer not found: {p.layer_id}")
+    layer = layers[idx]
+    if layer.get("type") != "shape":
+        raise CommandError("NOT_SHAPE", "use graphic.set_layer for text layers")
+    changes = _shape_changes(p)
+    if p.path is not None:
+        if len(p.path) < 2 or any(len(v) != 6 for v in p.path):
+            raise CommandError("BAD_VALUE", "path needs at least 2 vertices of [x, y, in_x, in_y, out_x, out_y]")
+        changes["path"] = [[float(x) for x in v] for v in p.path]
+        changes["shape"] = "path"
+    if p.closed is not None:
+        changes["closed"] = p.closed
+    if p.width is not None or p.height is not None:
+        changes["path"] = shapes.resize(changes.get("path", layer["path"]), p.width, p.height)
+    layer.update(changes)
+    ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
+
+
+class MoveLayer(Params):
+    sequence_id: str | None = None
+    clip_id: str
+    layer_id: str
+    index: int = Field(description="new position in the stack, 0 = bottom; negative counts from the top")
+
+
+@command("graphic.move_layer", MoveLayer)
+def graphic_move_layer(ctx: Context, p: MoveLayer):
+    """Reorder a graphic's layers (Essential Graphics stacking order)."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    layers = list((clip.get("graphic") or {}).get("layers", []))
+    idx = next((i for i, l in enumerate(layers) if l["id"] == p.layer_id), None)
+    if idx is None:
+        raise CommandError("NO_LAYER", f"layer not found: {p.layer_id}")
+    target = max(0, min(len(layers) - 1, p.index if p.index >= 0 else len(layers) + p.index))
+    if target != idx:
+        layers.insert(target, layers.pop(idx))
+        ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)

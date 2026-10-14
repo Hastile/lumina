@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { applyPatch, engine, EngineError, type EngineEvent, type HistoryState, type Job } from '../engine/client'
 import type { Clip, MediaItem, Project, Sequence, Track } from '../engine/document'
 
-export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'razor' | 'slip' | 'slide' | 'pen' | 'hand' | 'zoom' | 'type'
+export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'razor' | 'slip' | 'slide' | 'pen' | 'hand' | 'zoom' | 'type' | 'rectangle' | 'ellipse'
 
 export type PanelId =
   | 'project' | 'source' | 'program' | 'timeline' | 'effectControls' | 'audioMixer' | 'effects' | 'mediaBrowser' | 'tools' | 'audioMeters'

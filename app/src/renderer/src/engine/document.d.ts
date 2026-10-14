@@ -164,20 +164,61 @@ export type Scale1 = number;
 export type Rotation1 = number;
 export type Opacity1 = number;
 /**
+ * the layer's eye toggle
+ */
+export type Visible = boolean;
+/**
  * imported with best-effort styling (e.g. from a MOGRT)
  */
 export type Approximate = boolean;
-export type Layers = TextLayer[];
+export type Id7 = string;
+export type Type1 = "shape";
+export type Shape = "rectangle" | "ellipse" | "path";
+/**
+ * vertices [x, y, in_x, in_y, out_x, out_y]; tangent handles are absolute points
+ */
+export type Path1 = number[][];
+export type Closed = boolean;
+/**
+ * null = no fill
+ */
+export type Fill = string | null;
+export type StrokeColor1 = string | null;
+export type StrokeWidth1 = number;
+/**
+ * sequence pixels where the anchor lands
+ */
+export type Position2 = number[];
+/**
+ * layer pixels
+ */
+export type Anchor1 = number[];
+export type Scale2 = number;
+/**
+ * used when uniform is false
+ */
+export type ScaleWidth1 = number;
+export type Uniform1 = boolean;
+export type Rotation2 = number;
+export type Opacity2 = number;
+/**
+ * the layer's eye toggle
+ */
+export type Visible1 = boolean;
+/**
+ * bottom to top
+ */
+export type Layers = (TextLayer | ShapeLayer)[];
 /**
  * origin, e.g. 'mogrt:Title' for imported Premiere graphics
  */
 export type Source = string | null;
-export type Id7 = string;
-export type Type1 = "transform" | "gaussian_blur";
+export type Id8 = string;
+export type Type2 = "transform" | "gaussian_blur";
 export type Enabled1 = boolean;
 export type Effects = Effect[];
-export type Id8 = string;
-export type Type2 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
+export type Id9 = string;
+export type Type3 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
 /**
  * outgoing clip (ends at the cut)
  */
@@ -202,7 +243,7 @@ export type VideoTracks = string[];
  * top (A1) to bottom
  */
 export type AudioTracks = string[];
-export type Id9 = string;
+export type Id10 = string;
 export type Start1 = number;
 export type Duration2 = number;
 export type Name6 = string;
@@ -414,7 +455,34 @@ export interface TextLayer {
   scale: Scale1;
   rotation: Rotation1;
   opacity: Opacity1;
+  visible: Visible;
   approximate: Approximate;
+}
+/**
+ * A vector shape. Its path lives in layer pixels; ``anchor`` (layer pixels)
+ * lands on ``position`` (sequence pixels), then scale and rotation apply
+ * around it, like Premiere's per-layer transform.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "ShapeLayer".
+ */
+export interface ShapeLayer {
+  id: Id7;
+  type: Type1;
+  shape: Shape;
+  path: Path1;
+  closed: Closed;
+  fill: Fill;
+  stroke_color: StrokeColor1;
+  stroke_width: StrokeWidth1;
+  position: Position2;
+  anchor: Anchor1;
+  scale: Scale2;
+  scale_width: ScaleWidth1;
+  uniform: Uniform1;
+  rotation: Rotation2;
+  opacity: Opacity2;
+  visible: Visible1;
 }
 /**
  * A standard effect, applied in order before the intrinsic Motion/Opacity
@@ -425,8 +493,8 @@ export interface TextLayer {
  * via the `definition` "Effect".
  */
 export interface Effect {
-  id: Id7;
-  type: Type1;
+  id: Id8;
+  type: Type2;
   enabled: Enabled1;
   params: Params;
   keyframes: Keyframes1;
@@ -448,8 +516,8 @@ export interface Transitions {
  * via the `definition` "Transition".
  */
 export interface Transition {
-  id: Id8;
-  type: Type2;
+  id: Id9;
+  type: Type3;
   clip_a: ClipA;
   clip_b: ClipB;
   duration: Duration1;
@@ -463,7 +531,7 @@ export interface Markers {
  * via the `definition` "Marker".
  */
 export interface Marker {
-  id: Id9;
+  id: Id10;
   start: Start1;
   duration: Duration2;
   name: Name6;

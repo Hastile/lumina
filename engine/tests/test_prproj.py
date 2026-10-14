@@ -1,7 +1,9 @@
 """Premiere .prproj import, against a minimal synthetic project that mirrors
 the object-graph shapes seen in real Premiere 2025-26 files."""
 
+import base64
 import gzip
+import struct
 
 import pytest
 
@@ -16,7 +18,56 @@ from .test_session import FakeServices
 FRAME30 = SEC // 30
 
 
-def build_prproj(tmp_path, media_path: str) -> str:
+def _shape_blobs(fill: tuple[int, int, int], kind: int) -> tuple[str, str]:
+    """Path + style blobs laid out like Premiere's (see lumina.io.prproj._shape)."""
+    rect = [(-50.0, -20.0), (50.0, -20.0), (50.0, 20.0), (-50.0, 20.0)]
+    path = struct.pack("<II", 2, 4) + b"".join(struct.pack("<I6f", 0, x, y, x, y, x, y) for x, y in rect) + b"\x01"
+    # FlatBuffer: root uoffset | root vtable, table -> style vtable, table -> color vtable, table
+    # (uoffsets point forward; each vtable sits just before its table)
+    vt = [0] * 24
+    vt[0], vt[23] = 4, 8
+    root_vt = 4
+    root_t = root_vt + 6
+    style_vt = root_t + 8
+    style_t = style_vt + 4 + 2 * len(vt)
+    color_vt = style_t + 12
+    color_t = color_vt + 10
+    fb = struct.pack("<I", root_t)
+    fb += struct.pack("<HHH", 6, 8, 4)
+    fb += struct.pack("<iI", root_t - root_vt, style_t - (root_t + 4))
+    fb += struct.pack("<HH", 4 + 2 * len(vt), 12) + struct.pack(f"<{len(vt)}H", *vt)
+    fb += struct.pack("<iII", style_t - style_vt, color_t - (style_t + 4), kind)
+    fb += struct.pack("<HHHHH", 10, 7, 4, 5, 6)
+    fb += struct.pack("<i", color_t - color_vt) + bytes(fill) + b"\0"
+    assert len(fb) == color_t + 8
+    style = struct.pack("<II", len(fb), 0) + struct.pack("<I", 0x11223344) + bytes(fb)
+    return base64.b64encode(path).decode(), base64.b64encode(style).decode()
+
+
+def _shapes_xml(with_shapes: bool) -> str:
+    if not with_shapes:
+        return ""
+    path, style = _shape_blobs((255, 0, 0), 1)
+    def param(oid, pid, value):
+        return f'<VideoComponentParam ObjectID="{oid}" ClassID="x" Version="1"><ParameterID>{pid}</ParameterID><StartKeyframe>-91445760000000000,{value},0,0,0,0,0,0</StartKeyframe></VideoComponentParam>'
+    # two identical shapes: Premiere stores the second copy's blobs empty, deduplicated by BinaryHash
+    comps = []
+    for n, (oid, pos) in enumerate([(300, "0.5:0.25"), (400, "0.5:0.75")]):
+        blob = lambda b: b if n == 0 else ""
+        comps.append(f'''<VideoFilterComponent ObjectID="{oid}" ClassID="x" Version="9"><Component Version="7"><Params Version="1">
+  <Param Index="0" ObjectRef="{oid + 1}" /><Param Index="1" ObjectRef="{oid + 2}" /><Param Index="2" ObjectRef="{oid + 4}" /></Params></Component>
+  <MatchName>AE.ADBE Shape</MatchName></VideoFilterComponent>
+<ArbVideoComponentParam ObjectID="{oid + 1}" ClassID="x" Version="3"><ParameterID>1</ParameterID><StartKeyframeValue Encoding="base64" BinaryHash="h-path">{blob(path)}</StartKeyframeValue></ArbVideoComponentParam>
+<ArbVideoComponentParam ObjectID="{oid + 2}" ClassID="x" Version="3"><ParameterID>2</ParameterID><StartKeyframeValue Encoding="base64" BinaryHash="h-style">{blob(style)}</StartKeyframeValue></ArbVideoComponentParam>
+<PointComponentParam ObjectID="{oid + 4}" ClassID="x" Version="1"><ParameterID>4</ParameterID><StartKeyframe>-91445760000000000,{pos},0,0,0,0,0,0,5,4,0,0,0,0</StartKeyframe></PointComponentParam>''')
+    return "\n".join(comps) + '''
+<VideoComponentChain ObjectID="290" ClassID="x" Version="3"><ComponentChain Version="3"><Components Version="1">
+  <Component Index="0" ObjectRef="300" /><Component Index="1" ObjectRef="400" /></Components></ComponentChain></VideoComponentChain>'''
+
+
+def build_prproj(tmp_path, media_path: str, with_shapes: bool = False) -> str:
+    shapes_xml = _shapes_xml(with_shapes)
+    owner = '<ComponentOwner Version="1"><Components ObjectRef="290" /></ComponentOwner>' if with_shapes else ""
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <PremiereData Version="3">
   <RootProjectItem ObjectUID="root" ClassID="x" Version="1">
@@ -104,8 +155,9 @@ def build_prproj(tmp_path, media_path: str) -> str:
   <SubClip ObjectID="72" ClassID="x" Version="6"><Clip ObjectRef="73" /><Name>interview cut</Name></SubClip>
   <AudioClip ObjectID="73" ClassID="x" Version="11"><Clip Version="18"><Source ObjectRef="11" /><InPoint>{10 * SEC}</InPoint></Clip></AudioClip>
   <VideoClipTrackItem ObjectID="62" ClassID="x" Version="8"><ClipTrackItem Version="8">
-    <TrackItem Version="4"><End>{2 * SEC}</End></TrackItem><SubClip ObjectRef="74" /></ClipTrackItem></VideoClipTrackItem>
+    <TrackItem Version="4"><End>{2 * SEC}</End></TrackItem>{owner}<SubClip ObjectRef="74" /></ClipTrackItem></VideoClipTrackItem>
   <SubClip ObjectID="74" ClassID="x" Version="6"><Clip ObjectRef="20" /><Name>Title</Name></SubClip>
+{shapes_xml}
 </PremiereData>"""
     path = tmp_path / "demo.prproj"
     path.write_bytes(gzip.compress(xml.encode("utf-8")))
@@ -152,3 +204,16 @@ def test_rejects_non_premiere_files(tmp_path):
     with pytest.raises(CommandError) as e:
         s.execute("project.import_premiere", {"path": str(bad)})
     assert e.value.code == "BAD_PRPROJ"
+
+
+def test_shape_layers_import_with_deduplicated_blobs(tmp_path):
+    ex = extract(build_prproj(tmp_path, "C:\\media\\interview.mp4", with_shapes=True))
+    (g,) = [c["graphic"] for c in ex.sequences[0]["video_tracks"][1]["items"]]
+    assert [l["type"] for l in g["layers"]] == ["shape", "shape"]
+    top, bottom = g["layers"][1], g["layers"][0]
+    # Premiere lists components top-most first; Lumina stacks bottom first
+    assert top["position"] == [540, 480] and bottom["position"] == [540, 1440]
+    for l in g["layers"]:
+        assert l["shape"] == "rectangle" and l["fill"] == "#ff0000" and l["closed"] is True
+        assert l["path"][0][:2] == [-50, -20] and l["path"][2][:2] == [50, 20]
+    assert not any("shape" in w for w in ex.warnings)

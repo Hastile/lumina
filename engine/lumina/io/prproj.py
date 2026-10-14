@@ -9,9 +9,10 @@ failing the import. The source file is only ever read.
 
 What is imported: the bin tree, file-based media, sequences (frame rate, frame
 size, video/audio tracks, clip placement, source in, speed, link groups,
-label colors, track mute), sequence markers and the playhead. Not imported
-yet: effects/keyframes, transitions, graphics/MOGRTs, captions and nested
-sequences (each is listed in ``warnings``).
+label colors, track mute), sequence markers and the playhead, Motion/Opacity
+and their keyframes, Transform/Gaussian Blur effects, transitions, native
+text and shape layers and MOGRT text fields. Not imported yet: other effects,
+captions and nested sequences (each is listed in ``warnings``).
 
 Premiere ticks are the same 254,016,000,000/s unit Lumina uses, so times copy
 over exactly.
@@ -45,6 +46,25 @@ class Graph:
     root: ET.Element
     by_id: dict[str, ET.Element]
     by_uid: dict[str, ET.Element]
+    _blobs: dict[str, str] | None = None
+
+    def blob(self, el: ET.Element | None) -> str | None:
+        """Base64 text of a binary value. Premiere writes identical blobs once
+        and leaves later copies empty with the same ``BinaryHash``."""
+        if el is None:
+            return None
+        if (el.text or "").strip():
+            return el.text.strip()
+        h = el.get("BinaryHash")
+        if not h:
+            return None
+        if self._blobs is None:
+            self._blobs = {}
+            for e in self.root.iter():
+                k = e.get("BinaryHash")
+                if k and k not in self._blobs and (e.text or "").strip():
+                    self._blobs[k] = e.text.strip()
+        return self._blobs.get(h)
 
     def ref(self, el: ET.Element | None) -> ET.Element | None:
         """Follow an ObjectRef/ObjectURef attribute on ``el``."""
@@ -346,7 +366,9 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
     if stats.get("approx_transitions"):
         parts.append(f"transition(s) imported as dissolves: {', '.join(sorted(stats['approx_transitions']))}")
     if stats["shapes"]:
-        parts.append(f"{stats['shapes']} shape layer(s)")
+        parts.append(f"{stats['shapes']} unreadable shape layer(s)")
+    if stats.get("shape_anim"):
+        parts.append(f"animation on {stats['shape_anim']} shape layer(s) (imported at their first value)")
     if stats["approx_text"]:
         parts.append(f"{stats['approx_text']} text layer(s) with approximate styling (check font size/position)")
     if parts:
@@ -615,17 +637,111 @@ def _font_size(blob: bytes) -> float | None:
     return None
 
 
+def _fb_field(d: bytes, table: int, field: int) -> int | None:
+    """Absolute offset of a FlatBuffers table field, or None when absent."""
+    import struct as _st
+
+    vt = table - _st.unpack_from("<i", d, table)[0]
+    vsize = _st.unpack_from("<H", d, vt)[0]
+    if 4 + 2 * field + 2 > vsize:
+        return None
+    off = _st.unpack_from("<H", d, vt + 4 + 2 * field)[0]
+    return table + off if off else None
+
+
+def _fb_ref(d: bytes, at: int | None) -> int | None:
+    import struct as _st
+
+    return None if at is None else at + _st.unpack_from("<I", d, at)[0]
+
+
+def _shape_style(blob: bytes) -> dict:
+    """Fill color and kind from the Shape component's style FlatBuffer
+    (12-byte header, then root -> style table). Field numbers were mapped from
+    real Premiere 2025-26 projects: 0 = fill color table (r, g, b bytes),
+    23 = kind (1 rectangle, 2 ellipse), 24/25 = width/height."""
+    import struct as _st
+
+    out: dict = {}
+    try:
+        root = 12 + _st.unpack_from("<I", blob, 12)[0]
+        style = _fb_ref(blob, _fb_field(blob, root, 0))
+        if style is None:
+            return out
+        color = _fb_ref(blob, _fb_field(blob, style, 0))
+        if color is not None:
+            rgb = [blob[o] if (o := _fb_field(blob, color, i)) is not None else 0 for i in range(3)]
+            out["fill"] = "#%02x%02x%02x" % tuple(rgb)
+        kind = _fb_field(blob, style, 23)
+        if kind is not None:
+            out["shape"] = {1: "rectangle", 2: "ellipse"}.get(_st.unpack_from("<I", blob, kind)[0], "path")
+    except (_st.error, IndexError):
+        pass
+    return out
+
+
+def _shape(g: Graph, params: dict[int, ET.Element], seq_w: int, seq_h: int, stats: dict) -> dict | None:
+    """One Essential Graphics shape layer. Param 1 is the path ("u32 version,
+    u32 count, count x (u32 flags, 6 floats: point, in, out), u8 closed"),
+    param 2 the style; 4-10 the layer transform, points normalized to the frame."""
+    import base64
+    import struct as _st
+
+    def blob(pid: int) -> bytes | None:
+        raw = g.blob(params[pid].find("StartKeyframeValue")) if pid in params else None
+        try:
+            return base64.b64decode(raw) if raw else None
+        except ValueError:
+            return None
+
+    path_blob = blob(1)
+    if not path_blob or len(path_blob) < 8:
+        return None
+    try:
+        _, count = _st.unpack_from("<II", path_blob, 0)
+        path = [list(_st.unpack_from("<6f", path_blob, 8 + 28 * i + 4)) for i in range(count)]
+    except _st.error:
+        return None
+    if len(path) < 2:
+        return None
+    end = 8 + 28 * count
+    closed = path_blob[end] != 0 if end < len(path_blob) else True
+    style = _shape_style(blob(2) or b"")
+    if any(_text(params.get(pid), "Keyframes") for pid in (1, 4, 5, 6, 8, 9, 10)):
+        stats["shape_anim"] = stats.get("shape_anim", 0) + 1
+
+    def static(pid: int, default):
+        v = _param_static(params.get(pid))
+        return default if v is None else v
+
+    pos = static(4, [0.5, 0.5])
+    anchor = static(10, [0.0, 0.0])
+    if not isinstance(pos, list):
+        pos = [0.5, 0.5]
+    if not isinstance(anchor, list):
+        anchor = [0.0, 0.0]
+    return {
+        "type": "shape", "shape": style.get("shape", "path"), "path": [[round(v, 4) for v in vtx] for vtx in path],
+        "closed": closed, "fill": style.get("fill", "#ffffff"), "stroke_color": None, "stroke_width": 0.0,
+        "position": [pos[0] * seq_w, pos[1] * seq_h], "anchor": [anchor[0] * seq_w, anchor[1] * seq_h],
+        "scale": float(static(5, 100.0)), "scale_width": float(static(6, 100.0)), "uniform": bool(static(7, True)),
+        "rotation": float(static(8, 0.0)), "opacity": float(static(9, 100.0)),
+    }
+
+
 def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> dict | None:
-    """Text layers from native text components and MOGRT (Capsule) parameters."""
+    """Text and shape layers from native Essential Graphics components, and
+    text fields from MOGRT (Capsule) parameters."""
     import base64
 
-    layers: list[dict] = []
+    layers: list[dict] = []  # MOGRT fields, in template order
+    native: list[dict] = []  # Text/Shape components, top-most first as Premiere lists them
     source = None
     for comp in _components(g, cti):
         match = _text(comp, "MatchName")
         params = _params(g, comp)
         if match == "AE.ADBE Text":
-            raw = _text(params.get(1), "StartKeyframeValue")
+            raw = g.blob(params[1].find("StartKeyframeValue")) if 1 in params else None
             if not raw:
                 continue
             try:
@@ -644,7 +760,7 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
             pos = _param_static(params.get(3))
             if not isinstance(pos, list):
                 pos = [0.5, 0.5]
-            layers.append({
+            native.append({
                 "type": "text", "text": (texts[-1] if texts else "").strip(), "font_family": font, "font_size": fs,
                 "align": "left",
                 # Premiere puts the baseline at Position; Lumina anchors the text block's vertical center
@@ -678,11 +794,25 @@ def _graphic(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, stats: dict) -> 
                 })
                 y += size * 1.25
         elif match == "AE.ADBE Shape":
-            stats["shapes"] += 1
+            shape = _shape(g, params, seq_w, seq_h, stats)
+            if shape is None:
+                stats["shapes"] += 1
+            else:
+                # PremiereFilterPrivateData byte 5: 1 on layers that render, 2 on
+                # template placeholders that don't (read as the eye toggle; inferred
+                # from real projects, not documented)
+                priv = g.blob(comp.find("PremiereFilterPrivateData"))
+                try:
+                    flags = base64.b64decode(priv) if priv else b""
+                except ValueError:
+                    flags = b""
+                shape["visible"] = not (len(flags) > 5 and flags[5] == 2)
+                native.append(shape)
+    layers = native[::-1] + layers
     if not layers:
         return None
     defaults = {"bold": False, "italic": False, "color": "#ffffff", "stroke_color": None, "stroke_width": 0.0,
-                "background": None, "scale": 100.0, "rotation": 0.0, "opacity": 100.0}
-    out_layers = [{**defaults, **layer, "id": f"L{i}"} for i, layer in enumerate(layers)]
-    name = next((l["text"] for l in out_layers if l["text"]), "Graphic").splitlines()[0][:40]
+                "background": None, "scale": 100.0, "rotation": 0.0, "opacity": 100.0, "visible": True}
+    out_layers = [{**(defaults if layer["type"] == "text" else {}), **layer, "id": f"L{i}"} for i, layer in enumerate(layers)]
+    name = next((l["text"] for l in out_layers if l.get("text")), "Graphic").splitlines()[0][:40]
     return {"layers": out_layers, "source": source, "name": name}

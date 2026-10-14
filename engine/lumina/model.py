@@ -13,7 +13,7 @@ and reorders never invalidate a reference.
 from __future__ import annotations
 
 import uuid
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -114,11 +114,37 @@ class TextLayer(_Model):
     scale: float = 100.0
     rotation: float = 0.0
     opacity: float = 100.0
+    visible: bool = Field(default=True, description="the layer's eye toggle")
     approximate: bool = Field(default=False, description="imported with best-effort styling (e.g. from a MOGRT)")
 
 
+class ShapeLayer(_Model):
+    """A vector shape. Its path lives in layer pixels; ``anchor`` (layer pixels)
+    lands on ``position`` (sequence pixels), then scale and rotation apply
+    around it, like Premiere's per-layer transform."""
+    id: str
+    type: Literal["shape"] = "shape"
+    shape: Literal["rectangle", "ellipse", "path"] = "rectangle"
+    path: list[list[float]] = Field(description="vertices [x, y, in_x, in_y, out_x, out_y]; tangent handles are absolute points")
+    closed: bool = True
+    fill: str | None = Field(default="#ffffff", description="null = no fill")
+    stroke_color: str | None = None
+    stroke_width: float = 0.0
+    position: list[float] = Field(description="sequence pixels where the anchor lands")
+    anchor: list[float] = Field(default_factory=lambda: [0.0, 0.0], description="layer pixels")
+    scale: float = 100.0
+    scale_width: float = Field(default=100.0, description="used when uniform is false")
+    uniform: bool = True
+    rotation: float = 0.0
+    opacity: float = 100.0
+    visible: bool = Field(default=True, description="the layer's eye toggle")
+
+
+GraphicLayer = Annotated[TextLayer | ShapeLayer, Field(discriminator="type")]
+
+
 class Graphic(_Model):
-    layers: list[TextLayer] = Field(default_factory=list)
+    layers: list[GraphicLayer] = Field(default_factory=list, description="bottom to top")
     source: str | None = Field(default=None, description="origin, e.g. 'mogrt:Title' for imported Premiere graphics")
 
 

@@ -58,7 +58,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Duplicate sequence names → disambiguated with the bin name | ✓ |
 | Motion (position/scale/rotation/anchor/crop), Opacity, their keyframes | ✓ |
 | Native text layers (text, font, position; size where decodable) and MOGRT text fields | ✓ approximate styling, flagged in Properties |
-| Other effects (blur, Transform effect, …), shape layers | ✗ (reported) |
+| Shape layers (rectangle/ellipse/pen paths, fill color, transform, stacking, hidden layers) | ✓ stroke/gradient/shadow not decoded; hidden flag inferred |
+| Other effects (blur, Transform effect, …) | ✗ (reported) |
 | Transitions | ✗ (reported) |
 | Captions (.srt items) | ✗ (reported) |
 | Nested sequences | ✗ (M2, reported) |
@@ -70,6 +71,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Effect Controls: Motion / Opacity / Time Remapping, stopwatch, keyframe navigator, keyframe lane | ✓ |
 | Drag a clip in the Program monitor to move it | ✓ (scale/rotate handles ✗) |
 | Type tool (T) / Ctrl+T new text layer, text editing in Properties (font, size, bold/italic, align, fill, stroke, background) | ✓ |
+| Rectangle / Ellipse tools (drag in the Program monitor, Shift = square), Ctrl+Alt+R / Ctrl+Alt+E, Graphics and Titles > New Layer | ✓ (Pen tool paths ✗) |
+| Graphic layer stack: eye toggle, bring forward / send backward, fill, stroke, size, position, rotation, opacity | ✓ |
 | Keyframe interpolation: linear / ease (≈ Premiere's default Bezier) / hold | ✓ (custom Bezier handles ✗) |
 
 ## Effects & transitions

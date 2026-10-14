@@ -1,7 +1,9 @@
-// Renders a graphic clip's text layers in sequence pixel space. The same DOM is
-// what the headless export renderer will capture, so preview == output.
+// Renders a graphic clip's text and shape layers in sequence pixel space,
+// bottom to top. The engine compositor (render_graphic) draws the same layers
+// for export, so preview == output.
 
-import type { Graphic, TextLayer } from '../engine/document'
+import type { Graphic, ShapeLayer, TextLayer } from '../engine/document'
+import { svgPath } from '../util/shapes'
 
 const loaded = new Set<string>()
 
@@ -41,14 +43,51 @@ export function textStyle(l: TextLayer): React.CSSProperties {
   }
 }
 
+/** The anchor (layer px) lands on position; scale and rotation apply around it. */
+function ShapeView({ l }: { l: ShapeLayer }) {
+  const sx = (l.uniform ? l.scale : l.scale_width) / 100
+  const sy = l.scale / 100
+  const stroke = l.stroke_color && l.stroke_width > 0
+  return (
+    <svg
+      data-layer={l.id}
+      width={1}
+      height={1}
+      style={{
+        position: 'absolute',
+        left: l.position[0] - l.anchor[0],
+        top: l.position[1] - l.anchor[1],
+        overflow: 'visible',
+        transformOrigin: `${l.anchor[0]}px ${l.anchor[1]}px`,
+        transform: `rotate(${l.rotation}deg) scale(${sx}, ${sy})`,
+        opacity: l.opacity / 100,
+        pointerEvents: 'none'
+      }}
+    >
+      <path
+        d={svgPath(l.path, l.closed)}
+        fill={l.fill && l.closed ? l.fill : 'none'}
+        stroke={stroke ? l.stroke_color! : 'none'}
+        strokeWidth={stroke ? l.stroke_width : 0}
+        strokeLinejoin="round"
+        style={{ pointerEvents: 'visiblePainted' }}
+      />
+    </svg>
+  )
+}
+
 export function GraphicView({ graphic }: { graphic: Graphic }) {
   return (
     <>
-      {graphic.layers.map((l) => (
-        <div key={l.id} data-layer={l.id} style={textStyle(l)}>
-          {l.text}
-        </div>
-      ))}
+      {graphic.layers.map((l) =>
+        l.visible === false ? null : l.type === 'shape' ? (
+          <ShapeView key={l.id} l={l} />
+        ) : (
+          <div key={l.id} data-layer={l.id} style={textStyle(l)}>
+            {l.text}
+          </div>
+        )
+      )}
     </>
   )
 }

@@ -183,3 +183,16 @@
 .lm-text-layer .warn { display: flex; gap: 6px; align-items: center; color: #e3b341; font-size: 11px; }
 .lm-btn.small { padding: 2px 10px; margin: 6px 10px; display: inline-flex; gap: 4px; align-items: center; font-size: 11px; }
 .lm-clip.graphic { background: color-mix(in srgb, var(--clip-color) 70%, #000); }
+
+/* graphic layer stack */
+.lm-glayers { display: flex; flex-direction: column; }
+.lm-glayer { border-bottom: 1px solid #333; }
+.lm-glayer .head { display: flex; align-items: center; gap: 6px; padding: 4px 8px 0; color: var(--text-dim); }
+.lm-glayer .head .name { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 180px; }
+.lm-glayer.hidden .head .name { color: var(--text-dim); text-decoration: line-through; }
+.lm-glayer .lm-text-layer { border-bottom: 0; }
+.lm-glayer-add { display: flex; flex-wrap: wrap; }
+.lm-glayer-add .lm-btn.small { margin: 6px 0 6px 10px; }
+.lm-stage.drawing { cursor: crosshair; }
+.lm-draw { position: absolute; border: 1px solid #2d8ceb; background: rgba(45, 140, 235, 0.12); pointer-events: none; z-index: 100000; }
+.lm-draw.ellipse { border-radius: 50%; }

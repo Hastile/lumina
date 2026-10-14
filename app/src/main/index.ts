@@ -194,7 +194,11 @@ const MENU: Record<string, Item[]> = {
     'sep',
     { label: 'Add Marker', action: 'markers.add', accel: 'M' }
   ],
-  'Graphics and Titles': [{ label: 'New Layer > Text', action: 'graphics.newText', accel: 'Ctrl+T' }],
+  'Graphics and Titles': [
+    { label: 'New Layer > Text', action: 'graphics.newText', accel: 'Ctrl+T' },
+    { label: 'New Layer > Rectangle', action: 'graphics.newRectangle', accel: 'Ctrl+Alt+R' },
+    { label: 'New Layer > Ellipse', action: 'graphics.newEllipse', accel: 'Ctrl+Alt+E' }
+  ],
   View: [
     { label: 'Zoom In', action: 'view.zoomIn', accel: '=' },
     { label: 'Zoom Out', action: 'view.zoomOut', accel: '-' },

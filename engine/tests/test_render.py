@@ -116,6 +116,24 @@ def test_text_graphic_renders_at_its_position(media):
     assert abs(cx - 320) < 20 and abs(cy - 180) < 20
 
 
+def test_shape_layers_render_exact_boxes_in_stacking_order(media):
+    e, _ = engine_with([media["red"]])
+    seq = run(e, "sequence.create", name="s", settings={"width": 640, "height": 360, "fps_num": 30, "fps_den": 1})["sequence_id"]
+    g = run(e, "graphic.create_shape", sequence_id=seq, shape="rectangle", rect=[100, 50, 300, 150], at=0, fill="#0000ff")
+    run(e, "graphic.add_shape", sequence_id=seq, clip_id=g["clip_id"], shape="ellipse", rect=[250, 100, 350, 200], fill="#00ff00")
+    f = frame(e, 0, sequence_id=seq)
+    blue = (f[:, :, 2] > 200) & (f[:, :, 1] < 50)
+    ys, xs = np.nonzero(blue)
+    assert (xs.min(), xs.max(), ys.min(), ys.max()) == (100, 299, 50, 149), "an N-pixel box covers exactly N pixels"
+    assert tuple(f[125, 275]) == (0, 255, 0), "later layers draw on top"
+    assert tuple(f[150, 300]) == (0, 255, 0) and f[195, 345].max() < 30  # inside the circle / outside its corner
+    run(e, "graphic.set_shape", sequence_id=seq, clip_id=g["clip_id"], layer_id=g["layer_id"], rotation=90, fill="#ffffff")
+    f = frame(e, 0, sequence_id=seq)
+    white = np.argwhere(f.min(axis=2) > 200)
+    (y0, x0), (y1, x1) = white.min(axis=0), white.max(axis=0)
+    assert abs((x1 - x0) - 99) <= 2 and abs((y1 - y0) - 199) <= 2, "rotated about its center"
+
+
 def test_place_rotation_maps_corners():
     canvas = Image.new("RGBA", (200, 200), (0, 0, 0, 255))
     img = Image.new("RGBA", (100, 20), (255, 255, 255, 255))

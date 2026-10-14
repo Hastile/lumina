@@ -299,7 +299,21 @@ const ko: Record<string, string> = {
   'Repeat Edge Pixels': '가장자리 픽셀 반복',
   'Horizontal and Vertical': '수평 및 수직',
   'Horizontal': '수평',
-  'Vertical': '수직'
+  'Vertical': '수직',
+  // shape layers
+  'Layers': '레이어',
+  'Rectangle': '사각형',
+  'Ellipse': '타원',
+  'Path': '패스',
+  'New Layer > Rectangle': '새 레이어 > 사각형',
+  'New Layer > Ellipse': '새 레이어 > 타원',
+  'Rectangle Tool': '사각형 도구',
+  'Ellipse Tool': '타원 도구',
+  'Toggle Layer Visibility': '레이어 표시 켜기/끄기',
+  'Bring Forward': '앞으로 가져오기',
+  'Send Backward': '뒤로 보내기',
+  'Arrange': '정렬',
+  'Size': '크기'
 }
 
 let locale: Locale = 'ko'

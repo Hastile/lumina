@@ -481,6 +481,8 @@ def('tool.pen', t('Pen Tool'), tool('pen'))
 def('tool.hand', t('Hand Tool'), tool('hand'))
 def('tool.zoom', t('Zoom Tool'), tool('zoom'))
 def('tool.type', t('Type Tool'), tool('type'))
+def('tool.rectangle', t('Rectangle Tool'), tool('rectangle'))
+def('tool.ellipse', t('Ellipse Tool'), tool('ellipse'))
 
 // View
 // Graphics
@@ -493,6 +495,28 @@ def('graphics.newText', t('New Layer > Text'), async () => {
     focusPanel('properties')
   }
 })
+
+/** Premiere adds the new layer to the selected graphic clip, else makes a new graphic at the playhead. */
+export async function newShapeLayer(shape: 'rectangle' | 'ellipse', rect?: number[]): Promise<void> {
+  const seq = seqOrToast()
+  if (!seq) return
+  const label = t(shape === 'ellipse' ? 'New Layer > Ellipse' : 'New Layer > Rectangle')
+  const sel = get().selectedClips
+  const target = sel.length === 1 ? Object.values(seq.tracks).map((tr) => tr.clips[sel[0]]).find(Boolean) : undefined
+  const at = get().programTime
+  if (target?.graphic && target.start <= at && at < target.end) {
+    await exec('graphic.add_shape', { sequence_id: seq.id, clip_id: target.id, shape, rect }, label)
+    focusPanel('properties')
+    return
+  }
+  const res = await exec<{ clip_id: string }>('graphic.create_shape', { sequence_id: seq.id, at, shape, rect }, label)
+  if (res) {
+    set({ selectedClips: [res.clip_id] })
+    focusPanel('properties')
+  }
+}
+def('graphics.newRectangle', t('New Layer > Rectangle'), () => newShapeLayer('rectangle'))
+def('graphics.newEllipse', t('New Layer > Ellipse'), () => newShapeLayer('ellipse'))
 
 // Language (reload so every module re-reads its strings)
 for (const l of ['ko', 'en'] as const) {

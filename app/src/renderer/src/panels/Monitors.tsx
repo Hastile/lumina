@@ -1,3 +1,4 @@
+import { newShapeLayer } from '../actions/actions'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDownToLine, ArrowRightToLine, Bookmark, Brackets, ChevronFirst, ChevronLast, Pause, Play, SkipBack, SkipForward,
@@ -259,6 +260,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const tool = useStore((s) => s.tool)
   const selected = useStore((s) => s.selectedClips)
   const [drag, setDrag] = useState<{ clipId: string; dx: number; dy: number } | null>(null)
+  const [draw, setDraw] = useState<number[] | null>(null)
   const { visual, audio } = activeLayers(seq, media, at)
 
   const toSeq = (e: React.MouseEvent) => {
@@ -275,6 +277,34 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         set({ selectedClips: [res.clip_id], tool: 'select' })
         focusPanel('properties')
       }
+      return
+    }
+    if (tool === 'rectangle' || tool === 'ellipse') {
+      const [x0, y0] = toSeq(e)
+      const stage = e.currentTarget as HTMLElement
+      let rect = [x0, y0, x0, y0]
+      const move = (ev: MouseEvent) => {
+        const r = stage.getBoundingClientRect()
+        let x1 = (ev.clientX - r.left) / scale
+        let y1 = (ev.clientY - r.top) / scale
+        if (ev.shiftKey) {
+          const d = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))
+          x1 = x0 + Math.sign(x1 - x0 || 1) * d
+          y1 = y0 + Math.sign(y1 - y0 || 1) * d
+        }
+        rect = [x0, y0, x1, y1]
+        setDraw(rect)
+      }
+      const up = () => {
+        window.removeEventListener('mousemove', move)
+        window.removeEventListener('mouseup', up)
+        setDraw(null)
+        const small = Math.abs(rect[2] - rect[0]) < 4 || Math.abs(rect[3] - rect[1]) < 4
+        const s = small ? Math.min(W, H) / 5 : 0
+        void newShapeLayer(tool, small ? [x0 - s, y0 - s, x0 + s, y0 + s] : rect)
+      }
+      window.addEventListener('mousemove', move)
+      window.addEventListener('mouseup', up)
       return
     }
     const hit = (e.target as HTMLElement).closest('[data-clip]') as HTMLElement | null
@@ -337,7 +367,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   }
 
   return (
-    <div className={`lm-stage ${tool === 'type' ? 'typing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
+    <div className={`lm-stage ${tool === 'type' ? 'typing' : tool === 'rectangle' || tool === 'ellipse' ? 'drawing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
       {groupLayers(visual).map((g) =>
         g.group ? (
           <div key={g.group} className="lm-tgroup" style={{ zIndex: g.z }}>
@@ -350,6 +380,15 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         ) : (
           renderLayer(g.layers[0])
         )
+      )}
+      {draw && (
+        <div
+          className={`lm-draw ${tool === 'ellipse' ? 'ellipse' : ''}`}
+          style={{
+            left: Math.min(draw[0], draw[2]), top: Math.min(draw[1], draw[3]),
+            width: Math.abs(draw[2] - draw[0]), height: Math.abs(draw[3] - draw[1]), borderWidth: 1 / scale
+          }}
+        />
       )}
       {audio.map((a) => (
         <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing} rate={rate * a.clip.speed} volume={a.volume} />

@@ -246,6 +246,41 @@ try {
   }, null, { timeout: 10000 })
   log('transition selected in the timeline and deleted')
 
+  // ---- shapes: Rectangle tool drag in the Program monitor, Ctrl+Alt+R adds to the selected graphic, eye toggle
+  await page.keyboard.press('Home')
+  await page.evaluate(() => window.__lumina.set({ selectedClips: [], tool: 'rectangle' }))
+  const sbox = await page.locator('.lm-stage').boundingBox()
+  await page.mouse.move(sbox.x + sbox.width * 0.1, sbox.y + sbox.height * 0.6)
+  await page.mouse.down()
+  await page.mouse.move(sbox.x + sbox.width * 0.3, sbox.y + sbox.height * 0.9, { steps: 6 })
+  await page.mouse.up()
+  const shp = await page.waitForFunction(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    for (const tid of seq.video_tracks) for (const c of Object.values(seq.tracks[tid].clips)) {
+      const l = c.graphic?.layers.find((x) => x.type === 'shape')
+      if (l) return { id: c.id, layer: l }
+    }
+    return null
+  }, null, { timeout: 10000 }).then((h) => h.jsonValue())
+  const xs = shp.layer.path.map((v) => v[0])
+  assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - 1280 * 0.2) < 6, `drawn width ${Math.max(...xs) - Math.min(...xs)}`)
+  assert.ok(Math.abs(shp.layer.position[0] - 1280 * 0.2) < 6 && Math.abs(shp.layer.position[1] - 720 * 0.75) < 6, `${shp.layer.position}`)
+  await page.locator(`.lm-stage svg[data-layer="${shp.layer.id}"] path`).waitFor()
+  log('Rectangle tool: drawn by dragging, rendered as SVG in the Program monitor')
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id], tool: 'select' }), shp.id)
+  await page.keyboard.press('Control+Alt+e')
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean)
+    return c.graphic.layers.length === 2 && c.graphic.layers[1].shape === 'ellipse'
+  }, shp.id, { timeout: 10000 })
+  await page.waitForFunction(() => document.querySelectorAll('.lm-stage svg[data-layer]').length === 2, null, { timeout: 10000 })
+  await page.locator(`.lm-props [data-glayer="${shp.layer.id}"] .head button`).first().click()
+  await page.waitForFunction(() => document.querySelectorAll('.lm-stage svg[data-layer]').length === 1, null, { timeout: 10000 })
+  log('Ctrl+Alt+E added an ellipse to the selected graphic; eye toggle hides the rectangle')
+
   if (shot) await page.screenshot({ path: shot })
   log('PASS')
 } catch (err) {

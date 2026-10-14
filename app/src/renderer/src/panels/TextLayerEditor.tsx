@@ -1,6 +1,6 @@
 // Text layer editing (Properties panel / Effect Controls "Graphic Parameters").
 import { useEffect, useState } from 'react'
-import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, Trash2, TriangleAlert } from 'lucide-react'
+import { AlignCenter, AlignLeft, AlignRight, Bold, Italic, TriangleAlert } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { TextLayer } from '../engine/document'
 import { exec } from '../state/store'
@@ -84,12 +84,6 @@ export function TextLayerEditor({ c, layer, compact = false }: { c: ClipCtx; lay
           <span className="k">{t('Position')}</span>
           <NumberScrub value={layer.position[0]} onChange={(v) => set({ position: [v, layer.position[1]] }, t('Position'))} />
           <NumberScrub value={layer.position[1]} onChange={(v) => set({ position: [layer.position[0], v] }, t('Position'))} />
-          <span style={{ flex: 1 }} />
-          {c.clip.graphic!.layers.length > 1 && (
-            <button className="lm-iconbtn" title={t('Delete Layer')} onClick={() => void exec('graphic.remove_layer', { sequence_id: c.seq.id, clip_id: c.clip.id, layer_id: layer.id }, t('Delete Layer'))}>
-              <Trash2 size={13} />
-            </button>
-          )}
         </div>
       )}
     </div>
