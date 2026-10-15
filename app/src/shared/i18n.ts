@@ -324,7 +324,12 @@ const ko: Record<string, string> = {
   '(none)': '(없음)',
   // playback
   'Select Playback Resolution': '재생 해상도 선택',
-  'Full': '전체'
+  'Full': '전체',
+  // keyframe graphs
+  'Velocity': '속도',
+  'sec': '초',
+  'Keyframe Velocity': '키프레임 속도',
+  'Show/Hide': '표시/숨기기'
 }
 
 let locale: Locale = 'ko'

@@ -233,6 +233,38 @@ try {
   await page.waitForFunction((fid) => (document.querySelector(`.lm-stage [data-fx="${fid}"]`)?.style.transform ?? '').startsWith('matrix(0.5'), fx.id, { timeout: 10000 })
   log('Effects panel: Transform applied by double-click, shown in Effect Controls, rendered in the Program monitor')
 
+  // ---- Effect Controls twirl-down: drag a velocity handle -> the keyframe becomes Bezier with that ease
+  await page.evaluate((id) => window.__lumina.engine.exec('clip.set_keyframes', {
+    clip_id: id, prop: 'opacity', keyframes: [{ t: 0, v: 0 }, { t: '1s', v: 100 }]
+  }), v1clip)
+  await page.locator('.lm-ec [data-twirl="불투명도"]').first().click()
+  const grip = page.locator('.lm-ec [data-expanded="불투명도"] svg[data-graph="velocity"] [data-handle="0-out"]')
+  await grip.waitFor()
+  const gb = await grip.boundingBox()
+  await page.mouse.move(gb.x + gb.width / 2, gb.y + gb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(gb.x + gb.width / 2 + 10, gb.y + gb.height / 2 + 12, { steps: 4 })
+  await page.mouse.up()
+  const eased = await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const k = Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).keyframes.opacity[0]
+    return k.interp === 'bezier' ? k : null
+  }, v1clip, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.ok(eased.ease_out[0] < 100 && eased.ease_out[1] > 1 / 3, `ease_out ${eased.ease_out}`)
+  // Ctrl+wheel zooms the keyframe lane, double-click resets it
+  const lane = page.locator('.lm-ec .lm-ec-prop .lane').first()
+  await lane.hover()
+  await page.keyboard.down('Control')
+  await page.mouse.wheel(0, -100)
+  await page.keyboard.up('Control')
+  const zoomed = await page.evaluate(() => window.__lumina.get().ecView)
+  assert.ok(zoomed && zoomed.clipId === v1clip, 'Ctrl+wheel zooms the Effect Controls lane')
+  await lane.dblclick()
+  assert.equal(await page.evaluate(() => window.__lumina.get().ecView), null)
+  await page.evaluate(async () => { await window.__lumina.engine.call('undo'); await window.__lumina.engine.call('undo') })
+  log('Effect Controls: twirl-down velocity graph drag set ease_out', eased.ease_out.map((x) => x.toFixed(2)).join(', '), '; lane zoom + reset')
+
   // ---- WYSIWYG: the GPU-composited Program monitor matches the export renderer pixel for pixel
   await page.keyboard.press('Shift+4')
   await page.locator('.lm-stage canvas[data-gl]').waitFor({ state: 'attached' })

@@ -138,3 +138,22 @@ def test_shape_layers_create_edit_reorder_and_undo():
     for _ in range(6):
         s.undo()
     assert out["clip_id"] not in seq["tracks"][out["track_id"]]["clips"]
+
+
+def test_keyframe_ease_handles_keep_the_other_side():
+    s, sid, (a, *_) = make()
+    cid = s.execute("clip.place", {"media_id": a, "at": 0})["result"]["video_clip_id"]
+    s.execute("clip.set_keyframes", {"clip_id": cid, "prop": "opacity", "keyframes": [
+        {"t": 0, "v": 0, "interp": "linear"}, {"t": "1s", "v": 100, "interp": "linear"}, {"t": "2s", "v": 50, "interp": "linear"}]})
+    seq = s.doc["sequences"][sid]
+    clip = lambda: next(c for t in seq["tracks"].values() for c in t["clips"].values() if c["id"] == cid)
+    k1 = clip()["keyframes"]["opacity"][1]
+    before = [interpolate(clip()["keyframes"]["opacity"], k1["t"] + d) for d in (-SEC // 4, SEC // 4)]
+    s.execute("clip.set_keyframe_ease", {"clip_id": cid, "prop": "opacity", "t": k1["t"], "side": "out", "speed": 0, "influence": 0.5})
+    kfs = clip()["keyframes"]["opacity"]
+    assert kfs[1]["interp"] == "bezier" and kfs[1]["ease_out"] == [0, 0.5]
+    assert kfs[1]["ease_in"] == pytest.approx([100.0, 1 / 3]), "linear in-side becomes the equivalent handle"
+    assert interpolate(kfs, k1["t"] - SEC // 4) == pytest.approx(before[0]), "the incoming segment is unchanged"
+    assert interpolate(kfs, k1["t"] + SEC // 4) != pytest.approx(before[1])
+    s.undo()
+    assert clip()["keyframes"]["opacity"][1]["interp"] == "linear"

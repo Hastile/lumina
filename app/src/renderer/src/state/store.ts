@@ -34,6 +34,7 @@ type State = {
   playing: 'source' | 'program' | null
   shuttle: number // J/K/L rate: negative = reverse
   playbackResolution: 1 | 0.5 | 0.25 // Program/Source monitor resolution while playing (paused = full), like Premiere
+  ecView: { clipId: string; start: number; end: number } | null // Effect Controls timeline zoom (sequence ticks)
 
   pxPerSecond: number
   scrollX: number
@@ -70,6 +71,7 @@ export const useStore = create<State>(() => ({
       return 0.5
     }
   })() as 1 | 0.5 | 0.25,
+  ecView: null,
   pxPerSecond: 40,
   scrollX: 0
 }))

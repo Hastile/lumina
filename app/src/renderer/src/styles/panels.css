@@ -155,8 +155,8 @@
 .lm-layer.selected { cursor: move; }
 
 /* ---------------------------------------------------------------- keyframe rows / text editor */
-.lm-ec .lm-ec-prop { display: grid; grid-template-columns: 22px minmax(70px, 0.9fr) minmax(110px, 1.1fr) 52px minmax(60px, 1fr); align-items: center; padding: 1px 6px 1px 10px; height: 24px; }
-.lm-props .lm-ec-prop { grid-template-columns: 22px 84px 1fr 52px 0; }
+.lm-ec .lm-ec-prop { display: grid; grid-template-columns: 36px minmax(70px, 0.9fr) minmax(110px, 1.1fr) 52px minmax(60px, 1fr); align-items: center; padding: 1px 6px 1px 10px; height: 24px; }
+.lm-props .lm-ec-prop { grid-template-columns: 36px 84px 1fr 52px 0; }
 .lm-props .lm-ec-prop .lane { display: none; }
 .lm-ec-prop .stopwatch { border: 0; background: transparent; color: #8a8a8a; padding: 0; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 2px; }
 .lm-ec-prop .stopwatch.on { color: var(--accent); }
@@ -202,3 +202,31 @@
 /* GPU-composited Program monitor: the DOM layers stay (selection, dragging, tools) but draw nothing */
 .lm-glstage { pointer-events: none; z-index: 0; }
 .lm-stage.gl .lm-layer > :not(.lm-layer-box) { opacity: 0; }
+
+/* expandable properties (Premiere twirl-down): slider/dial + value and velocity graphs */
+.lm-ec-prop .lead { display: flex; align-items: center; }
+.lm-ec-prop .twirl { border: 0; background: transparent; color: #9a9a9a; width: 14px; height: 18px; padding: 0; display: grid; place-items: center; }
+.lm-ec-expand { display: grid; grid-template-columns: 1fr; }
+.lm-ec .lm-ec-expand { grid-template-columns: 36px minmax(70px, 0.9fr) minmax(110px, 1.1fr) 52px minmax(60px, 1fr); padding: 0 6px 0 10px; }
+.lm-ec-expand .controls { grid-column: 1 / 5; display: flex; align-items: center; padding: 4px 10px 4px 40px; min-height: 30px; }
+.lm-ec-expand .lm-klabels { grid-column: 1 / 5; display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; padding: 1px 8px; font-size: 10px; color: #4f9ee8; height: 64px; box-sizing: border-box; }
+.lm-ec-expand .lm-klabels .speed { color: #bdbdbd; }
+.lm-ec-expand .lm-kcell { grid-column: 5; border-left: 1px solid #333; background: #1f1f1f; position: relative; min-width: 0; }
+.lm-ksizer { position: absolute; inset: 0; pointer-events: none; }
+.lm-props .lm-ec-expand { grid-template-columns: 1fr; }
+.lm-props .lm-ec-expand .controls { grid-column: 1; }
+.lm-props .lm-ec-expand .lm-klabels, .lm-props .lm-ec-expand .lm-kcell { display: none; }
+.lm-vslider { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; width: 100%; font-size: 10px; color: var(--text-dim); }
+.lm-vslider input[type='range'] { width: 100%; accent-color: #b8b8b8; }
+.lm-dial { cursor: grab; }
+.lm-dial .ring { fill: none; stroke: #b0b0b0; stroke-width: 1.5; }
+.lm-dial .needle { stroke: #e0e0e0; stroke-width: 1.5; }
+.lm-kgraph { display: block; overflow: hidden; }
+.lm-kgraph .curve { fill: none; stroke: #cfcfcf; stroke-width: 1.2; }
+.lm-kgraph .zero { stroke: #3a3a3a; }
+.lm-kgraph .arm { stroke: #2d8ceb; stroke-width: 1; }
+.lm-kgraph .grip { fill: #2d8ceb; stroke: #fff; stroke-width: 0.8; cursor: grab; }
+.lm-kgraph .dim .arm { stroke: #5a6b80; }
+.lm-kgraph .dim .grip { fill: #5a6b80; }
+.lm-kgraph .key { fill: #d8d8d8; }
+.lm-kgraph .head { stroke: var(--playhead); }

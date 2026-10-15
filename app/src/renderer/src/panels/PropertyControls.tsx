@@ -1,6 +1,7 @@
 // Shared controls for keyframable properties (Effect Controls + Properties panels).
 import { useState } from 'react'
-import { ChevronLeft, ChevronRight, Diamond, Timer } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Timer } from 'lucide-react'
+import { AngleDial, KeyframeGraphs, ValueSlider } from './KeyframeGraph'
 import { t } from '@shared/i18n'
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 import { activeSequence, exec, findClip, useStore } from '../state/store'
@@ -21,6 +22,11 @@ export function useSelectedClip(): ClipCtx | null {
   if (!found) return null
   const m = found.clip.media_id ? media?.[found.clip.media_id] ?? null : null
   return { seq, clip: found.clip, kind: found.track.kind, media: m, time }
+}
+
+/** The Effect Controls timeline's visible range (sequence ticks): zoomed with Ctrl/Alt+wheel, else the clip. */
+export function laneSpan(c: ClipCtx, view: { clipId: string; start: number; end: number } | null): [number, number] {
+  return view && view.clipId === c.clip.id ? [view.start, view.end] : [c.clip.start, c.clip.end]
 }
 
 /** Value under the playhead, clamped into the clip so panels show something sensible. */
@@ -93,10 +99,35 @@ export const LABELS: Record<KeyframeProp, string> = {
   crop_left: 'Crop Left', crop_top: 'Crop Top', crop_right: 'Crop Right', crop_bottom: 'Crop Bottom', opacity: 'Opacity', volume_db: 'Level'
 }
 
+/** What an expanded property shows under its row (Premiere's twirl-down). */
+export type Expand = {
+  control?: 'slider' | 'dial'
+  min?: number
+  max?: number
+  value?: number
+  onValue?: (v: number) => void
+  onEase?: (t: number, side: 'in' | 'out', speed: number, influence: number) => void
+}
+
+/** Slider ranges / dials of the Motion, Opacity and Volume properties (Premiere's). */
+const EXPAND: Partial<Record<KeyframeProp, { control: 'slider' | 'dial'; min?: number; max?: number }>> = {
+  scale: { control: 'slider', min: 0, max: 100 },
+  scale_width: { control: 'slider', min: 0, max: 100 },
+  rotation: { control: 'dial' },
+  opacity: { control: 'slider', min: 0, max: 100 },
+  crop_left: { control: 'slider', min: 0, max: 100 },
+  crop_top: { control: 'slider', min: 0, max: 100 },
+  crop_right: { control: 'slider', min: 0, max: 100 },
+  crop_bottom: { control: 'slider', min: 0, max: 100 },
+  volume_db: { control: 'slider', min: -60, max: 15 }
+}
+
 /** Stopwatch + value + keyframe navigator, Premiere style. */
 export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: KeyframeProp; children: React.ReactNode; label?: string }) {
   const at = clipTime(c)
   const base = { sequence_id: c.seq.id, clip_id: c.clip.id, at }
+  const spec = EXPAND[prop]
+  const v = current(c, prop)
   return (
     <KfRow
       c={c}
@@ -104,6 +135,13 @@ export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: Ke
       label={t(label ?? LABELS[prop])}
       onToggle={() => void exec('clip.toggle_animation', { ...base, prop }, t('Toggle animation'))}
       onKey={() => void exec('clip.keyframe', { ...base, prop }, t('Add/Remove Keyframe'))}
+      expand={{
+        ...spec,
+        value: typeof v === 'number' ? v : undefined,
+        onValue: (x) => setProp(c, prop, x),
+        onEase: (tt, side, speed, influence) =>
+          void exec('clip.set_keyframe_ease', { sequence_id: c.seq.id, clip_id: c.clip.id, prop, t: tt, side, speed, influence }, t('Keyframe Velocity'))
+      }}
     >
       {children}
     </KfRow>
@@ -111,9 +149,10 @@ export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: Ke
 }
 
 /** Generic row: used by Motion/Opacity properties and by effect parameters. */
-export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = true }: {
-  c: ClipCtx; kfs: Kf[] | undefined; label: string; children: React.ReactNode; onToggle: () => void; onKey: () => void; animatable?: boolean
+export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = true, expand }: {
+  c: ClipCtx; kfs: Kf[] | undefined; label: string; children: React.ReactNode; onToggle: () => void; onKey: () => void; animatable?: boolean; expand?: Expand
 }) {
+  const [open, setOpen] = useState(false)
   const at = clipTime(c)
   const tol = (ticksPerFrame(c.seq.settings) * c.clip.speed) / 2
   const src = sourceTime(c.clip, at)
@@ -122,15 +161,27 @@ export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = t
   const times = (kfs ?? []).map((k) => seqTimeOf(c.clip, k.t))
   const prev = [...times].reverse().find((x) => x < at - 1)
   const next = times.find((x) => x > at + 1)
-  return (
+  const graphs = !!expand?.onEase && !!kfs && kfs.length >= 2
+  const control = expand?.control && expand.value !== undefined && expand.onValue
+  const expandable = !!control || graphs
+  const row = (
     <div className="lm-ec-prop">
-      {animatable ? (
-        <button className={`stopwatch ${has ? 'on' : ''}`} title={t('Toggle animation')} onClick={onToggle}>
-          <Timer size={12} />
-        </button>
-      ) : (
-        <span />
-      )}
+      <span className="lead">
+        {expandable ? (
+          <button className="twirl" title={t('Show/Hide')} data-twirl={label} onClick={() => setOpen(!open)}>
+            {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+          </button>
+        ) : (
+          <span className="twirl" />
+        )}
+        {animatable ? (
+          <button className={`stopwatch ${has ? 'on' : ''}`} title={t('Toggle animation')} onClick={onToggle}>
+            <Timer size={12} />
+          </button>
+        ) : (
+          <span />
+        )}
+      </span>
       <span className="pname">{label}</span>
       <span className="pval">{children}</span>
       <span className="kfnav">
@@ -151,24 +202,43 @@ export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = t
       <KeyframeLane c={c} kfs={kfs} />
     </div>
   )
+  if (!open || !expandable) return row
+  return (
+    <>
+      {row}
+      <div className="lm-ec-expand" data-expanded={label}>
+        {control && (
+          <>
+            <span className="controls">
+              {expand.control === 'dial' && <AngleDial value={expand.value!} onCommit={expand.onValue!} />}
+              {expand.control === 'slider' && <ValueSlider value={expand.value!} min={expand.min ?? 0} max={expand.max ?? 100} onCommit={expand.onValue!} />}
+            </span>
+            <span className="lm-kcell" />
+          </>
+        )}
+        {graphs && <KeyframeGraphs c={c} kfs={kfs!} onEase={expand!.onEase!} />}
+      </div>
+    </>
+  )
 }
 
 /** Effect Controls' right-hand mini timeline for one property: diamonds + playhead. */
 function KeyframeLane({ c, kfs }: { c: ClipCtx; kfs: Kf[] | undefined }) {
-  const span = c.clip.end - c.clip.start
-  const pct = (x: number) => `${(100 * (x - c.clip.start)) / span}%`
+  const view = useStore((s) => s.ecView)
+  const [a, b] = laneSpan(c, view)
+  const pct = (x: number) => `${(100 * (x - a)) / Math.max(1, b - a)}%`
   return (
     <span className="lane">
       {(kfs ?? []).map((k, i) => {
         const x = seqTimeOf(c.clip, k.t)
-        if (x < c.clip.start || x > c.clip.end) return null
+        if (x < a || x > b) return null
         return (
           <span key={i} className={`kf ${k.interp}`} style={{ left: pct(x) }} onClick={() => goTo('program', Math.round(x))}>
             <Diamond size={9} />
           </span>
         )
       })}
-      {c.time >= c.clip.start && c.time < c.clip.end && <span className="head" style={{ left: pct(c.time) }} />}
+      {c.time >= a && c.time < b && <span className="head" style={{ left: pct(c.time) }} />}
     </span>
   )
 }

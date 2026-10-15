@@ -104,6 +104,64 @@ def with_interp(k: dict, interp: str) -> dict:
     return out
 
 
+def effective_handle(kfs: list[dict], i: int, side: str) -> list[float]:
+    """[speed, influence] a keyframe's side behaves as now: its Bezier handle, Easy Ease, or for a
+    linear side the handle that draws the same straight segment (segment speed, 1/3)."""
+    from ..motion import EASY_EASE
+
+    k = kfs[i]
+    if k.get("interp") in ("bezier", "ease"):
+        h = k.get("ease_" + side)
+        return [float(h[0]), float(h[1])] if h else list(EASY_EASE)
+    j = i + 1 if side == "out" else i - 1
+    if j < 0 or j >= len(kfs):
+        return [0.0, 1 / 3]
+    n = kfs[j]
+    dt = abs(n["t"] - k["t"]) / timebase.TICKS_PER_SECOND
+    if dt <= 0:
+        return [0.0, 1 / 3]
+    if isinstance(k["v"], list):
+        import math
+        return [math.dist(k["v"], n["v"]) / dt, 1 / 3]
+    dv = (n["v"] - k["v"]) if side == "out" else (k["v"] - n["v"])
+    return [dv / dt, 1 / 3]
+
+
+def with_ease(kfs: list[dict], t: int, side: str, speed: float, influence: float) -> list[dict]:
+    """Set one Bezier handle (Effect Controls' value/velocity graphs). The keyframe becomes Bezier;
+    its other side keeps its current shape."""
+    i = next((n for n, k in enumerate(kfs) if k["t"] == t), None)
+    if i is None:
+        raise CommandError("NO_KEYFRAME", "no keyframe at that time")
+    out = [dict(k) for k in kfs]
+    k = out[i]
+    for sd in ("in", "out"):
+        k["ease_" + sd] = effective_handle(kfs, i, sd)
+    k["ease_" + side] = [float(speed), min(1.0, max(0.01, float(influence)))]
+    k["interp"] = "bezier"
+    return out
+
+
+class KeyframeEase(Params):
+    sequence_id: str | None = None
+    clip_id: str
+    prop: KeyframeProp
+    t: int = Field(description="the keyframe's time (source ticks, as stored)")
+    side: Literal["in", "out"]
+    speed: float = Field(description="value units per second (points: pixels per second along the path)")
+    influence: float = Field(ge=0, le=1, description="fraction of the segment, 0-1")
+
+
+@command("clip.set_keyframe_ease", KeyframeEase)
+def clip_set_keyframe_ease(ctx: Context, p: KeyframeEase):
+    """Bezier handle of a Motion/Opacity/Volume keyframe: speed and influence on one side."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    kfs = clip["keyframes"].get(p.prop)
+    if not kfs:
+        raise CommandError("NOT_ANIMATED", f"{p.prop} has no keyframes")
+    ctx.m.set(clip_path(seq, tid, clip["id"]) + ["keyframes", p.prop], with_ease(kfs, p.t, p.side, p.speed, p.influence))
+
+
 def _interp_near(kfs: list[dict], t: int) -> str:
     return min(kfs, key=lambda k: abs(k["t"] - t))["interp"] if kfs else "linear"
 

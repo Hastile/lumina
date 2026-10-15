@@ -11,7 +11,7 @@ from .. import timebase
 from ..effects import ANIMATABLE, EFFECTS, TRANSITIONS, default_params, param, transition_window
 from ..model import EffectType, TransitionType, new_id
 from ..motion import source_size, source_time
-from .motion import INTERPS, _at, _ctx, _interp_near, handles_of, with_interp
+from .motion import INTERPS, _at, _ctx, _interp_near, handles_of, with_ease, with_interp
 from .project import seq_of
 from .registry import CommandError, Context, Params, TimeValue, command, resolve_time
 from .timeline import clip_path, clips_sorted, find_clip, require_unlocked
@@ -216,6 +216,25 @@ def effect_toggle_animation(ctx: Context, p: ParamRef):
 class ParamKeyframe(ParamRef):
     op: Literal["add", "remove", "toggle"] = "toggle"
     interp: Literal["linear", "ease", "hold", "bezier"] | None = None
+
+
+class ParamEase(ParamRef):
+    t: int = Field(description="the keyframe's time (source ticks, as stored)")
+    side: Literal["in", "out"]
+    speed: float = Field(description="value units per second (points: pixels per second along the path)")
+    influence: float = Field(ge=0, le=1, description="fraction of the segment, 0-1")
+
+
+@command("effect.set_keyframe_ease", ParamEase)
+def effect_set_keyframe_ease(ctx: Context, p: ParamEase):
+    """Bezier handle of an effect-parameter keyframe: speed and influence on one side."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    i, e = _effect(clip, p.effect_id)
+    kfs = e.get("keyframes", {}).get(p.param)
+    if not kfs:
+        raise CommandError("NOT_ANIMATED", f"{p.param} has no keyframes")
+    new = with_ease(kfs, p.t, p.side, p.speed, p.influence)
+    _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, new))
 
 
 @command("effect.keyframe", ParamKeyframe)

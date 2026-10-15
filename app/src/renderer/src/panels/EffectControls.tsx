@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, RotateCcw, Trash2 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { exec } from '../state/store'
-import { timecode } from '../util/time'
-import { clipTime, current, KeyframeRow, KfRow, NumberScrub, setProp, useSelectedClip, type ClipCtx } from './PropertyControls'
+import { exec, get, set } from '../state/store'
+import { ticksPerFrame, timecode } from '../util/time'
+import { clipTime, current, KeyframeRow, KfRow, laneSpan, NumberScrub, setProp, useSelectedClip, type ClipCtx } from './PropertyControls'
 import { EFFECTS, effectParam } from '../util/effects'
 import type { Effect } from '../engine/document'
 import type { Kf } from '../util/motion'
@@ -103,12 +103,42 @@ export function MotionControls({ c }: { c: ClipCtx }) {
 
 export function EffectControlsPanel() {
   const c = useSelectedClip()
+  // Ctrl/Alt+wheel zooms the keyframe lane around the pointer, Shift+wheel scrolls it. A native,
+  // non-passive listener: React's onWheel cannot preventDefault the panel's own scroll.
+  const wheel = useRef<(e: WheelEvent) => void>(() => {})
+  wheel.current = (e) => {
+    const lane = (e.target as HTMLElement).closest('.lane, .lm-kcell') as HTMLElement | null
+    if (!c || !lane || !(e.ctrlKey || e.altKey || e.shiftKey)) return
+    e.preventDefault()
+    const { clip, seq } = c
+    const [a, b] = laneSpan(c, get().ecView)
+    const r = lane.getBoundingClientRect()
+    const span = b - a
+    if (e.shiftKey && !e.ctrlKey && !e.altKey) {
+      const d = (Math.sign(e.deltaY || e.deltaX) * span) / 8
+      set({ ecView: { clipId: clip.id, start: a + d, end: b + d } })
+      return
+    }
+    // between 2 frames and 4x the clip
+    const f = (e.clientX - r.left) / Math.max(1, r.width)
+    const at = a + f * span
+    const next = Math.min(4 * (clip.end - clip.start), Math.max(2 * ticksPerFrame(seq.settings), span * (e.deltaY > 0 ? 1.25 : 0.8)))
+    set({ ecView: { clipId: clip.id, start: at - f * next, end: at + (1 - f) * next } })
+  }
+  const panel = useCallback((el: HTMLDivElement | null) => {
+    if (!el) return
+    el.addEventListener('wheel', (e) => wheel.current(e), { passive: false })
+  }, [])
   if (!c) return <div className="lm-panel"><div className="lm-empty">{t('(no clip selected)')}</div></div>
   const { clip, seq } = c
   const reset = () => void exec('clip.reset_motion', { sequence_id: seq.id, clip_ids: [clip.id] }, t('Reset'))
   return (
     <div
       className="lm-panel lm-ec"
+      ref={panel}
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest('.lane, .lm-kcell')) set({ ecView: null })
+      }}
       onDragOver={(e) => e.dataTransfer.types.includes(EFFECT_MIME) && e.preventDefault()}
       onDrop={(e) => {
         const raw = e.dataTransfer.getData(EFFECT_MIME)
@@ -230,12 +260,22 @@ function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
         }
         const kfs = (fx.keyframes as Record<string, Kf[] | undefined>)[p.name]
         const v = val(p.name)
+        const dial = p.name === 'rotation' || p.name === 'skew_axis'
         return (
           <KfRow
             key={p.name}
             c={c}
             kfs={kfs}
             label={label}
+            expand={{
+              control: p.kind === 'point' ? undefined : dial ? 'dial' : 'slider',
+              min: p.name === 'skew' ? -70 : p.min ?? 0,
+              max: p.name === 'skew' ? 70 : p.name === 'blurriness' ? 100 : Math.min(p.max ?? 100, 100),
+              value: typeof v === 'number' ? v : undefined,
+              onValue: (x) => set(p.name, x, label),
+              onEase: (tt, side, speed, influence) =>
+                void exec('effect.set_keyframe_ease', { ...base, param: p.name, t: tt, side, speed, influence }, t('Keyframe Velocity'))
+            }}
             onToggle={() => void exec('effect.toggle_animation', { ...base, param: p.name, at }, t('Toggle animation'))}
             onKey={() => void exec('effect.keyframe', { ...base, param: p.name, at }, t('Add/Remove Keyframe'))}
           >

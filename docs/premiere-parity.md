@@ -74,7 +74,9 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Type tool (T) / Ctrl+T new text layer, text editing in Properties (font, size, bold/italic, align, fill, stroke, background) | ✓ |
 | Rectangle / Ellipse tools (drag in the Program monitor, Shift = square), Ctrl+Alt+R / Ctrl+Alt+E, Graphics and Titles > New Layer | ✓ (Pen tool paths ✗) |
 | Graphic layer stack: eye toggle, bring forward / send backward, fill, stroke, size, position, rotation, opacity | ✓ |
-| Keyframe interpolation: linear / ease (≈ Premiere's default Bezier) / hold | ✓ (custom Bezier handles ✗) |
+| Keyframe interpolation: linear / ease / Bezier (speed + influence per side) / hold | ✓ |
+| Effect Controls twirl-down per property: value slider / angle dial, Value and Velocity graphs with draggable Bezier handles (`clip.set_keyframe_ease`, `effect.set_keyframe_ease`) | ✓ |
+| Effect Controls timeline zoom: Ctrl/Alt+wheel around the pointer, Shift+wheel scroll, double-click to fit | ✓ |
 
 ## Effects & transitions
 | Item | Status |
