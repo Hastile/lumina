@@ -276,6 +276,8 @@ def _make_track(kind: str, index: int) -> dict:
         "muted": False,
         "solo": False,
         "targeted": index == 1,
+        "volume_db": 0.0,
+        "pan": 0.0,
         "clips": {},
         "transitions": {},
     }
@@ -300,6 +302,7 @@ def build_sequence(name: str, bin_id: str, settings: dict, video_tracks: int, au
         "playhead": 0,
         "in_point": None,
         "out_point": None,
+        "master_volume_db": 0.0,
     }
 
 

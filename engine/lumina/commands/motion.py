@@ -375,7 +375,7 @@ def _text_layer(text: str, position: list[float], **style) -> dict:
 def graphic_clip(name: str, start: int, end: int, layers: list[dict], source: str | None = None, label: str = "rose") -> dict:
     return {
         "id": new_id(), "media_id": None, "name": name, "start": start, "end": end, "source_in": 0, "speed": 1.0,
-        "enabled": True, "link_id": None, "label": label, "opacity": 100.0, "volume_db": 0.0,
+        "enabled": True, "link_id": None, "label": label, "opacity": 100.0, "volume_db": 0.0, "gain_db": 0.0,
         "motion": {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0, "anchor": None,
                    "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0},
         "keyframes": {}, "graphic": {"layers": layers, "source": source}, "effects": [],

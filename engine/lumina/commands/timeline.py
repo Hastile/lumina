@@ -256,6 +256,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "label": item.get("label", "iris"),
             "opacity": 100.0,
             "volume_db": 0.0,
+            "gain_db": 0.0,
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,
