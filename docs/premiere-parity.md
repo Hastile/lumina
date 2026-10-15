@@ -95,6 +95,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Frame-exact Program/Source monitors: WebCodecs decoding (MP4/MOV/WebM/MKV via mediabunny) of the original media, one clock, the frame active at the playhead (same rule as export) | ✓ (codecs Chromium can't decode fall back to proxy / <video>) |
 | Cuts and transitions play without a stall: upcoming clips pre-decoded, decoder streams kept warm | ✓ |
 | Scrubbing shows the exact frame (typically 15-90 ms per jump) | ✓ |
+| Program monitor shows sequence frames only (a 60 fps source in a 30 fps sequence plays at 30, like Premiere and the export) | ✓ |
+| Program audio on Web Audio: every clip scheduled sample-accurately at its cut, the audio output is the playback clock (no element warm-up, no rate nudging) | ✓ (media Web Audio can't decode fall back to <audio>; reverse play is silent) |
 | J/K/L shuttle incl. reverse play (long-GOP sources decoded in 0.5 s chunks) and 2x-8x | ✓ |
 | Select Playback Resolution (Full, 1/2, 1/4; paused frames full) | ✓ |
 | Shift+J/L slow motion, trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |

@@ -131,8 +131,11 @@ try {
     const c = document.querySelector('.lm-stage canvas[data-gl]')
     if (!c || c.dataset.exact !== '1' || !c.dataset.frames) return null
     const frame = Number(c.dataset.frames.split(',')[0])
-    return frame <= want + 1e-6 && want - frame < 1 / 30 ? { want, frame } : null
-  }, null, { timeout: 10000, polling: 'raf' }).then((h) => h.jsonValue())
+    return frame <= want + 1e-4 && want - frame < 1 / 30 ? { want, frame } : null // frames are written with 4 decimals
+  }, null, { timeout: 10000, polling: 'raf' }).then((h) => h.jsonValue()).catch(async (e) => {
+    const c = await page.evaluate(() => { const c = document.querySelector('.lm-stage canvas[data-gl]'); const s = window.__lumina.get(); return { t: s.programTime / 254016000000, playing: s.playing, exact: c?.dataset.exact, frames: c?.dataset.frames } })
+    throw new Error(`${e.message} ${JSON.stringify(c)}`)
+  })
   log('program monitor on the exact frame:', check.frame.toFixed(3), 's for source time', check.want.toFixed(3))
 
   // ---- graphics: Type tool (T) + click in the Program monitor creates a text layer
@@ -413,7 +416,12 @@ try {
       out.time = get().programTime / 254016000000
       return out
     }
+    const a0 = { ...window.__lumina.audio.stats }
+    let elements = 0
+    const watch = setInterval(() => (elements = Math.max(elements, document.querySelectorAll('.lm-stage audio').length)), 20)
     const fwd = await run(1, 3000)
+    clearInterval(watch)
+    fwd.audio = { nodes: window.__lumina.audio.stats.nodes - a0.nodes, late: window.__lumina.audio.stats.late - a0.late, elements }
     await new Promise((r) => setTimeout(r, 500))
     const rev = await run(-1, 1500) // J: reverse, decoded in chunks from keyframes
     return { fwd, rev }
@@ -423,6 +431,8 @@ try {
   assert.equal(cutProbe.fwd.inexact, 0, `forward play across cuts showed a stale frame: ${JSON.stringify(cutProbe)}`)
   assert.ok(cutProbe.rev.time < cutProbe.fwd.time - 1, `J plays backwards (${cutProbe.rev.time})`)
   assert.ok(!cutProbe.rev.late, `reverse play only waits while it starts: ${JSON.stringify(cutProbe.rev)}`)
+  assert.ok(cutProbe.fwd.audio.nodes > 0 && cutProbe.fwd.audio.elements === 0, `audio plays through Web Audio: ${JSON.stringify(cutProbe.fwd.audio)}`)
+  log('audio: Web Audio buffers scheduled', cutProbe.fwd.audio.nodes, 'late joins', cutProbe.fwd.audio.late)
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip

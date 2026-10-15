@@ -12,12 +12,13 @@ import { DRAG_MIME } from './ProjectPanel'
 import { activeSequence, exec, get, set, sequenceEnd, useStore } from '../state/store'
 import { goTo, type Monitor } from '../state/transport'
 import { focusPanel } from '../layout/dock'
-import { parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
+import { floorToFrame, parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
 import { effectCss, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
 import { FrameCanvas } from '../playback/FrameCanvas'
 import { GLStage } from '../playback/GLStage'
+import { audioEngine } from '../playback/AudioEngine'
 import { GraphicView } from './GraphicView'
 
 export function mediaSrc(m: MediaItem): string {
@@ -177,7 +178,7 @@ type VisualLayer = {
   fade?: number
   preroll?: boolean // upcoming clip: mounted hidden, paused on its first frame
 }
-type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number; preroll?: boolean }
+type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number; span: [number, number]; preroll?: boolean }
 
 /** Layers visible at ``at``. Each clip gets its own media element (keyed by clip id), so a
  * cut never makes a playing element seek; with ``lookahead`` (ticks) clips starting soon are
@@ -261,7 +262,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       audio.push({
-        key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)),
+        key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)), span: [s0, e0],
         volume: dbToGain(valueAt(clip, 'volume_db', at, seq, m) as number) * (gains.get(clip.id) ?? 1)
       })
     }
@@ -271,7 +272,10 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
         if (!clip.enabled || s0 <= at || s0 - at > lookahead) continue
         const m = clip.media_id ? media[clip.media_id] : undefined
         if (!m || (!m.audio && m.kind !== 'audio')) continue
-        audio.push({ key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, s0)), volume: 0, preroll: true })
+        // the gain it starts with: scheduled audio is heard before the picture reaches the cut
+        const e0 = ext.get(clip.id)?.[1] ?? clip.end
+        const g0 = dbToGain(valueAt(clip, 'volume_db', s0, seq, m) as number) * (s0 < clip.start ? 0 : 1)
+        audio.push({ key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, s0)), span: [s0, e0], volume: g0, preroll: true })
       }
     }
   }
@@ -303,6 +307,13 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const [glFailed, setGlFailed] = useState(false)
   const gl = !glFailed
   const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0)
+  useEffect(() => {
+    audioEngine.sync(
+      audio
+        .filter((a) => a.clip.speed > 0 && audioEngine.status(mediaSrc(a.media)) === 'ok')
+        .map((a) => ({ key: a.key, url: mediaSrc(a.media), start: a.clip.start, sourceIn: a.clip.source_in, speed: a.clip.speed, span: a.span, gain: a.volume }))
+    )
+  })
 
   const toSeq = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -457,8 +468,8 @@ function Stage({ seq, media, at, playing, rate, scale }: {
           }}
         />
       )}
-      {audio.map((a) => (
-        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.volume} />
+      {audio.filter((a) => audioEngine.status(mediaSrc(a.media)) === 'fail' || a.clip.speed <= 0).map((a) => (
+        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.preroll ? 0 : a.volume} />
       ))}
     </div>
   )
@@ -512,7 +523,7 @@ export function ProgramMonitor() {
     <div className="lm-panel lm-monitor">
       <div className="lm-monitor-title">{t('Program')}: {seq.name}</div>
       <Frame width={st.width} height={st.height}>
-        {(scale) => <Stage seq={seq} media={mediaMap} at={time} playing={playing} rate={rate} scale={scale} />}
+        {(scale) => <Stage seq={seq} media={mediaMap} at={floorToFrame(time, st)} playing={playing} rate={rate} scale={scale} />}
       </Frame>
       <div className="lm-monitor-bar">
         <Timecode value={time} rate={st} onCommit={(v) => goTo('program', v)} />

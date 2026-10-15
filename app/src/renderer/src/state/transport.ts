@@ -3,9 +3,11 @@
 
 import { activeSequence, get, sequenceEnd, set, sourceMedia } from './store'
 import { ticksPerFrame, TICKS_PER_SECOND, type Rate } from '../util/time'
+import { audioEngine } from '../playback/AudioEngine'
 
 let raf = 0
 let last = 0
+let written = -1 // the program time the clock last wrote (anything else is a jump)
 
 export type Monitor = 'source' | 'program'
 
@@ -41,7 +43,13 @@ function tick(now: number): void {
   // a rAF timestamp is the frame's start and can predate play(): never step backwards
   const dt = Math.max(0, (now - last) / 1000)
   last = Math.max(last, now)
-  const t = getTime(m) + dt * s.shuttle * TICKS_PER_SECOND
+  let t = getTime(m) + dt * s.shuttle * TICKS_PER_SECOND
+  if (m === 'program' && s.shuttle > 0) {
+    // the Program monitor follows the audio being heard (a jump restarts that clock there)
+    if (getTime(m) !== written) audioEngine.start(getTime(m), s.shuttle)
+    const heard = audioEngine.clock(now)
+    if (heard !== null) t = heard
+  }
   const end = duration(m)
   // stop at either end in the direction of travel (a 0 ms first frame at 0 must not stop forward play)
   if ((s.shuttle > 0 && t >= end) || (s.shuttle < 0 && t <= 0)) {
@@ -50,6 +58,7 @@ function tick(now: number): void {
     return
   }
   setTime(m, t)
+  written = getTime(m)
   raf = requestAnimationFrame(tick)
 }
 
@@ -57,6 +66,10 @@ export function play(m: Monitor, rate = 1): void {
   const s = get()
   if (getTime(m) >= duration(m) - ticksPerFrame(monitorRate(m)) && rate > 0) setTime(m, 0)
   set({ playing: m, shuttle: rate })
+  if (m === 'program') {
+    audioEngine.start(getTime(m), rate)
+    written = getTime(m)
+  }
   if (!s.playing) {
     last = performance.now()
     cancelAnimationFrame(raf)
@@ -66,6 +79,7 @@ export function play(m: Monitor, rate = 1): void {
 
 export function stop(): void {
   cancelAnimationFrame(raf)
+  audioEngine.stop()
   const s = get()
   if (s.playing) {
     // land on a frame boundary like Premiere does
