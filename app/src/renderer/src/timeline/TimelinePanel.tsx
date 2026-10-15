@@ -14,7 +14,8 @@ import { DRAG_MIME } from '../panels/ProjectPanel'
 import { activeSequence, exec, findClip, get, sequenceEnd, set, toast, useStore } from '../state/store'
 import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
-import { drawWaveform, loadWaveform } from './waveform'
+import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
+import { mediaUrl } from '../engine/client'
 
 const HEADER_W = 190
 const RULER_H = 30
@@ -30,6 +31,46 @@ type Drag =
   | { kind: 'move'; ids: string[]; anchorRow: number; startX: number; startY: number; dt: number; dRow: number; moved: boolean; base: Clip }
   | { kind: 'trim'; clipId: string; edge: 'start' | 'end'; ripple: boolean; startX: number; dt: number }
   | { kind: 'hand'; startX: number; startScroll: number }
+  | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: string[] }
+  | { kind: 'tool'; tool: EditTool; clipId: string; ids: string[]; edge: 'start' | 'end' | null; startX: number; dt: number }
+
+type EditTool = 'rolling' | 'rate' | 'slip' | 'slide'
+const EDIT_TOOLS: Record<EditTool, string> = { rolling: 'clip.roll', rate: 'clip.rate_stretch', slip: 'clip.slip', slide: 'clip.slide' }
+const EDGE_TOOLS = new Set(['select', 'ripple', 'rolling', 'rate'])
+
+type Shown = { start: number; end: number; srcIn: number; speed: number }
+
+/** What a Rolling / Rate Stretch / Slip / Slide drag will do (the engine's clip.roll etc.), for the live preview. */
+function previewTool(seq: Sequence, d: Extract<Drag, { kind: 'tool' }>): Map<string, Shown> {
+  const out = new Map<string, Shown>()
+  const dt = d.dt
+  if (!dt) return out
+  const shown = (c: Clip): Shown => out.get(c.id) ?? { start: c.start, end: c.end, srcIn: c.source_in, speed: c.speed }
+  for (const tr of Object.values(seq.tracks)) {
+    const clips = Object.values(tr.clips)
+    for (const c of clips) {
+      if (!d.ids.includes(c.id)) continue
+      const before = clips.find((o) => o.end === c.start)
+      const after = clips.find((o) => o.start === c.end)
+      const v = shown(c)
+      if (d.tool === 'slip') out.set(c.id, { ...v, srcIn: v.srcIn - dt * c.speed })
+      else if (d.tool === 'rate') {
+        const len = c.end - c.start
+        const next = d.edge === 'end' ? { ...v, end: c.end + dt } : { ...v, start: c.start + dt }
+        out.set(c.id, { ...next, speed: (len * c.speed) / Math.max(1, next.end - next.start) })
+      } else if (d.tool === 'rolling') {
+        const [l, r] = d.edge === 'end' ? [c, after] : [before, c]
+        if (l) out.set(l.id, { ...shown(l), end: l.end + dt })
+        if (r) out.set(r.id, { ...shown(r), start: r.start + dt, srcIn: r.source_in + dt * r.speed })
+      } else {
+        out.set(c.id, { ...v, start: c.start + dt, end: c.end + dt })
+        if (before) out.set(before.id, { ...shown(before), end: before.end + dt })
+        if (after) out.set(after.id, { ...shown(after), start: after.start + dt, srcIn: after.source_in + dt * after.speed })
+      }
+    }
+  }
+  return out
+}
 
 function buildRows(seq: Sequence): { rows: Row[]; height: number; audioTop: number } {
   const rows: Row[] = []
@@ -239,6 +280,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     }
     set({ selectedClips: sel })
     const edge = hover?.clipId === clip.id ? hover.edge : null
+    if (tool === 'rolling' || tool === 'rate' || tool === 'slip' || tool === 'slide') {
+      if ((tool === 'rolling' || tool === 'rate') && !edge) return
+      setDrag({ kind: 'tool', tool, clipId: clip.id, ids: linked, edge, startX: e.clientX, dt: 0 })
+      return
+    }
     if (edge) {
       setDrag({ kind: 'trim', clipId: clip.id, edge, ripple: tool === 'ripple', startX: e.clientX, dt: 0 })
     } else if (tool === 'select' || tool === 'ripple') {
@@ -249,7 +295,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const laneMouseMove = (e: React.MouseEvent) => {
     if (drag) return
     const target = (e.target as HTMLElement).closest('[data-clip]') as HTMLElement | null
-    if (!target || (tool !== 'select' && tool !== 'ripple')) {
+    if (!target || !EDGE_TOOLS.has(tool)) {
       if (hover) setHover(null)
       return
     }
@@ -264,6 +310,21 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     const move = (e: MouseEvent) => {
       if (drag.kind === 'hand') {
         set({ scrollX: Math.max(0, drag.startScroll - (e.clientX - drag.startX)) })
+        return
+      }
+      if (drag.kind === 'marquee') {
+        // rubber-band selection: every clip the rectangle touches, and the clips linked to them
+        const { x, y } = laneXY(e)
+        const [l, r] = [Math.min(drag.x0, x), Math.max(drag.x0, x)]
+        const [top, bot] = [Math.min(drag.y0, y), Math.max(drag.y0, y)]
+        const t0 = toT(l)
+        const t1 = toT(r)
+        const hit = rows.filter((row) => row.top < bot && row.top + row.height > top && !row.track.locked)
+          .flatMap((row) => Object.values(row.track.clips).filter((c) => c.start < t1 && c.end > t0))
+        const links = new Set(hit.map((c) => c.link_id).filter(Boolean))
+        const linked = e.altKey ? [] : Object.values(seq.tracks).flatMap((tr) => Object.values(tr.clips).filter((c) => c.link_id && links.has(c.link_id)))
+        set({ selectedClips: [...new Set([...drag.base, ...hit.map((c) => c.id), ...linked.map((c) => c.id)])] })
+        setDrag({ ...drag, x1: x, y1: y })
         return
       }
       const raw = ((e.clientX - drag.startX) / pps) * TICKS_PER_SECOND
@@ -286,6 +347,14 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         const edgeT = (drag.edge === 'start' ? found.clip.start : found.clip.end) + dt
         dt += snapDelta([edgeT], new Set([drag.clipId]))
         setDrag({ ...drag, dt })
+      } else if (drag.kind === 'tool') {
+        const found = findClip(seq, drag.clipId)
+        if (!found) return
+        const c = found.clip
+        let dt = Math.round(raw / tpf) * tpf
+        if (drag.tool === 'slide') dt += snapDelta([c.start + dt, c.end + dt], new Set(drag.ids))
+        else if (drag.edge) dt += snapDelta([(drag.edge === 'start' ? c.start : c.end) + dt], new Set(drag.ids))
+        setDrag({ ...drag, dt })
       }
     }
     const up = async (e: MouseEvent) => {
@@ -295,6 +364,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         const row = rows[d.anchorRow]
         const trackDelta = row.kind === 'video' ? -d.dRow : d.dRow
         await exec('clip.move', { sequence_id: seq.id, clip_ids: d.ids, delta: d.dt, track_delta: trackDelta, include_linked: false, mode: e.ctrlKey ? 'insert' : 'overwrite' }, 'Move')
+      } else if (d.kind === 'tool' && d.dt !== 0) {
+        const label = { rolling: tx('Rolling Edit'), rate: tx('Rate Stretch'), slip: tx('Slip'), slide: tx('Slide') }[d.tool]
+        await exec(EDIT_TOOLS[d.tool], { sequence_id: seq.id, clip_id: d.clipId, delta: d.dt, include_linked: d.ids.length > 1, ...(d.edge && d.tool !== 'slip' && d.tool !== 'slide' ? { edge: d.edge } : {}) }, label)
       } else if (d.kind === 'trim' && d.dt !== 0) {
         await exec('clip.trim', { sequence_id: seq.id, clip_id: d.clipId, edge: d.edge, delta: d.dt, ripple: d.ripple, include_linked: !e.altKey }, d.ripple ? 'Ripple Trim' : 'Trim')
       }
@@ -320,7 +392,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       set({ pxPerSecond: next, scrollX: Math.max(0, tSec * next - x) })
       return
     }
-    set({ selectedClips: [] })
+    // empty lane: rubber-band selection (Shift adds to the selection)
+    const { x, y } = laneXY(e)
+    const base = e.shiftKey || e.ctrlKey ? get().selectedClips : []
+    set({ selectedClips: base, selectedTransition: null })
+    if (tool === 'select' || tool === 'ripple' || tool === 'rolling' || tool === 'rate' || tool === 'slip' || tool === 'slide')
+      setDrag({ kind: 'marquee', x0: x, y0: y, x1: x, y1: y, base })
   }
 
   const onWheel = (e: React.WheelEvent) => {
@@ -388,7 +465,14 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   const moveGhost = drag?.kind === 'move' && drag.moved ? drag : null
   const trimGhost = drag?.kind === 'trim' ? drag : null
-  const cursor = tool === 'razor' ? 'crosshair' : tool === 'hand' ? 'grab' : tool === 'zoom' ? 'zoom-in' : hover?.edge ? (tool === 'ripple' ? 'col-resize' : 'ew-resize') : 'default'
+  const toolDrag = drag?.kind === 'tool' ? drag : null
+  const preview = toolDrag ? previewTool(seq, toolDrag) : null
+  const cursor =
+    tool === 'razor' ? 'crosshair'
+      : tool === 'hand' ? 'grab'
+        : tool === 'zoom' ? 'zoom-in'
+          : tool === 'slip' || tool === 'slide' ? 'ew-resize'
+            : hover?.edge ? (tool === 'ripple' || tool === 'rolling' ? 'col-resize' : 'ew-resize') : 'default'
 
   const renderClip = (clip: Clip, row: Row, rowIdx: number) => {
     let start = clip.start
@@ -415,6 +499,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         }
       } else stop += trimGhost.dt
     }
+    const pv = preview?.get(clip.id)
+    if (pv) {
+      start = pv.start
+      stop = pv.end
+      srcIn = pv.srcIn
+    }
     const x0 = toX(start)
     const x1 = toX(stop)
     if (x1 < -50 || x0 > width + 50) return null
@@ -425,7 +515,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       <div
         key={clip.id}
         data-clip={clip.id}
-        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost ? 'ghost' : ''}`}
+        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
         onMouseDown={(e) => clipMouseDown(e, clip, rowIdx)}
         onDoubleClick={() => {
@@ -449,12 +539,20 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           ])
         }}
       >
+        {row.kind === 'video' && m?.filmstrip_path && (
+          <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
+        )}
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} />}
         {row.kind === 'audio' && x1 - x0 > 6 && <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} />}
         <span className="name">
-          {clip.speed !== 1 && <b>{Math.round(clip.speed * 100)}% </b>}
+          {(pv?.speed ?? clip.speed) !== 1 && <b>{Math.round((pv?.speed ?? clip.speed) * 100)}% </b>}
           {clip.name}
         </span>
+        {pv && toolDrag?.tool === 'slip' && toolDrag.clipId === clip.id && (
+          <span className="lm-tooltip-tc" data-slip-in="">
+            {timecode(Math.round(pv.srcIn), st)} – {timecode(Math.round(pv.srcIn + (stop - start) * clip.speed), st)}
+          </span>
+        )}
         {row.kind === 'video' && (clip.effects?.length ?? 0) > 0 ? (
           <span className="fx on" title={(clip.effects ?? []).map((f) => tx(EFFECTS[f.type].label)).join(', ')}>fx</span>
         ) : (
@@ -568,6 +666,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             {rows.map((r) => trackTransitions(r.track).map((w) => renderTransition(w, r)))}
             {inOut && <div className="lm-lane-inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0), height: layout.height }} />}
             <div className="lm-playhead" style={{ left: toX(time), height: layout.height + 40 }} />
+            {drag?.kind === 'marquee' && (
+              <div className="lm-tl-marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
+            )}
             {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: layout.height }} />}
           </div>
         </div>
@@ -673,4 +774,30 @@ function ClipWaveform({ path, srcIn, speed, duration }: { path: string; srcIn: n
     drawWaveform(ref.current, w, s, s + (duration * speed) / TICKS_PER_SECOND, 'rgba(255,255,255,0.55)')
   })
   return <canvas ref={ref} className="wave" />
+}
+
+/** Continuous video thumbnails (Premiere's "Continuous Video Thumbnails"): frames from the media's
+ * filmstrip sprite, one per tile across the clip, only for the part of the clip on screen. */
+function ClipFilmstrip(p: { path: string; srcIn: number; speed: number; duration: number; x0: number; width: number; lane: number; height: number }) {
+  const [, force] = useState(0)
+  const f = loadFilmstrip(p.path, () => force((n) => n + 1))
+  if (!f || p.width < 8) return null
+  const h = Math.max(8, p.height - 14)
+  const tw = (f.width * h) / f.height
+  const tiles: { left: number; frame: number }[] = []
+  const from = Math.max(0, Math.floor(-p.x0 / tw))
+  const to = Math.min(Math.ceil(p.width / tw), Math.ceil((p.lane - p.x0) / tw) + 1)
+  const srcSec = (x: number) => (p.srcIn + (x / p.width) * p.duration * p.speed) / TICKS_PER_SECOND
+  for (let i = from; i < to && tiles.length < 200; i++) {
+    const frame = Math.max(0, Math.min(f.count - 1, Math.floor(srcSec(i * tw) / f.interval)))
+    tiles.push({ left: i * tw, frame })
+  }
+  const url = `url("${mediaUrl(f.image)}")`
+  return (
+    <div className="lm-filmstrip" style={{ height: h }} data-filmstrip="">
+      {tiles.map((t) => (
+        <div key={t.left} style={{ left: t.left, width: tw, backgroundImage: url, backgroundSize: `${tw * f.count}px ${h}px`, backgroundPosition: `${-t.frame * tw}px 0` }} />
+      ))}
+    </div>
+  )
 }

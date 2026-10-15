@@ -29,7 +29,7 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | = - \ | Zoom in / out / to sequence | ✓ |
 | Ctrl+Z, Ctrl+Shift+Z, Ctrl+S, Ctrl+Shift+S, Ctrl+O, Ctrl+I, Ctrl+N, Ctrl+Alt+N | File / Edit | ✓ |
 | Shift+1…8 | Focus panels | ✓ |
-| Ctrl+C / Ctrl+V / Ctrl+Shift+V | Copy / paste / paste attributes | ✗ |
+| Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V / Ctrl+Alt+V | Cut / copy / paste / paste insert / paste attributes | ✓ |
 | Ctrl+M, Ctrl+Shift+E | Export Media, Export Frame | ✓ |
 | Ctrl+Alt+K editor, `.kys` import | Keyboard shortcuts | ✗ |
 
@@ -38,12 +38,13 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 |---|---|
 | Track headers: source patch, targeting, lock, sync lock, eye / M / S | ✓ (patching is not separate from targeting yet) |
 | Clips with label colors, names, speed %, disabled look, waveforms | ✓ |
-| Thumbnails on video clips | ✗ |
+| Thumbnails on video clips | ✓ (continuous, from a per-media filmstrip) |
 | Drag move with snapping, Ctrl-drag insert, Alt-click ignores links | ✓ |
 | Edge trim, ripple trim (B) | ✓ |
-| Rolling (N), Rate (R), Slip (Y), Slide (U), Pen (P), Type (T) tools | ✗ (M2/M4) |
-| Marquee selection | ✗ |
-| Rubber bands (volume / opacity) | ✗ (M3) |
+| Rolling (N), Rate Stretch (R), Slip (Y), Slide (U) tools | ✓ (linked clips follow; Alt = this clip only) |
+| Pen (P), Type (T) tools on the timeline | ✗ |
+| Marquee selection | ✓ (Shift adds) |
+| Rubber bands (volume) | ✓ (opacity band ✗) |
 | Nested sequences | ✗ (M2) |
 
 ## Premiere project hand-off (.prproj, read-only)

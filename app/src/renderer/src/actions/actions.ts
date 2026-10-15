@@ -354,6 +354,69 @@ def('edit.rippleDelete', t('Ripple Delete'), async () => {
   const ids = get().selectedClips
   if (seq && ids.length) await exec('clip.remove', { sequence_id: seq.id, clip_ids: ids, ripple: true, include_linked: false }, 'Ripple Delete')
 })
+// Clipboard: the copied clips with their tracks, as Premiere's Copy (Ctrl+C) keeps them
+let clipboard: { track_id: string; clip: Clip }[] = []
+const copySelection = (): boolean => {
+  const seq = activeSequence()
+  if (!seq) return false
+  const ids = new Set(get().selectedClips)
+  clipboard = Object.values(seq.tracks).flatMap((tr) => Object.values(tr.clips).filter((c) => ids.has(c.id)).map((clip) => ({ track_id: tr.id, clip })))
+  return clipboard.length > 0
+}
+def('edit.cut', t('Cut'), async () => {
+  const seq = activeSequence()
+  if (seq && copySelection()) await exec('clip.remove', { sequence_id: seq.id, clip_ids: clipboard.map((x) => x.clip.id), include_linked: false }, t('Cut'))
+})
+def('edit.copy', t('Copy'), () => void copySelection())
+const paste = async (mode: 'overwrite' | 'insert') => {
+  const seq = activeSequence()
+  if (!seq || !clipboard.length) return
+  const clips = clipboard.filter((x) => seq.tracks[x.track_id])
+  if (!clips.length) return toast(t('The copied clips are on tracks this sequence does not have'), 'info')
+  const r = await exec<{ clip_ids: string[]; end: number }>('clip.paste', { sequence_id: seq.id, clips, at: get().programTime, mode }, mode === 'insert' ? t('Paste Insert') : t('Paste'))
+  if (r) {
+    set({ selectedClips: r.clip_ids })
+    goTo('program', r.end)
+  }
+}
+def('edit.paste', t('Paste'), () => paste('overwrite'))
+def('edit.pasteInsert', t('Paste Insert'), () => paste('insert'))
+def('edit.pasteAttributes', t('Paste Attributes...'), () => {
+  const seq = activeSequence()
+  const src = clipboard.length === 1 || new Set(clipboard.map((x) => x.clip.link_id)).size === 1 ? clipboard : []
+  const targets = get().selectedClips
+  if (!seq || !src.length || !targets.length) return toast(t('Copy one clip, then select the clips to paste its attributes onto'), 'info')
+  const video = src.find((x) => seq.tracks[x.track_id]?.kind === 'video' || src.length === 1) ?? src[0]
+  const audio = src.find((x) => seq.tracks[x.track_id]?.kind === 'audio')
+  openDialog({
+    title: t('Paste Attributes'),
+    okLabel: t('OK'),
+    fields: [
+      { key: 'note', label: '', type: 'note', value: `${t('Source')}: ${video.clip.name}` },
+      { key: 'scale', label: t('Scale Attribute Times'), type: 'checkbox', value: false },
+      { key: 'motion', label: t('Motion'), type: 'checkbox', value: true },
+      { key: 'opacity', label: t('Opacity'), type: 'checkbox', value: true },
+      { key: 'time_remapping', label: t('Time Remapping'), type: 'checkbox', value: false },
+      { key: 'volume', label: t('Volume'), type: 'checkbox', value: true },
+      { key: 'effects', label: t('Effects'), type: 'checkbox', value: true }
+    ],
+    onSubmit: async (v) => {
+      const attributes = ['motion', 'opacity', 'time_remapping', 'volume', 'effects'].filter((k) => v[k])
+      const kinds = (id: string) => Object.values(seq.tracks).find((tr) => tr.clips[id])?.kind
+      await engine.call('transaction.begin', { label: t('Paste Attributes') })
+      try {
+        for (const [kind, s] of [['video', video], ['audio', audio ?? video]] as const) {
+          const ids = targets.filter((id) => kinds(id) === kind)
+          if (ids.length) await engine.exec('clip.paste_attributes', { sequence_id: seq.id, source: s.clip, clip_ids: ids, attributes, scale_keyframes: !!v.scale })
+        }
+        await engine.call('transaction.commit')
+      } catch (err) {
+        await engine.call('transaction.rollback').catch(() => undefined)
+        toast(String(err instanceof Error ? err.message : err))
+      }
+    }
+  })
+})
 def('edit.selectAll', t('Select All'), () => {
   const s = get()
   if (s.focusedPanel === 'project') {

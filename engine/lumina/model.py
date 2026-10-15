@@ -61,6 +61,7 @@ class MediaItem(_Model):
     proxy_path: str | None = None
     thumbnail_path: str | None = None
     waveform_path: str | None = None
+    filmstrip_path: str | None = Field(default=None, description="timeline thumbnails: JSON {image, interval, count, width, height}")
     in_point: int | None = Field(default=None, description="source monitor In mark, ticks")
     out_point: int | None = Field(default=None, description="source monitor Out mark, ticks")
 

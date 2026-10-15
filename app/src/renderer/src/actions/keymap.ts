@@ -20,6 +20,11 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   // Edit
   'Ctrl+Z': 'edit.undo',
   'Ctrl+Shift+Z': 'edit.redo',
+  'Ctrl+X': 'edit.cut',
+  'Ctrl+C': 'edit.copy',
+  'Ctrl+V': 'edit.paste',
+  'Ctrl+Shift+V': 'edit.pasteInsert',
+  'Ctrl+Alt+V': 'edit.pasteAttributes',
   Delete: 'edit.clear',
   Backspace: 'edit.clear',
   'Shift+Delete': 'edit.rippleDelete',

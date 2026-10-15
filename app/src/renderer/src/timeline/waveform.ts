@@ -47,3 +47,29 @@ export function drawWaveform(canvas: HTMLCanvasElement, w: Waveform, srcStart: n
     if (h > 0.3) ctx.fillRect(x, mid - h, 1, h * 2)
   }
 }
+
+// ---------------------------------------------------------------- filmstrips (video clip thumbnails)
+
+export type Filmstrip = { image: string; interval: number; count: number; width: number; height: number }
+
+const strips = new Map<string, Promise<Filmstrip | null>>()
+const stripReady = new Map<string, Filmstrip>()
+
+export function loadFilmstrip(path: string, onReady: () => void): Filmstrip | null {
+  const hit = stripReady.get(path)
+  if (hit) return hit
+  if (!strips.has(path)) {
+    strips.set(
+      path,
+      fetch(mediaUrl(path))
+        .then((r) => (r.ok ? r.json() : null))
+        .then((f: Filmstrip | null) => {
+          if (f) stripReady.set(path, f)
+          return f
+        })
+        .catch(() => null)
+    )
+  }
+  void strips.get(path)!.then((f) => f && onReady())
+  return null
+}

@@ -70,7 +70,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         info = probed.get(uid) or {k: m[k] for k in ("kind", "duration", "video", "audio")}
         ctx.m.set(["media", mid], {
             "id": mid, "name": m["name"], "path": m["path"], "bin_id": bin_map.get(m["bin"], top),
-            "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None,
+            "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None, "filmstrip_path": None,
             "in_point": None, "out_point": None,
             "kind": info["kind"], "duration": info["duration"], "video": info["video"], "audio": info["audio"],
         })

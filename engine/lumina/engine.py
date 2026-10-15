@@ -109,11 +109,15 @@ class Engine:
         for item in list(self.session.doc["media"].values()):
             if item["id"] in self._queued:
                 continue
-            derived = [item.get(k) for k in ("thumbnail_path", "waveform_path", "proxy_path")]
+            derived = [item.get(k) for k in ("thumbnail_path", "waveform_path", "proxy_path", "filmstrip_path")]
             if any(d and not Path(d).exists() for d in derived) or not (item.get("thumbnail_path") or item.get("waveform_path")):
                 if Path(item["path"]).exists():
                     self._queued.add(item["id"])
                     self.jobs.submit_media(item)
+            elif item["kind"] == "video" and item.get("video") and not item.get("filmstrip_path") and Path(item["path"]).exists():
+                # projects from before timeline thumbnails: only the filmstrip is missing
+                self._queued.add(item["id"])
+                self.jobs.submit_media(item, {"filmstrip"})
 
     def _open(self, p: dict) -> dict:
         snap = self.session.open(p["path"])

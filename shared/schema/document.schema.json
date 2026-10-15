@@ -636,6 +636,19 @@
           "default": null,
           "title": "Waveform Path"
         },
+        "filmstrip_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "timeline thumbnails: JSON {image, interval, count, width, height}",
+          "title": "Filmstrip Path"
+        },
         "in_point": {
           "anyOf": [
             {
@@ -676,6 +689,7 @@
         "proxy_path",
         "thumbnail_path",
         "waveform_path",
+        "filmstrip_path",
         "in_point",
         "out_point"
       ],

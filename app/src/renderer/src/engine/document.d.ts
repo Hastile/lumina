@@ -46,6 +46,10 @@ export type ProxyPath = string | null;
 export type ThumbnailPath = string | null;
 export type WaveformPath = string | null;
 /**
+ * timeline thumbnails: JSON {image, interval, count, width, height}
+ */
+export type FilmstripPath = string | null;
+/**
  * source monitor In mark, ticks
  */
 export type InPoint = number | null;
@@ -375,6 +379,7 @@ export interface MediaItem {
   proxy_path: ProxyPath;
   thumbnail_path: ThumbnailPath;
   waveform_path: WaveformPath;
+  filmstrip_path: FilmstripPath;
   in_point: InPoint;
   out_point: OutPoint;
 }

@@ -604,6 +604,87 @@ try {
   assert.equal(pfx.keyframes.scale[0].interp, 'bezier')
   log('preset from the Presets folder applied with Bezier keyframes at the clip start')
 
+  // ---- trimming tools on a fresh sequence cut in three: Rolling (N), Slip (Y), Slide (U), Rate Stretch (R),
+  // copy/paste, rubber-band selection and filmstrip thumbnails
+  await page.evaluate(async () => {
+    const { engine, get } = window.__lumina
+    const mid = Object.keys(get().doc.media)[0]
+    await engine.exec('sequence.create_from_media', { media_id: mid })
+    await engine.exec('clip.razor', { at: 4 * 254016000000 })
+    await engine.exec('clip.razor', { at: 8 * 254016000000 })
+  })
+  await until((s) => s.video.length === 3, 'three cuts')
+  await page.keyboard.press('Backslash')
+  await page.waitForTimeout(200)
+  const vbox = async (i) => page.locator('.lm-clip.video').nth(i).boundingBox()
+  const tdrag = async (x, y, dx) => {
+    await page.mouse.move(x, y)
+    await page.mouse.move(x + 1, y)
+    await page.mouse.down()
+    await page.mouse.move(x + dx, y, { steps: 6 })
+    await page.mouse.up()
+  }
+  const tl = () => page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const get = (ids) => ids.flatMap((id) => Object.values(seq.tracks[id].clips)).sort((a, b) => a.start - b.start)
+    return { v: get(seq.video_tracks), a: get(seq.audio_tracks), sel: s.selectedClips }
+  })
+  const pre = await tl()
+  await page.keyboard.press('n')
+  let b0 = await vbox(0)
+  await tdrag(b0.x + b0.width - 2, b0.y + b0.height / 2, 30)
+  let t1 = await tl()
+  for (let i = 0; i < 30 && t1.v[0].end === pre.v[0].end; i++) { await page.waitForTimeout(100); t1 = await tl() }
+  assert.ok(t1.v[0].end > pre.v[0].end && t1.v[1].start === t1.v[0].end && t1.v[2].start === pre.v[2].start, 'rolling edit moved only the edit point')
+  assert.equal(t1.a[1].start, t1.v[1].start, 'linked audio rolled too')
+  await page.keyboard.press('y')
+  let b1 = await vbox(1)
+  await tdrag(b1.x + b1.width / 2, b1.y + b1.height / 2, -20)
+  let t2 = await tl()
+  for (let i = 0; i < 30 && t2.v[1].source_in === t1.v[1].source_in; i++) { await page.waitForTimeout(100); t2 = await tl() }
+  assert.ok(t2.v[1].source_in > t1.v[1].source_in && t2.v[1].start === t1.v[1].start, 'slip changed the source, not the position')
+  await page.keyboard.press('u')
+  b1 = await vbox(1)
+  await tdrag(b1.x + b1.width / 2, b1.y + b1.height / 2, 25)
+  let t3 = await tl()
+  for (let i = 0; i < 30 && t3.v[1].start === t2.v[1].start; i++) { await page.waitForTimeout(100); t3 = await tl() }
+  assert.ok(t3.v[1].start > t2.v[1].start && t3.v[0].end === t3.v[1].start && t3.v[2].start === t3.v[1].end && t3.v[2].end === t2.v[2].end, 'slide: neighbours give and take, length kept')
+  // copy the first clip, paste at the end (Ctrl+C / End / Ctrl+V)
+  await page.keyboard.press('v')
+  b0 = await vbox(0)
+  await page.mouse.click(b0.x + b0.width / 2, b0.y + b0.height / 2)
+  await page.keyboard.press('Control+c')
+  await page.keyboard.press('End')
+  await page.keyboard.press('Control+v')
+  let t4 = await tl()
+  for (let i = 0; i < 30 && t4.v.length < 4; i++) { await page.waitForTimeout(100); t4 = await tl() }
+  assert.equal(t4.v.length, 4, 'pasted at the end')
+  assert.equal(t4.v[3].start, t3.v[2].end)
+  assert.equal(t4.a.length, 4, 'with its linked audio')
+  // rubber-band: drag over the pasted clip from empty space selects it and its audio
+  await page.keyboard.press('Backslash')
+  await page.waitForTimeout(200)
+  const lanesBox = await page.locator('.lm-tl-lanes').boundingBox()
+  const lastBox = await vbox(3)
+  await page.mouse.click(lanesBox.x + lanesBox.width - 6, lastBox.y + lastBox.height / 2)
+  await page.mouse.move(lanesBox.x + lanesBox.width - 6, lastBox.y + 2)
+  await page.mouse.down()
+  await page.mouse.move(lastBox.x + lastBox.width / 2, lastBox.y + lastBox.height + 30, { steps: 6 })
+  await page.mouse.up()
+  const t5 = await tl()
+  assert.ok(t5.sel.includes(t4.v[3].id) && t5.sel.includes(t4.a[3].id) && !t5.sel.includes(t4.v[0].id), `marquee selection ${JSON.stringify(t5.sel)}`)
+  // Rate Stretch the pasted clip's end into the empty space: slower
+  await page.keyboard.press('r')
+  await tdrag(lastBox.x + lastBox.width - 2, lastBox.y + lastBox.height / 2, 25)
+  let t6 = await tl()
+  for (let i = 0; i < 30 && t6.v[3].speed === 1; i++) { await page.waitForTimeout(100); t6 = await tl() }
+  assert.ok(t6.v[3].speed < 1 && t6.v[3].end > t4.v[3].end, `rate stretch slowed the clip (${t6.v[3].speed})`)
+  await page.keyboard.press('v')
+  await page.locator('[data-filmstrip] > div').first().waitFor({ timeout: 30000 })
+  const tiles = await page.locator('[data-filmstrip] > div').count()
+  log('tools: rolling', ((t1.v[0].end - pre.v[0].end) / TPS).toFixed(2), 's; slip; slide; Ctrl+C/V; marquee; rate stretch', Math.round(t6.v[3].speed * 100) + '%; filmstrip tiles', tiles)
+
   // ---- File > Save As remembers the project; File > Open starts in that folder; Open Recent reopens it
   const saved = join(WORK, 'e2e project.lumina')
   await app.evaluate(({ dialog }, target) => {

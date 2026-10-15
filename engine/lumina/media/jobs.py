@@ -46,6 +46,29 @@ def make_thumbnail(item: dict, out: Path) -> Path:
     return out
 
 
+FILMSTRIP_HEIGHT = 54
+FILMSTRIP_MAX = 300
+
+
+def make_filmstrip(item: dict, out_dir: Path) -> Path:
+    """Frames across the media in one horizontal sprite, for the timeline's clip thumbnails:
+    one per second, or fewer (evenly spaced, at most FILMSTRIP_MAX) for long media."""
+    v = item["video"]
+    secs = item["duration"] / 254_016_000_000
+    interval = max(1.0, secs / FILMSTRIP_MAX)
+    count = max(1, int(secs / interval))
+    w = max(2, round(FILMSTRIP_HEIGHT * v["width"] / max(1, v["height"]) / 2) * 2)
+    img = out_dir / "filmstrip.jpg"
+    # frame i shows the media at (i + 0.5) * interval
+    _run([ffmpeg_bin(), "-y", "-v", "error", "-skip_frame", "nokey" if interval >= 4 else "default", "-i", item["path"], "-an",
+          "-vf", f"fps=1/{interval!r}:start_time={interval / 2!r},scale={w}:{FILMSTRIP_HEIGHT},tile={count}x1",
+          "-frames:v", "1", "-q:v", "5", str(img)])
+    meta = out_dir / "filmstrip.json"
+    meta.write_text(json.dumps({"image": str(img), "interval": interval, "count": count, "width": w, "height": FILMSTRIP_HEIGHT}),
+                    encoding="utf-8")
+    return meta
+
+
 def needs_proxy(item: dict) -> bool:
     if item["kind"] == "image":
         return Path(item["path"]).suffix.lower() not in BROWSER_IMAGE_EXT
@@ -114,17 +137,22 @@ class JobRunner:
             job.update(changes)
         self.emit({"type": "job", "job": dict(job)})
 
-    def submit_media(self, item: dict) -> list[str]:
+    def submit_media(self, item: dict, kinds: set[str] | None = None) -> list[str]:
+        """Queue the derived files of a media item (``kinds``: only these of thumbnail / filmstrip / waveform / proxy)."""
         out_dir = cache_root() / item["id"]
         out_dir.mkdir(parents=True, exist_ok=True)
         ids = []
         tasks: list[tuple[str, Callable[[], dict]]] = []
         if item.get("video") is not None:
             tasks.append(("thumbnail", lambda: {"thumbnail_path": str(make_thumbnail(item, out_dir / "thumb.jpg"))}))
+            if item["kind"] == "video" and item["duration"] > 0:
+                tasks.append(("filmstrip", lambda: {"filmstrip_path": str(make_filmstrip(item, out_dir))}))
         if item.get("audio") is not None:
             tasks.append(("waveform", lambda: {"waveform_path": str(make_waveform(item, out_dir / "waveform.json"))}))
         if needs_proxy(item):
             tasks.append(("proxy", lambda: {"proxy_path": str(make_proxy(item, out_dir))}))
+        if kinds is not None:
+            tasks = [t for t in tasks if t[0] in kinds]
         for kind, fn in tasks:
             job = {"id": uuid.uuid4().hex, "kind": kind, "media_id": item["id"], "status": "queued", "error": None}
             self.jobs[job["id"]] = job

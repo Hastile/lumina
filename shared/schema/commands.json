@@ -339,6 +339,18 @@
           ],
           "default": null,
           "title": "Waveform Path"
+        },
+        "filmstrip_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Filmstrip Path"
         }
       },
       "required": [
@@ -1984,7 +1996,7 @@
   },
   {
     "name": "audio.auto_match",
-    "description": "Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.\n\nMeasured as the clip plays (speed and its audio effects included). Dialogue, music and ambience are\nmatched on integrated loudness, sound effects on their loudest moment. Cuts of one source share one gain\nso a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;\ngains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured\nat the new gain.",
+    "description": "Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.\n\nMeasured as the clip plays (speed and its audio effects included), on integrated loudness (a clip under\na second of sound on its loudest moment). Cuts of one source share one gain\nso a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;\ngains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured\nat the new gain.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -2058,6 +2070,344 @@
         }
       },
       "title": "AutoMatch",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.roll",
+    "description": "Rolling Edit (N): move an edit point, trimming the outgoing clip's Out and the incoming clip's In\ntogether so nothing else moves. Without a neighbor it trims that edge alone.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "delta": {
+          "description": "sequence ticks the mouse moved (positive = later)",
+          "title": "Delta",
+          "type": "integer"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        },
+        "edge": {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "delta",
+        "edge"
+      ],
+      "title": "EdgeEdit",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.slip",
+    "description": "Slip (Y): keep the clip where it is and shift its In and Out in the source. Dragging right\n(positive delta) shows earlier source frames, as in Premiere.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "delta": {
+          "description": "sequence ticks the mouse moved (positive = later)",
+          "title": "Delta",
+          "type": "integer"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id",
+        "delta"
+      ],
+      "title": "ToolEdit",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.slide",
+    "description": "Slide (U): move the clip along the timeline keeping its content, while the clips around it\ngive and take: the previous clip's Out and the next clip's In follow, so the sequence length stays.\nA gap next to the clip is used up first.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "delta": {
+          "description": "sequence ticks the mouse moved (positive = later)",
+          "title": "Delta",
+          "type": "integer"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id",
+        "delta"
+      ],
+      "title": "ToolEdit",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.rate_stretch",
+    "description": "Rate Stretch (R): drag an edge to change the clip's duration by changing its speed; the same\nsource frames play, faster or slower.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "delta": {
+          "description": "sequence ticks the mouse moved (positive = later)",
+          "title": "Delta",
+          "type": "integer"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        },
+        "edge": {
+          "enum": [
+            "start",
+            "end"
+          ],
+          "title": "Edge",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "delta",
+        "edge"
+      ],
+      "title": "EdgeEdit",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.paste",
+    "description": "Paste (Ctrl+V) / Paste Insert (Ctrl+Shift+V): copies of clips at the playhead, keeping their\nspacing, tracks, links, effects and keyframes. The playhead moves to the end of the pasted clips.",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "PastedClip": {
+          "additionalProperties": false,
+          "properties": {
+            "track_id": {
+              "description": "the track it was copied from (pasted onto the same track, or shifted by track_offset)",
+              "title": "Track Id",
+              "type": "string"
+            },
+            "clip": {
+              "additionalProperties": true,
+              "description": "the copied clip as it appears in the document",
+              "title": "Clip",
+              "type": "object"
+            }
+          },
+          "required": [
+            "track_id",
+            "clip"
+          ],
+          "title": "PastedClip",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clips": {
+          "items": {
+            "$ref": "#/$defs/PastedClip"
+          },
+          "minItems": 1,
+          "title": "Clips",
+          "type": "array"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "where the earliest clip lands; default the playhead",
+          "title": "At"
+        },
+        "mode": {
+          "default": "overwrite",
+          "description": "Ctrl+V overwrites, Ctrl+Shift+V inserts",
+          "enum": [
+            "overwrite",
+            "insert"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clips"
+      ],
+      "title": "PasteClips",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.paste_attributes",
+    "description": "Paste Attributes (Ctrl+Alt+V): copy Motion, Opacity, Volume, speed (Time Remapping) and effects\n\u2014 with their keyframes \u2014 from a copied clip onto the selected clips. Video attributes go to video\nclips and Volume to audio clips; keyframes keep their offset from the clip start.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "source": {
+          "additionalProperties": true,
+          "description": "the copied clip",
+          "title": "Source",
+          "type": "object"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "attributes": {
+          "default": [
+            "motion",
+            "opacity",
+            "time_remapping",
+            "volume",
+            "effects"
+          ],
+          "description": "Paste Attributes dialog check boxes",
+          "items": {
+            "enum": [
+              "motion",
+              "opacity",
+              "time_remapping",
+              "volume",
+              "effects"
+            ],
+            "type": "string"
+          },
+          "title": "Attributes",
+          "type": "array"
+        },
+        "scale_keyframes": {
+          "default": false,
+          "description": "Scale Attribute Times: stretch keyframes to each target's length",
+          "title": "Scale Keyframes",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source",
+        "clip_ids"
+      ],
+      "title": "PasteAttributes",
       "type": "object"
     }
   },
