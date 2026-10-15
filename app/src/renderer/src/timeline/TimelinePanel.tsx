@@ -181,12 +181,23 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   const scrubRuler = (e: React.MouseEvent) => {
     const r = e.currentTarget.getBoundingClientRect()
-    const go = (cx: number) => {
-      const t = floorToFrame(toT(cx - r.left), st)
+    const go = (cx: number, shift: boolean) => {
+      let t = floorToFrame(toT(cx - r.left), st)
+      if (shift) {
+        // Shift: the playhead snaps to edit points, markers and In/Out (Premiere)
+        const thr = (SNAP_PX / pps) * TICKS_PER_SECOND
+        let best = thr
+        for (const p of snapPoints(new Set()).slice(1)) {
+          if (Math.abs(p - t) < best) {
+            best = Math.abs(p - t)
+            t = p
+          }
+        }
+      }
       goTo('program', Math.min(t, Math.max(end, t)))
     }
-    go(e.clientX)
-    const move = (ev: MouseEvent) => go(ev.clientX)
+    go(e.clientX, e.shiftKey)
+    const move = (ev: MouseEvent) => go(ev.clientX, ev.shiftKey)
     const up = () => {
       window.removeEventListener('mousemove', move)
       window.removeEventListener('mouseup', up)

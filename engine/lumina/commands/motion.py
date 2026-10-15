@@ -79,7 +79,7 @@ def clip_set_property(ctx: Context, p: SetProperty):
     return {"animated": True, "keyframe_t": t}
 
 
-INTERPS = ("linear", "ease", "hold", "bezier")
+INTERPS = ("linear", "ease", "hold", "bezier", "auto_bezier", "continuous_bezier")
 HANDLE_KEYS = ("ease_in", "ease_out", "tangent_in", "tangent_out")
 
 
@@ -96,12 +96,47 @@ def handles_of(k: dict) -> dict:
 
 
 def with_interp(k: dict, interp: str) -> dict:
-    """Changing to Easy Ease resets the temporal handles; other types keep them."""
+    """Changing to Easy Ease / Auto Bezier resets the temporal handles; other types keep them."""
     out = dict(k, interp=interp)
-    if interp == "ease":
+    if interp in ("ease", "auto_bezier"):
         out.pop("ease_in", None)
         out.pop("ease_out", None)
     return out
+
+
+# Effect Controls' keyframe context menu (Premiere's Temporal Interpolation)
+MENU_INTERPS = ("linear", "bezier", "auto_bezier", "continuous_bezier", "hold", "ease_in", "ease_out", "ease")
+
+
+def set_interp(kfs: list[dict], times: set[int], interp: str) -> list[dict]:
+    """Change the interpolation of the keyframes at ``times``, keeping the curve's current shape
+    where the new type has handles (Bezier, Continuous Bezier, the untouched side of Ease In/Out)."""
+    out = [dict(k) for k in kfs]
+    for i, k in enumerate(out):
+        if k["t"] not in times:
+            continue
+        hin, hout = effective_handle(kfs, i, "in"), effective_handle(kfs, i, "out")
+        if interp == "linear":
+            k["interp"] = "linear"
+            k.pop("ease_in", None)
+            k.pop("ease_out", None)
+        elif interp == "hold":
+            k["interp"] = "hold"
+        elif interp == "bezier":
+            k.update(interp="bezier", ease_in=hin, ease_out=hout)
+        elif interp == "continuous_bezier":
+            speed = (hin[0] + hout[0]) / 2
+            k.update(interp="continuous_bezier", ease_in=[speed, hin[1]], ease_out=[speed, hout[1]])
+        elif interp == "ease_in":
+            k.update(interp="bezier", ease_in=list(EASY), ease_out=hout)
+        elif interp == "ease_out":
+            k.update(interp="bezier", ease_in=hin, ease_out=list(EASY))
+        else:  # ease, auto_bezier
+            out[i] = with_interp(k, interp)
+    return out
+
+
+EASY = (0.0, 1 / 3)
 
 
 def effective_handle(kfs: list[dict], i: int, side: str) -> list[float]:
@@ -109,10 +144,16 @@ def effective_handle(kfs: list[dict], i: int, side: str) -> list[float]:
     linear side the handle that draws the same straight segment (segment speed, 1/3)."""
     from ..motion import EASY_EASE
 
+    from ..motion import auto_speed
+
     k = kfs[i]
-    if k.get("interp") in ("bezier", "ease"):
+    if k.get("interp") == "auto_bezier":
+        return [auto_speed(kfs, i), 1 / 3]
+    if k.get("interp") in ("bezier", "ease", "continuous_bezier"):
         h = k.get("ease_" + side)
-        return [float(h[0]), float(h[1])] if h else list(EASY_EASE)
+        if h:
+            return [float(h[0]), float(h[1])]
+        return [auto_speed(kfs, i), 1 / 3] if k["interp"] == "continuous_bezier" else list(EASY_EASE)
     j = i + 1 if side == "out" else i - 1
     if j < 0 or j >= len(kfs):
         return [0.0, 1 / 3]
@@ -138,7 +179,13 @@ def with_ease(kfs: list[dict], t: int, side: str, speed: float, influence: float
     for sd in ("in", "out"):
         k["ease_" + sd] = effective_handle(kfs, i, sd)
     k["ease_" + side] = [float(speed), min(1.0, max(0.01, float(influence)))]
-    k["interp"] = "bezier"
+    if kfs[i].get("interp") in ("auto_bezier", "continuous_bezier"):
+        # like Premiere: dragging an Auto/Continuous Bezier handle keeps both sides at one speed
+        other = "in" if side == "out" else "out"
+        k["ease_" + other] = [float(speed), k["ease_" + other][1]]
+        k["interp"] = "continuous_bezier"
+    else:
+        k["interp"] = "bezier"
     return out
 
 
@@ -194,7 +241,7 @@ class KeyframeOp(Params):
     prop: KeyframeProp
     at: TimeValue | None = None
     op: Literal["add", "remove", "toggle"] = "toggle"
-    interp: Literal["linear", "ease", "hold", "bezier"] | None = None
+    interp: Literal["linear", "ease", "hold", "bezier", "auto_bezier", "continuous_bezier"] | None = None
 
 
 @command("clip.keyframe", KeyframeOp)
@@ -249,7 +296,7 @@ def clip_set_keyframes(ctx: Context, p: SetKeyframes):
         out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_value(p.prop, k["v"]),
                     "interp": k.get("interp", "linear"), **handles_of(k)})
         if out[-1]["interp"] not in INTERPS:
-            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier")
+            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier | auto_bezier | continuous_bezier")
     ctx.m.set(path, sorted(out, key=lambda k: k["t"]))
     return {"count": len(out)}
 

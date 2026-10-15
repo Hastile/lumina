@@ -1830,6 +1830,84 @@
     }
   },
   {
+    "name": "clip.set_keyframe_ease",
+    "description": "Bezier handle of a Motion/Opacity/Volume keyframe: speed and influence on one side.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "prop": {
+          "enum": [
+            "position",
+            "scale",
+            "scale_width",
+            "rotation",
+            "anchor",
+            "crop_left",
+            "crop_top",
+            "crop_right",
+            "crop_bottom",
+            "opacity",
+            "volume_db"
+          ],
+          "title": "Prop",
+          "type": "string"
+        },
+        "t": {
+          "description": "the keyframe's time (source ticks, as stored)",
+          "title": "T",
+          "type": "integer"
+        },
+        "side": {
+          "enum": [
+            "in",
+            "out"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "speed": {
+          "description": "value units per second (points: pixels per second along the path)",
+          "title": "Speed",
+          "type": "number"
+        },
+        "influence": {
+          "description": "fraction of the segment, 0-1",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Influence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip_id",
+        "prop",
+        "t",
+        "side",
+        "speed",
+        "influence"
+      ],
+      "title": "KeyframeEase",
+      "type": "object"
+    }
+  },
+  {
     "name": "clip.toggle_animation",
     "description": "The stopwatch: start animating (keyframe at `at` with the current value) or stop (drop keyframes, keep value at `at`).",
     "undoable": true,
@@ -1964,7 +2042,10 @@
               "enum": [
                 "linear",
                 "ease",
-                "hold"
+                "hold",
+                "bezier",
+                "auto_bezier",
+                "continuous_bezier"
               ],
               "type": "string"
             },
@@ -3989,6 +4070,47 @@
     }
   },
   {
+    "name": "effect.apply_preset",
+    "description": "Apply an effect preset: its effects are appended with keyframes fitted to each clip\n(anchored to the clip's in or out point, or scaled to its length, as saved).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "preset_id": {
+          "description": "an id from presets.list (the Effects panel's Presets folder)",
+          "title": "Preset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "preset_id"
+      ],
+      "title": "ApplyPreset",
+      "type": "object"
+    }
+  },
+  {
     "name": "effect.remove",
     "description": "Delete an effect from a clip.",
     "undoable": true,
@@ -4218,6 +4340,91 @@
     }
   },
   {
+    "name": "effect.set_keyframe_ease",
+    "description": "Bezier handle of an effect-parameter keyframe: speed and influence on one side.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "effect_id": {
+          "title": "Effect Id",
+          "type": "string"
+        },
+        "param": {
+          "title": "Param",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "At"
+        },
+        "t": {
+          "description": "the keyframe's time (source ticks, as stored)",
+          "title": "T",
+          "type": "integer"
+        },
+        "side": {
+          "enum": [
+            "in",
+            "out"
+          ],
+          "title": "Side",
+          "type": "string"
+        },
+        "speed": {
+          "description": "value units per second (points: pixels per second along the path)",
+          "title": "Speed",
+          "type": "number"
+        },
+        "influence": {
+          "description": "fraction of the segment, 0-1",
+          "maximum": 1,
+          "minimum": 0,
+          "title": "Influence",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip_id",
+        "effect_id",
+        "param",
+        "t",
+        "side",
+        "speed",
+        "influence"
+      ],
+      "title": "ParamEase",
+      "type": "object"
+    }
+  },
+  {
     "name": "effect.keyframe",
     "description": "Add / remove / toggle an effect-parameter keyframe at a time, or change its interpolation.",
     "undoable": true,
@@ -4279,7 +4486,10 @@
               "enum": [
                 "linear",
                 "ease",
-                "hold"
+                "hold",
+                "bezier",
+                "auto_bezier",
+                "continuous_bezier"
               ],
               "type": "string"
             },
@@ -4667,6 +4877,364 @@
         "path"
       ],
       "title": "ImportPremiere",
+      "type": "object"
+    }
+  },
+  {
+    "name": "keyframes.set_interp",
+    "description": "Temporal interpolation of selected keyframes (Linear, Bezier, Auto Bezier, Continuous Bezier,\nHold, Ease In, Ease Out), keeping the curve's shape where the new type has handles.",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "KeyframeTarget": {
+          "properties": {
+            "prop": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "position",
+                    "scale",
+                    "scale_width",
+                    "rotation",
+                    "anchor",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "opacity",
+                    "volume_db"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "a Motion/Opacity/Volume property",
+              "title": "Prop"
+            },
+            "effect_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "or an effect's parameter: the effect ...",
+              "title": "Effect Id"
+            },
+            "param": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "... and the parameter name",
+              "title": "Param"
+            },
+            "times": {
+              "description": "the selected keyframes' times (source ticks, as stored)",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "title": "Times",
+              "type": "array"
+            }
+          },
+          "required": [
+            "times"
+          ],
+          "title": "KeyframeTarget",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/KeyframeTarget"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        },
+        "interp": {
+          "description": "Premiere's Temporal Interpolation menu; ease = Easy Ease (both sides)",
+          "enum": [
+            "linear",
+            "bezier",
+            "auto_bezier",
+            "continuous_bezier",
+            "hold",
+            "ease_in",
+            "ease_out",
+            "ease"
+          ],
+          "title": "Interp",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "targets",
+        "interp"
+      ],
+      "title": "SetInterp",
+      "type": "object"
+    }
+  },
+  {
+    "name": "keyframes.move",
+    "description": "Drag selected keyframes in time; a keyframe they land on is replaced (as in Premiere).",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "KeyframeTarget": {
+          "properties": {
+            "prop": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "position",
+                    "scale",
+                    "scale_width",
+                    "rotation",
+                    "anchor",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "opacity",
+                    "volume_db"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "a Motion/Opacity/Volume property",
+              "title": "Prop"
+            },
+            "effect_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "or an effect's parameter: the effect ...",
+              "title": "Effect Id"
+            },
+            "param": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "... and the parameter name",
+              "title": "Param"
+            },
+            "times": {
+              "description": "the selected keyframes' times (source ticks, as stored)",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "title": "Times",
+              "type": "array"
+            }
+          },
+          "required": [
+            "times"
+          ],
+          "title": "KeyframeTarget",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/KeyframeTarget"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        },
+        "delta": {
+          "description": "sequence ticks to move by (snapped to frames by the caller)",
+          "title": "Delta",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "clip_id",
+        "targets",
+        "delta"
+      ],
+      "title": "MoveKeyframes",
+      "type": "object"
+    }
+  },
+  {
+    "name": "keyframes.delete",
+    "description": "Delete selected keyframes; a property left without keyframes keeps the value at the playhead.",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "KeyframeTarget": {
+          "properties": {
+            "prop": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "position",
+                    "scale",
+                    "scale_width",
+                    "rotation",
+                    "anchor",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "opacity",
+                    "volume_db"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "a Motion/Opacity/Volume property",
+              "title": "Prop"
+            },
+            "effect_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "or an effect's parameter: the effect ...",
+              "title": "Effect Id"
+            },
+            "param": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "... and the parameter name",
+              "title": "Param"
+            },
+            "times": {
+              "description": "the selected keyframes' times (source ticks, as stored)",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "title": "Times",
+              "type": "array"
+            }
+          },
+          "required": [
+            "times"
+          ],
+          "title": "KeyframeTarget",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/KeyframeTarget"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_id",
+        "targets"
+      ],
+      "title": "KeyframeSelection",
       "type": "object"
     }
   }

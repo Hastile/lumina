@@ -265,7 +265,68 @@ try {
   assert.ok(zoomed && zoomed.clipId === v1clip, 'Ctrl+wheel zooms the Effect Controls lane')
   await lane.dblclick()
   assert.equal(await page.evaluate(() => window.__lumina.get().ecView), null)
-  await page.evaluate(async () => { await window.__lumina.engine.call('undo'); await window.__lumina.engine.call('undo') })
+  // keyframe icons, right-click Temporal Interpolation, marquee select, drag, Delete
+  const opKfs = () => page.evaluate((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).keyframes.opacity ?? null
+  }, v1clip)
+  const kfIcon = (i) => page.locator('.lm-ec [data-kf^="p:opacity@"]').nth(i)
+  await kfIcon(0).click({ button: 'right' })
+  await page.locator('.lm-ctx .item', { hasText: '자동 베지어' }).click()
+  await page.waitForFunction(() => document.querySelector('.lm-ec [data-kf^="p:opacity@"] svg')?.dataset.shape === 'auto-auto', null, { timeout: 10000 })
+  assert.equal((await opKfs())[0].interp, 'auto_bezier')
+  await kfIcon(1).click({ button: 'right' })
+  await page.locator('.lm-ctx .item', { hasText: '정지' }).click()
+  await page.waitForFunction(() => document.querySelectorAll('.lm-ec [data-kf^="p:opacity@"] svg')[1]?.dataset.shape === 'linear-hold', null, { timeout: 10000 })
+  const laneBox = await kfIcon(0).locator('xpath=..').boundingBox()
+  const k0 = await kfIcon(0).boundingBox()
+  await page.mouse.move(laneBox.x + 1, k0.y - 3)
+  await page.mouse.down()
+  await page.mouse.move(laneBox.x + laneBox.width + 10, k0.y + k0.height + 3, { steps: 5 })
+  assert.ok(await page.locator('.lm-kmarquee').isVisible(), 'the marquee rectangle is drawn')
+  await page.mouse.up()
+  const sel = await page.evaluate(() => window.__lumina.get().kfSel?.keys ?? [])
+  assert.equal(sel.filter((k) => k.startsWith('p:opacity@')).length, 2, `marquee selected ${sel}`)
+  const kfBefore = await opKfs()
+  const k1 = await kfIcon(1).boundingBox()
+  await page.mouse.move(k1.x + k1.width / 2, k1.y + k1.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(k1.x + k1.width / 2 + 25, k1.y + k1.height / 2, { steps: 5 })
+  await page.mouse.up()
+  const movedKfs = await page.waitForFunction((args) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const k = Object.values(seq.tracks).map((t) => t.clips[args.id]).find(Boolean).keyframes.opacity
+    return k && k[0].t > args.t0 ? k : null
+  }, { id: v1clip, t0: kfBefore[0].t }, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.equal(movedKfs[1].t - movedKfs[0].t, kfBefore[1].t - kfBefore[0].t, 'both selected keyframes moved together')
+  await page.locator('.lm-ec .lm-ec-title').click()
+  await page.keyboard.press('Delete')
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return !Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).keyframes.opacity
+  }, v1clip, { timeout: 10000 })
+  log('keyframes: right-click Auto Bezier / Hold (icons auto-auto, linear-hold), marquee selected 2, dragged', ((movedKfs[0].t - kfBefore[0].t) / TPS).toFixed(3), 's, Delete removed them')
+  for (let i = 0; i < 6; i++) await page.evaluate(() => window.__lumina.engine.call('undo'))
+  assert.equal((await opKfs())?.length ?? 0, 0, 'six undo steps restore the opacity property')
+  // Shift+drag on the ruler snaps the playhead to an edit point
+  const edge = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks[seq.video_tracks[0]].clips).map((c) => c.end).sort((a, b) => a - b)[0]
+  })
+  const rulerBox = await page.locator('.lm-ruler').boundingBox()
+  const { pxPerSecond: rulerPps, scrollX } = await page.evaluate(() => window.__lumina.get())
+  const ex = rulerBox.x + (edge / TPS) * rulerPps - scrollX + 4
+  await page.keyboard.down('Shift')
+  await page.mouse.click(ex, rulerBox.y + rulerBox.height / 2)
+  await page.keyboard.up('Shift')
+  assert.equal(await page.evaluate(() => window.__lumina.get().programTime), edge, 'Shift snaps the playhead to the edit')
+  await page.mouse.click(ex, rulerBox.y + rulerBox.height / 2)
+  assert.notEqual(await page.evaluate(() => window.__lumina.get().programTime), edge, 'without Shift it does not snap')
+  log('Shift+click on the ruler snapped the playhead to the edit at', (edge / TPS).toFixed(3), 's')
   log('Effect Controls: twirl-down velocity graph drag set ease_out', eased.ease_out.map((x) => x.toFixed(2)).join(', '), '; lane zoom + reset')
 
   // ---- WYSIWYG: the GPU-composited Program monitor matches the export renderer pixel for pixel

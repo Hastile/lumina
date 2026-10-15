@@ -157,3 +157,79 @@ def test_keyframe_ease_handles_keep_the_other_side():
     assert interpolate(kfs, k1["t"] + SEC // 4) != pytest.approx(before[1])
     s.undo()
     assert clip()["keyframes"]["opacity"][1]["interp"] == "linear"
+
+
+def _kf_setup():
+    s, sid, (a, *_) = make()
+    cid = s.execute("clip.place", {"media_id": a, "at": 0})["result"]["video_clip_id"]
+    s.execute("clip.set_keyframes", {"clip_id": cid, "prop": "opacity", "keyframes": [
+        {"t": 0, "v": 0, "interp": "linear"}, {"t": "1s", "v": 100, "interp": "linear"}, {"t": "2s", "v": 50, "interp": "linear"}]})
+    seq = s.doc["sequences"][sid]
+    clip = lambda: next(c for t in seq["tracks"].values() for c in t["clips"].values() if c["id"] == cid)
+    return s, cid, clip
+
+
+def test_auto_bezier_is_smooth_through_the_keyframe():
+    kfs = [{"t": 0, "v": 0, "interp": "linear"}, {"t": SEC, "v": 100, "interp": "auto_bezier"}, {"t": 2 * SEC, "v": 100, "interp": "linear"}]
+    # slope through the neighbours: (100 - 0) / 2 s = 50 /s on both sides of the middle keyframe
+    eps = SEC // 1000
+    left = (interpolate(kfs, SEC) - interpolate(kfs, SEC - eps)) / (eps / SEC)
+    right = (interpolate(kfs, SEC + eps) - interpolate(kfs, SEC)) / (eps / SEC)
+    assert left == pytest.approx(50, rel=0.02) and right == pytest.approx(50, rel=0.02)
+
+
+def test_keyframes_set_interp_keeps_shape_and_menu_types():
+    s, cid, clip = _kf_setup()
+    k1 = clip()["keyframes"]["opacity"][1]["t"]
+    before = [interpolate(clip()["keyframes"]["opacity"], t) for t in (SEC // 2, 3 * SEC // 2)]
+    s.execute("keyframes.set_interp", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k1]}], "interp": "bezier"})
+    kfs = clip()["keyframes"]["opacity"]
+    assert kfs[1]["interp"] == "bezier"
+    assert [interpolate(kfs, t) for t in (SEC // 2, 3 * SEC // 2)] == pytest.approx(before), "Bezier keeps the linear shape"
+    s.execute("keyframes.set_interp", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k1]}], "interp": "ease_in"})
+    k = clip()["keyframes"]["opacity"][1]
+    assert k["ease_in"] == pytest.approx([0, 1 / 3]) and k["ease_out"] == pytest.approx([-50, 1 / 3])
+    s.execute("keyframes.set_interp", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k1]}], "interp": "continuous_bezier"})
+    k = clip()["keyframes"]["opacity"][1]
+    assert k["interp"] == "continuous_bezier" and k["ease_in"][0] == pytest.approx(k["ease_out"][0])
+    # dragging one handle of a continuous keyframe moves both speeds
+    s.execute("clip.set_keyframe_ease", {"clip_id": cid, "prop": "opacity", "t": k1, "side": "out", "speed": 10, "influence": 0.5})
+    k = clip()["keyframes"]["opacity"][1]
+    assert k["ease_in"][0] == 10 and k["ease_out"] == [10, 0.5]
+    s.execute("keyframes.set_interp", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k1]}], "interp": "auto_bezier"})
+    k = clip()["keyframes"]["opacity"][1]
+    assert k["interp"] == "auto_bezier" and "ease_in" not in k
+    s.execute("keyframes.set_interp", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [0, k1]}], "interp": "hold"})
+    assert [k["interp"] for k in clip()["keyframes"]["opacity"]] == ["hold", "hold", "linear"]
+
+
+def test_keyframes_move_and_delete():
+    s, cid, clip = _kf_setup()
+    kfs = clip()["keyframes"]["opacity"]
+    s.execute("keyframes.move", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [kfs[1]["t"]]}], "delta": SEC // 2})
+    assert [k["t"] for k in clip()["keyframes"]["opacity"]] == [kfs[0]["t"], kfs[1]["t"] + SEC // 2, kfs[2]["t"]]
+    # landing on another keyframe replaces it
+    s.execute("keyframes.move", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [kfs[1]["t"] + SEC // 2]}], "delta": SEC // 2})
+    assert [k["v"] for k in clip()["keyframes"]["opacity"]] == [0, 100]
+    s.execute("keyframes.delete", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k["t"] for k in clip()["keyframes"]["opacity"]]}]})
+    assert "opacity" not in clip()["keyframes"]
+    s.undo()
+    assert len(clip()["keyframes"]["opacity"]) == 2
+    with pytest.raises(CommandError):
+        s.execute("keyframes.delete", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [12345]}]})
+
+
+def test_keyframes_on_effect_params():
+    s, cid, clip = _kf_setup()
+    fx = s.execute("effect.add", {"clip_ids": [cid], "type": "gaussian_blur"})["result"]
+    eid = clip()["effects"][0]["id"]
+    s.execute("effect.set_keyframes", {"clip_id": cid, "effect_id": eid, "param": "blurriness", "keyframes": [{"t": 0, "v": 0}, {"t": "1s", "v": 20}]})
+    times = [k["t"] for k in clip()["effects"][0]["keyframes"]["blurriness"]]
+    s.execute("keyframes.set_interp", {"clip_id": cid, "interp": "ease_out", "targets": [
+        {"effect_id": eid, "param": "blurriness", "times": times[:1]}, {"prop": "opacity", "times": [0]}]})
+    assert clip()["effects"][0]["keyframes"]["blurriness"][0]["ease_out"] == pytest.approx([0, 1 / 3])
+    assert clip()["keyframes"]["opacity"][0]["ease_out"] == pytest.approx([0, 1 / 3])
+    s.execute("keyframes.delete", {"clip_id": cid, "targets": [{"effect_id": eid, "param": "blurriness", "times": times}]})
+    e = clip()["effects"][0]
+    assert "blurriness" not in e["keyframes"] and isinstance(e["params"]["blurriness"], float | int)
+    assert fx is not None

@@ -28,14 +28,35 @@ def source_time(clip: dict, seq_time: int) -> int:
 EASY_EASE = (0.0, 1 / 3)  # Premiere's Easy Ease handle: speed 0, influence 33.3 %
 
 
-def _handle(k: dict, side: str):
-    """(speed, influence) of a keyframe's Bezier handle on ``side`` ('in'/'out'), or None for linear."""
-    if k.get("interp") not in ("bezier", "ease"):
+BEZIERS = ("bezier", "ease", "auto_bezier", "continuous_bezier")
+
+
+def auto_speed(kfs: list[dict], i: int) -> float:
+    """Auto Bezier's handle speed: the slope through the neighbours (the adjacent segment's at the
+    ends), so the curve passes smoothly through the keyframe. Points: speed along the path."""
+    k = kfs[i]
+    a = kfs[max(0, i - 1)]
+    b = kfs[min(len(kfs) - 1, i + 1)]
+    dt = (b["t"] - a["t"]) / TICKS_PER_SECOND
+    if dt <= 0:
+        return 0.0
+    if isinstance(k["v"], list):
+        return (math.dist(a["v"], k["v"]) + math.dist(k["v"], b["v"])) / dt
+    return (b["v"] - a["v"]) / dt
+
+
+def _handle(kfs: list[dict], i: int, side: str):
+    """(speed, influence) of keyframe ``i``'s Bezier handle on ``side`` ('in'/'out'), or None for linear."""
+    k = kfs[i]
+    interp = k.get("interp")
+    if interp not in BEZIERS:
         return None
+    if interp == "auto_bezier":
+        return auto_speed(kfs, i), 1 / 3
     h = k.get("ease_" + side)
     if h:
         return float(h[0]), min(1.0, max(0.0, float(h[1])))
-    return EASY_EASE
+    return (auto_speed(kfs, i), 1 / 3) if interp == "continuous_bezier" else EASY_EASE
 
 
 def _cubic(p0: float, p1: float, p2: float, p3: float, u: float) -> float:
@@ -43,11 +64,10 @@ def _cubic(p0: float, p1: float, p2: float, p3: float, u: float) -> float:
     return v * v * v * p0 + 3 * v * v * u * p1 + 3 * v * u * u * p2 + u * u * u * p3
 
 
-def _progress(a: dict, b: dict, u: float, dist: float) -> float:
+def _progress(a: dict, b: dict, ha, hb, u: float, dist: float) -> float:
     """Temporal Bezier: distance covered (0..dist) at time fraction u of the segment.
     Control points in (time fraction, distance); handle heights are speed x
     influence x segment duration, as in After Effects."""
-    ha, hb = _handle(a, "out"), _handle(b, "in")
     if ha is None and hb is None:
         return u * dist
     dt = (b["t"] - a["t"]) / TICKS_PER_SECOND
@@ -70,14 +90,14 @@ def _path_point(q: list[list[float]], s: float) -> list[float]:
     return [_cubic(q[0][i], q[1][i], q[2][i], q[3][i], s) for i in range(len(q[0]))]
 
 
-def _point_at(a: dict, b: dict, u: float) -> list[float]:
+def _point_at(a: dict, b: dict, ha, hb, u: float) -> list[float]:
     pa, pb = [float(x) for x in a["v"]], [float(x) for x in b["v"]]
     to, ti = a.get("tangent_out"), b.get("tangent_in")
     if not to and not ti:
         dist = math.dist(pa, pb)
         if dist == 0:
             return pa
-        f = _progress(a, b, u, dist) / dist
+        f = _progress(a, b, ha, hb, u, dist) / dist
         return [x + (y - x) * f for x, y in zip(pa, pb)]
     q = [pa, [x + d for x, d in zip(pa, to or [0.0] * len(pa))], [x + d for x, d in zip(pb, ti or [0.0] * len(pb))], pb]
     pts = [_path_point(q, i / PATH_STEPS) for i in range(PATH_STEPS + 1)]
@@ -87,7 +107,7 @@ def _point_at(a: dict, b: dict, u: float) -> list[float]:
     total = cum[-1]
     if total == 0:
         return pa
-    d = min(max(_progress(a, b, u, total), 0.0), total)
+    d = min(max(_progress(a, b, ha, hb, u, total), 0.0), total)
     for i in range(PATH_STEPS):
         if cum[i + 1] >= d:
             seg = cum[i + 1] - cum[i]
@@ -104,19 +124,20 @@ def interpolate(keyframes: list[dict], t: int):
         return keyframes[0]["v"]
     if t >= keyframes[-1]["t"]:
         return keyframes[-1]["v"]
-    for a, b in zip(keyframes, keyframes[1:]):
+    for i in range(len(keyframes) - 1):
+        a, b = keyframes[i], keyframes[i + 1]
         if a["t"] <= t < b["t"]:
             if a["interp"] == "hold":
                 return a["v"]
             u = (t - a["t"]) / (b["t"] - a["t"])
+            ha, hb = _handle(keyframes, i, "out"), _handle(keyframes, i + 1, "in")
             if isinstance(a["v"], list):
-                return _point_at(a, b, u)
+                return _point_at(a, b, ha, hb, u)
             dv = b["v"] - a["v"]
-            ha, hb = _handle(a, "out"), _handle(b, "in")
             if ha is None and hb is None:
                 return a["v"] + dv * u
             # scalar: the "distance" is the value itself (speeds are signed)
-            return a["v"] + _progress(a, b, u, dv)
+            return a["v"] + _progress(a, b, ha, hb, u, dv)
     return keyframes[-1]["v"]
 
 

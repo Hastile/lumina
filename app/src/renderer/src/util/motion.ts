@@ -4,10 +4,11 @@
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 
 export type KfValue = number | number[]
+export type Interp = 'linear' | 'ease' | 'hold' | 'bezier' | 'auto_bezier' | 'continuous_bezier'
 export type Kf = {
   t: number
   v: KfValue
-  interp: 'linear' | 'ease' | 'hold' | 'bezier'
+  interp: Interp
   ease_in?: number[] | null
   ease_out?: number[] | null
   tangent_in?: number[] | null
@@ -28,11 +29,27 @@ export const seqTimeOf = (clip: Clip, srcTime: number): number => clip.start + (
 const TICKS_PER_SECOND = 254016000000
 const EASY_EASE: [number, number] = [0, 1 / 3] // Premiere's Easy Ease: speed 0, influence 33.3 %
 
-function handle(k: Kf, side: 'in' | 'out'): [number, number] | null {
-  if (k.interp !== 'bezier' && k.interp !== 'ease') return null
+const BEZIERS: Interp[] = ['bezier', 'ease', 'auto_bezier', 'continuous_bezier']
+export const isBezier = (i: Interp): boolean => BEZIERS.includes(i)
+
+/** Auto Bezier's handle speed: the slope through the neighbours (the adjacent segment's at the ends). */
+export function autoSpeed(kfs: Kf[], i: number): number {
+  const k = kfs[i]
+  const a = kfs[Math.max(0, i - 1)]
+  const b = kfs[Math.min(kfs.length - 1, i + 1)]
+  const dt = (b.t - a.t) / TICKS_PER_SECOND
+  if (dt <= 0) return 0
+  if (Array.isArray(k.v)) return (dist(a.v as number[], k.v) + dist(k.v, b.v as number[])) / dt
+  return ((b.v as number) - (a.v as number)) / dt
+}
+
+export function handle(kfs: Kf[], i: number, side: 'in' | 'out'): [number, number] | null {
+  const k = kfs[i]
+  if (!isBezier(k.interp)) return null
+  if (k.interp === 'auto_bezier') return [autoSpeed(kfs, i), 1 / 3]
   const h = side === 'in' ? k.ease_in : k.ease_out
   if (h) return [h[0], Math.min(1, Math.max(0, h[1]))]
-  return EASY_EASE
+  return k.interp === 'continuous_bezier' ? [autoSpeed(kfs, i), 1 / 3] : EASY_EASE
 }
 
 const cubic = (p0: number, p1: number, p2: number, p3: number, u: number) => {
@@ -41,9 +58,7 @@ const cubic = (p0: number, p1: number, p2: number, p3: number, u: number) => {
 }
 
 /** Temporal Bezier (After Effects model): distance covered at time fraction u. */
-function progress(a: Kf, b: Kf, u: number, dist: number): number {
-  const ha = handle(a, 'out')
-  const hb = handle(b, 'in')
+function progress(a: Kf, b: Kf, ha: [number, number] | null, hb: [number, number] | null, u: number, dist: number): number {
   if (!ha && !hb) return u * dist
   const dt = (b.t - a.t) / TICKS_PER_SECOND
   const [x1, y1] = ha ? [ha[1], ha[0] * ha[1] * dt] : [1 / 3, dist / 3]
@@ -61,7 +76,7 @@ function progress(a: Kf, b: Kf, u: number, dist: number): number {
 const PATH_STEPS = 64
 const dist = (p: number[], q: number[]) => Math.hypot(...p.map((x, i) => x - q[i]))
 
-function pointAt(a: Kf, b: Kf, u: number): number[] {
+function pointAt(a: Kf, b: Kf, ha: [number, number] | null, hb: [number, number] | null, u: number): number[] {
   const pa = a.v as number[]
   const pb = b.v as number[]
   const to = a.tangent_out
@@ -69,7 +84,7 @@ function pointAt(a: Kf, b: Kf, u: number): number[] {
   if (!to && !ti) {
     const d = dist(pa, pb)
     if (d === 0) return [...pa]
-    const f = progress(a, b, u, d) / d
+    const f = progress(a, b, ha, hb, u, d) / d
     return pa.map((x, i) => x + (pb[i] - x) * f)
   }
   const q = [pa, pa.map((x, i) => x + (to?.[i] ?? 0)), pb.map((x, i) => x + (ti?.[i] ?? 0)), pb]
@@ -79,7 +94,7 @@ function pointAt(a: Kf, b: Kf, u: number): number[] {
   for (let i = 0; i < PATH_STEPS; i++) cum.push(cum[i] + dist(pts[i], pts[i + 1]))
   const total = cum[PATH_STEPS]
   if (total === 0) return [...pa]
-  const d = Math.min(Math.max(progress(a, b, u, total), 0), total)
+  const d = Math.min(Math.max(progress(a, b, ha, hb, u, total), 0), total)
   for (let i = 0; i < PATH_STEPS; i++) {
     if (cum[i + 1] >= d) {
       const seg = cum[i + 1] - cum[i]
@@ -100,10 +115,12 @@ export function interpolate(kfs: Kf[], t: number): KfValue {
     if (a.t <= t && t < b.t) {
       if (a.interp === 'hold') return a.v
       const u = (t - a.t) / (b.t - a.t)
-      if (Array.isArray(a.v)) return pointAt(a, b, u)
+      const ha = handle(kfs, i, 'out')
+      const hb = handle(kfs, i + 1, 'in')
+      if (Array.isArray(a.v)) return pointAt(a, b, ha, hb, u)
       const dv = (b.v as number) - (a.v as number)
-      if (!handle(a, 'out') && !handle(b, 'in')) return (a.v as number) + dv * u
-      return (a.v as number) + progress(a, b, u, dv)
+      if (!ha && !hb) return (a.v as number) + dv * u
+      return (a.v as number) + progress(a, b, ha, hb, u, dv)
     }
   }
   return last.v

@@ -3,6 +3,7 @@
 // only talk to the engine through commands - never by editing state locally.
 
 import type { Clip, Sequence } from '../engine/document'
+import { deleteSelectedKeyframes } from '../panels/KeyframeSelect'
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { dockApi, buildEditingLayout, focusPanel, toggleMaximize } from '../layout/dock'
@@ -330,6 +331,7 @@ def('edit.undo', t('Undo'), async () => void (await call('undo')))
 def('edit.redo', t('Redo'), async () => void (await call('redo')))
 def('edit.clear', t('Clear'), async () => {
   const s = get()
+  if (deleteSelectedKeyframes()) return
   if (s.focusedPanel === 'project') {
     const doc = s.doc!
     for (const id of s.selectedItems) {

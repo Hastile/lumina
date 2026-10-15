@@ -4,7 +4,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import { interpolate, seqTimeOf, sourceTime, type Kf } from '../util/motion'
+import { autoSpeed, interpolate, isBezier, seqTimeOf, sourceTime, type Kf } from '../util/motion'
 import { laneSpan, type ClipCtx } from './PropertyControls'
 import { useStore } from '../state/store'
 
@@ -14,9 +14,11 @@ const EASY: [number, number] = [0, 1 / 3]
 /** [speed, influence] a keyframe side behaves as now (twin of engine commands.motion.effective_handle). */
 export function effectiveHandle(kfs: Kf[], i: number, side: 'in' | 'out'): [number, number] {
   const k = kfs[i]
-  if (k.interp === 'bezier' || k.interp === 'ease') {
+  if (k.interp === 'auto_bezier') return [autoSpeed(kfs, i), 1 / 3]
+  if (k.interp === 'bezier' || k.interp === 'ease' || k.interp === 'continuous_bezier') {
     const h = side === 'in' ? k.ease_in : k.ease_out
-    return h ? [h[0], h[1]] : [...EASY]
+    if (h) return [h[0], h[1]]
+    return k.interp === 'continuous_bezier' ? [autoSpeed(kfs, i), 1 / 3] : [...EASY]
   }
   const j = side === 'out' ? i + 1 : i - 1
   if (j < 0 || j >= kfs.length) return [0, 1 / 3]
@@ -36,7 +38,12 @@ function withEase(kfs: Kf[], i: number, side: 'in' | 'out', speed: number, influ
   k.ease_out = effectiveHandle(kfs, i, 'out')
   if (side === 'in') k.ease_in = [speed, Math.min(1, Math.max(0.01, influence))]
   else k.ease_out = [speed, Math.min(1, Math.max(0.01, influence))]
-  k.interp = 'bezier'
+  if (kfs[i].interp === 'auto_bezier' || kfs[i].interp === 'continuous_bezier') {
+    // dragging an Auto/Continuous Bezier handle keeps both sides at one speed (engine twin)
+    if (side === 'in') k.ease_out = [speed, k.ease_out[1]]
+    else k.ease_in = [speed, k.ease_in[1]]
+    k.interp = 'continuous_bezier'
+  } else k.interp = 'bezier'
   return out
 }
 
@@ -101,7 +108,7 @@ export function KeyframeGraphs({ c, kfs, onEase }: { c: ClipCtx; kfs: Kf[]; onEa
       const j = side === 'in' ? i - 1 : i + 1
       if (j < 0 || j >= frames.length) continue
       const [speed, infl] = effectiveHandle(frames, i, side)
-      handles.push({ i, side, t: k.t, speed, infl, dt: Math.abs(frames[j].t - k.t), dim: !(k.interp === 'bezier' || k.interp === 'ease') })
+      handles.push({ i, side, t: k.t, speed, infl, dt: Math.abs(frames[j].t - k.t), dim: !isBezier(k.interp) })
     }
   })
   const vRange = (arr: number[], extra: number[]) => {

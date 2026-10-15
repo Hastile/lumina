@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Timer } from 'lucide-react'
 import { AngleDial, KeyframeGraphs, ValueSlider } from './KeyframeGraph'
+import { keyframeMenu, keyframeMouseDown, KfIcon, kfKey, type KfTarget } from './KeyframeSelect'
 import { t } from '@shared/i18n'
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 import { activeSequence, exec, findClip, useStore } from '../state/store'
@@ -135,6 +136,7 @@ export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: Ke
       label={t(label ?? LABELS[prop])}
       onToggle={() => void exec('clip.toggle_animation', { ...base, prop }, t('Toggle animation'))}
       onKey={() => void exec('clip.keyframe', { ...base, prop }, t('Add/Remove Keyframe'))}
+      target={{ prop }}
       expand={{
         ...spec,
         value: typeof v === 'number' ? v : undefined,
@@ -149,8 +151,9 @@ export function KeyframeRow({ c, prop, children, label }: { c: ClipCtx; prop: Ke
 }
 
 /** Generic row: used by Motion/Opacity properties and by effect parameters. */
-export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = true, expand }: {
+export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = true, expand, target }: {
   c: ClipCtx; kfs: Kf[] | undefined; label: string; children: React.ReactNode; onToggle: () => void; onKey: () => void; animatable?: boolean; expand?: Expand
+  target?: KfTarget
 }) {
   const [open, setOpen] = useState(false)
   const at = clipTime(c)
@@ -199,7 +202,7 @@ export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = t
           </>
         )}
       </span>
-      <KeyframeLane c={c} kfs={kfs} />
+      <KeyframeLane c={c} kfs={kfs} target={target} />
     </div>
   )
   if (!open || !expandable) return row
@@ -223,8 +226,9 @@ export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = t
 }
 
 /** Effect Controls' right-hand mini timeline for one property: diamonds + playhead. */
-function KeyframeLane({ c, kfs }: { c: ClipCtx; kfs: Kf[] | undefined }) {
+function KeyframeLane({ c, kfs, target }: { c: ClipCtx; kfs: Kf[] | undefined; target?: KfTarget }) {
   const view = useStore((s) => s.ecView)
+  const sel = useStore((s) => (s.kfSel?.clipId === c.clip.id ? s.kfSel.keys : null))
   const [a, b] = laneSpan(c, view)
   const pct = (x: number) => `${(100 * (x - a)) / Math.max(1, b - a)}%`
   return (
@@ -232,9 +236,21 @@ function KeyframeLane({ c, kfs }: { c: ClipCtx; kfs: Kf[] | undefined }) {
       {(kfs ?? []).map((k, i) => {
         const x = seqTimeOf(c.clip, k.t)
         if (x < a || x > b) return null
+        const key = target ? kfKey(target, k.t) : undefined
         return (
-          <span key={i} className={`kf ${k.interp}`} style={{ left: pct(x) }} onClick={() => goTo('program', Math.round(x))}>
-            <Diamond size={9} />
+          <span
+            key={i}
+            className={`kf ${k.interp} ${key && sel?.includes(key) ? 'sel' : ''}`}
+            style={{ left: pct(x) }}
+            data-kf={key}
+            onMouseDown={key ? (e) => keyframeMouseDown(e, c, key, [a, b]) : undefined}
+            onContextMenu={key ? (e) => keyframeMenu(e, c, key) : undefined}
+            onDoubleClick={(e) => {
+              e.stopPropagation()
+              goTo('program', Math.round(x))
+            }}
+          >
+            <KfIcon kfs={kfs!} i={i} />
           </span>
         )
       })}

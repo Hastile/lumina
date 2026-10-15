@@ -491,9 +491,9 @@ def _param_keyframes(pe: ET.Element | None) -> list[dict]:
         if len(f) < 3:
             continue
         try:
-            # t, value, interpolation (0 linear, 1 hold, others Bezier), ?, in speed, in influence,
+            # t, value, interpolation (0 linear, 4 hold, 5 Bezier; 1 seen as hold too), ?, in speed, in influence,
             # out speed, out influence[, 5, 4, in tangent x, y, out tangent x, y] (point values)
-            interp = "linear" if f[2] == "0" else ("hold" if f[2] == "1" else "bezier")
+            interp = "linear" if f[2] == "0" else ("hold" if f[2] in ("1", "4") else "bezier")
             k = {"t": int(f[0]), "v": _parse_value(f[1]), "interp": interp}
             if len(f) >= 8:
                 k["ease_in"] = [float(f[4]), float(f[5])]

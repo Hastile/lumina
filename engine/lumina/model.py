@@ -82,11 +82,13 @@ class Keyframe(_Model):
     keyframe is linear, hold, or a Bezier handle given as [speed, influence]
     (value units per second of source time, fraction 0-1 of the segment).
     "ease" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).
+    "auto_bezier" computes its handles from the neighbours (a smooth curve
+    through the keyframe); "continuous_bezier" keeps both sides at one speed.
     Point values may also carry spatial tangents (value units, relative to
     the keyframe) shaping the motion path."""
     t: int = Field(description="source time in ticks (Premiere convention: keyframes follow the content when trimmed)")
     v: float | list[float]
-    interp: Literal["linear", "ease", "hold", "bezier"] = "linear"
+    interp: Literal["linear", "ease", "hold", "bezier", "auto_bezier", "continuous_bezier"] = "linear"
     ease_in: list[float] | None = Field(default=None, description="[speed, influence] of the incoming Bezier handle")
     ease_out: list[float] | None = Field(default=None, description="[speed, influence] of the outgoing Bezier handle")
     tangent_in: list[float] | None = Field(default=None, description="spatial in-tangent for point values")

@@ -9,6 +9,7 @@ import type { Effect } from '../engine/document'
 import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
 import { GraphicLayers } from './GraphicLayers'
+import { marqueeMouseDown } from './KeyframeSelect'
 
 function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, fxId }: {
   title: string; children: React.ReactNode; onReset?: () => void; enabled?: boolean; onToggleEnabled?: () => void; onDelete?: () => void; fxId?: string
@@ -125,6 +126,7 @@ export function EffectControlsPanel() {
     const next = Math.min(4 * (clip.end - clip.start), Math.max(2 * ticksPerFrame(seq.settings), span * (e.deltaY > 0 ? 1.25 : 0.8)))
     set({ ecView: { clipId: clip.id, start: at - f * next, end: at + (1 - f) * next } })
   }
+  const [box, setBox] = useState<[number, number, number, number] | null>(null)
   const panel = useCallback((el: HTMLDivElement | null) => {
     if (!el) return
     el.addEventListener('wheel', (e) => wheel.current(e), { passive: false })
@@ -138,6 +140,10 @@ export function EffectControlsPanel() {
       ref={panel}
       onDoubleClick={(e) => {
         if ((e.target as HTMLElement).closest('.lane, .lm-kcell')) set({ ecView: null })
+      }}
+      onMouseDown={(e) => {
+        // empty keyframe lane: rubber-band selection (keyframes handle their own mouse down)
+        if ((e.target as HTMLElement).closest('.lane') && !(e.target as HTMLElement).closest('[data-kf]')) marqueeMouseDown(e, clip.id, setBox)
       }}
       onDragOver={(e) => e.dataTransfer.types.includes(EFFECT_MIME) && e.preventDefault()}
       onDrop={(e) => {
@@ -195,6 +201,7 @@ export function EffectControlsPanel() {
           </>
         )}
       </div>
+      {box && <div className="lm-kmarquee" style={{ left: box[0], top: box[1], width: box[2], height: box[3] }} />}
       <div className="lm-ec-foot">
         <span className="lm-tc dim">{timecode(clipTime(c), seq.settings)}</span>
       </div>
@@ -278,6 +285,7 @@ function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
             }}
             onToggle={() => void exec('effect.toggle_animation', { ...base, param: p.name, at }, t('Toggle animation'))}
             onKey={() => void exec('effect.keyframe', { ...base, param: p.name, at }, t('Add/Remove Keyframe'))}
+            target={{ effect_id: fx.id, param: p.name }}
           >
             {p.kind === 'point' ? (
               <>

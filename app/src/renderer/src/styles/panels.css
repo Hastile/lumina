@@ -168,9 +168,13 @@
 .lm-ec-prop .kfnav button.on { color: var(--accent); }
 .lm-ec-prop .lane { position: relative; height: 100%; border-left: 1px solid #333; background: #1f1f1f; }
 .lm-ec-prop .lane .kf { position: absolute; top: 50%; transform: translate(-50%, -50%); color: #d8d8d8; cursor: pointer; display: grid; }
-.lm-ec-prop .lane .kf.hold { color: #e3963b; }
-.lm-ec-prop .lane .kf.ease, .lm-ec-prop .lane .kf.bezier { color: #8fb8ff; }
-.lm-ec-prop .lane .head { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--playhead); }
+.lm-ec-prop .lane .kf svg { fill: #c9c9c9; stroke: #1a1a1a; stroke-width: 0.6; overflow: visible; }
+.lm-ec-prop .lane .kf:hover svg { fill: #fff; }
+.lm-ec-prop .lane .kf.sel svg { fill: #3d9bff; stroke: #cfe6ff; }
+.lm-ec { position: relative; }
+.lm-kmarquee { position: absolute; z-index: 20; border: 1px solid #8fb8ff; background: rgba(61, 155, 255, 0.14); pointer-events: none; }
+.lm-ec[data-kfdrag] { cursor: ew-resize; }
+.lm-ec-prop .lane .head { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--playhead); pointer-events: none; }
 .lm-ec-head .toggle { display: flex; align-items: center; gap: 5px; cursor: default; }
 .lm-fitrow { display: flex; gap: 6px; padding: 2px 10px 6px; }
 .lm-text-layer { padding: 6px 10px 8px; display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid #333; }

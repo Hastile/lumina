@@ -215,7 +215,7 @@ def effect_toggle_animation(ctx: Context, p: ParamRef):
 
 class ParamKeyframe(ParamRef):
     op: Literal["add", "remove", "toggle"] = "toggle"
-    interp: Literal["linear", "ease", "hold", "bezier"] | None = None
+    interp: Literal["linear", "ease", "hold", "bezier", "auto_bezier", "continuous_bezier"] | None = None
 
 
 class ParamEase(ParamRef):
@@ -298,7 +298,7 @@ def effect_set_keyframes(ctx: Context, p: SetParamKeyframes):
         rel = resolve_time(k["t"], seq["settings"])
         interp = k.get("interp", "linear")
         if interp not in INTERPS:
-            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier")
+            raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier | auto_bezier | continuous_bezier")
         out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_param(e["type"], p.param, k["v"]), "interp": interp,
                     **handles_of(k)})
     out.sort(key=lambda k: k["t"])

@@ -328,7 +328,7 @@
     },
     "Keyframe": {
       "additionalProperties": false,
-      "description": "Temporal interpolation follows After Effects/Premiere: each side of a\nkeyframe is linear, hold, or a Bezier handle given as [speed, influence]\n(value units per second of source time, fraction 0-1 of the segment).\n\"ease\" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).\nPoint values may also carry spatial tangents (value units, relative to\nthe keyframe) shaping the motion path.",
+      "description": "Temporal interpolation follows After Effects/Premiere: each side of a\nkeyframe is linear, hold, or a Bezier handle given as [speed, influence]\n(value units per second of source time, fraction 0-1 of the segment).\n\"ease\" is a Bezier with Premiere's Easy Ease handles (speed 0, 33 %).\n\"auto_bezier\" computes its handles from the neighbours (a smooth curve\nthrough the keyframe); \"continuous_bezier\" keeps both sides at one speed.\nPoint values may also carry spatial tangents (value units, relative to\nthe keyframe) shaping the motion path.",
       "properties": {
         "t": {
           "description": "source time in ticks (Premiere convention: keyframes follow the content when trimmed)",
@@ -355,7 +355,9 @@
             "linear",
             "ease",
             "hold",
-            "bezier"
+            "bezier",
+            "auto_bezier",
+            "continuous_bezier"
           ],
           "title": "Interp",
           "type": "string"

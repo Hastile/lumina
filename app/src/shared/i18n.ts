@@ -329,7 +329,17 @@ const ko: Record<string, string> = {
   'Velocity': '속도',
   'sec': '초',
   'Keyframe Velocity': '키프레임 속도',
-  'Show/Hide': '표시/숨기기'
+  'Show/Hide': '표시/숨기기',
+  // keyframe interpolation
+  'Linear': '선형',
+  'Bezier': '베지어',
+  'Auto Bezier': '자동 베지어',
+  'Continuous Bezier': '연속 베지어',
+  'Hold': '정지',
+  'Ease In': '천천히 들어오기',
+  'Ease Out': '천천히 나가기',
+  'Temporal Interpolation': '시간 보간',
+  'Move Keyframes': '키프레임 이동'
 }
 
 let locale: Locale = 'ko'
