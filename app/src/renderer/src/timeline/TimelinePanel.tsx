@@ -127,7 +127,7 @@ function clipKeyframeTimes(clip: Clip, kind: 'video' | 'audio'): { t: number; pr
   return [...at].map(([t, props]) => ({ t, props })).sort((a, b) => a.t - b.t)
 }
 
-type Layout = { rows: Row[]; videoH: number; audioTop: number; audioH: number; vMax: number; aMax: number; vScroll: number; aScroll: number }
+type Layout = { vContent: number; aContent: number; rows: Row[]; videoH: number; audioTop: number; audioH: number; vMax: number; aMax: number; vScroll: number; aScroll: number }
 
 /** Premiere's two track areas: video above the divider with V1 against it (scrolling up reveals the
  * higher tracks), audio below it with A1 against it; each scrolls on its own. Row tops are in the
@@ -143,12 +143,9 @@ function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<
   const hOf = (id: string, kind: Kind) => clampH((heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)) * zoom[kind])
   const vContent = seq.video_tracks.reduce((a, id) => a + hOf(id, 'video'), 0)
   const aContent = seq.audio_tracks.reduce((a, id) => a + hOf(id, 'audio'), 0)
-  // like Premiere there is room past the outermost track: video scrolls until its top track sits on the
-  // divider, audio until its last track does, even when every track fits
-  const vTop = seq.video_tracks.length ? hOf(seq.video_tracks[seq.video_tracks.length - 1], 'video') : 0
-  const aLast = seq.audio_tracks.length ? hOf(seq.audio_tracks[seq.audio_tracks.length - 1], 'audio') : 0
-  const vMax = Math.max(0, vContent - videoH, vContent - vTop)
-  const aMax = Math.max(0, aContent - audioH, aContent - aLast)
+  // an area scrolls only as far as its tracks overflow it (zoom in with the vertical bar's knobs)
+  const vMax = Math.max(0, vContent - videoH)
+  const aMax = Math.max(0, aContent - audioH)
   const vs = Math.max(0, Math.min(vMax, vScroll))
   const as = Math.max(0, Math.min(aMax, aScroll))
   const vrows: Row[] = []
@@ -165,7 +162,7 @@ function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<
     rows.push({ track: seq.tracks[id], label: `A${index + 1}`, kind: 'audio', index, top: y, height: h })
     y += h
   })
-  return { rows, videoH, audioTop, audioH, vMax, aMax, vScroll: vs, aScroll: as }
+  return { vContent, aContent, rows, videoH, audioTop, audioH, vMax, aMax, vScroll: vs, aScroll: as }
 }
 
 function niceStep(pxPerSecond: number): number {
@@ -866,8 +863,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
         </div>
         <div className="lm-tl-vbars" style={{ width: VBAR_W }}>
-          <VZoomBar kind="video" top={0} pane={layout.videoH} max={layout.vMax} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
-          <VZoomBar kind="audio" top={layout.audioTop} pane={layout.audioH} max={layout.aMax} pos={layout.aScroll} onPos={setAScroll} zoom={zoom.audio} onZoom={(z, c) => zoomArea('audio', z, c)} />
+          <VZoomBar kind="video" top={0} pane={layout.videoH} max={layout.vMax} content={layout.vContent} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
+          <VZoomBar kind="audio" top={layout.audioTop} pane={layout.audioH} max={layout.aMax} content={layout.aContent} pos={layout.aScroll} onPos={setAScroll} zoom={zoom.audio} onZoom={(z, c) => zoomArea('audio', z, c)} />
         </div>
         <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
       </div>
@@ -878,7 +875,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
 /** A track area's vertical zoom scroll bar (Premiere): drag the thumb to scroll, its round ends to make
  * every track of the area taller or shorter. pos is the scroll offset from the top of the bar. */
-function VZoomBar(p: { kind: Kind; top: number; pane: number; max: number; pos: number; onPos: (v: number) => void; zoom: number; onZoom: (z: number, commit: boolean) => void }) {
+function VZoomBar(p: { kind: Kind; top: number; pane: number; max: number; content: number; pos: number; onPos: (v: number) => void; zoom: number; onZoom: (z: number, commit: boolean) => void }) {
   const total = Math.max(1, p.pane + p.max)
   const H = Math.max(1, p.pane)
   const len = Math.max(24, Math.min(H, (p.pane / total) * H))
@@ -886,12 +883,15 @@ function VZoomBar(p: { kind: Kind; top: number; pane: number; max: number; pos: 
   const grab = (e: React.MouseEvent, part: 'thumb' | 'start' | 'end') => {
     e.preventDefault()
     e.stopPropagation()
-    const [y0, pos0, z0, l0] = [e.clientY, p.pos, p.zoom, len]
+    const [y0, pos0, z0, l0, c0] = [e.clientY, p.pos, p.zoom, len, Math.max(1, p.content, p.pane)]
     const at = (ev: MouseEvent) => {
       const dy = ev.clientY - y0
       if (part === 'thumb') return p.onPos(Math.max(0, Math.min(p.max, pos0 + (dy * total) / H)))
-      const l = Math.max(8, part === 'start' ? l0 - dy : l0 + dy)
-      return z0 * (l0 / l)
+      // the thumb follows the knob: its length is the share of the tracks on screen, so a thumb pulled
+      // to the full bar fits every track exactly (nothing left to scroll)
+      const l = Math.max(8, Math.min(H, part === 'start' ? l0 - dy : l0 + dy))
+      // (tracks that already fit just scale with the thumb)
+      return p.content < p.pane ? z0 * (l0 / l) : (z0 * (p.pane * H) / l) / c0
     }
     const move = (ev: MouseEvent) => {
       const z = at(ev)

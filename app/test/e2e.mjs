@@ -1041,27 +1041,31 @@ try {
       await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2 + dy, { steps: 6 })
       await page.mouse.up()
     }
-    // with default heights (everything fits) the wheel still scrolls each area on its own
+    // vertical zoom bar of the video area: shorten the thumb -> tracks grow and the wheel scrolls video
+    // only; pull it back to the full bar -> every track fits and nothing is left to scroll
     {
       const v1b = '.lm-th.video:has([data-track-resize="V1"])'
       const a1b = '.lm-th.audio:has([data-track-resize="A1"])'
       const lz = await box('.lm-tl-lanes')
       const dv = await box('[data-divider]')
+      const vh = (await box(v1b)).height
+      await dragBy('[data-vknob="video-start"]', 0, 150)
+      assert.ok((await box(v1b)).height > vh * 1.2, 'the video zoom knob made the tracks taller')
       const [vy, ay] = [(await box(v1b)).y, (await box(a1b)).y]
       await page.mouse.move(lz.x + 100, dv.y - 10)
       await page.mouse.wheel(0, -60)
       await page.waitForTimeout(150)
       assert.ok((await box(v1b)).y > vy + 20, 'video area scrolled with the wheel')
       assert.equal((await box(a1b)).y, ay, 'audio area did not move')
-      await page.mouse.wheel(0, 200)
+      await dragBy('[data-vknob="video-start"]', 0, -600)
+      const top = await box('.lm-th.video')
+      assert.ok(top.y >= lz.y - 1, `full thumb: the top video track is on screen (${top.y} vs ${lz.y})`)
+      const vy2 = (await box(v1b)).y
+      await page.mouse.move(lz.x + 100, dv.y - 10)
+      await page.mouse.wheel(0, -60)
       await page.waitForTimeout(150)
-      assert.equal((await box(v1b)).y, vy, 'video area scrolled back to V1 at the divider')
-      await page.mouse.move(lz.x + 100, dv.y + 30)
-      await page.mouse.wheel(0, 40)
-      await page.waitForTimeout(150)
-      assert.ok((await box(a1b)).y < ay - 20, 'audio area scrolled with the wheel')
-      await page.mouse.wheel(0, -400)
-      await page.waitForTimeout(150)
+      assert.equal((await box(v1b)).y, vy2, 'full thumb: nothing left to scroll')
+      await page.evaluate(() => localStorage.removeItem('lumina.tlVZoom'))
     }
     const a1 = '.lm-th.audio:has([data-track-resize="A1"])'
     const h0 = (await box(a1)).height
