@@ -461,6 +461,8 @@ try {
       await new Promise((resolve) => {
         const step = () => {
           out.frames++
+          const lv = window.__lumina.audio.levels()
+          out.peak = Math.max(out.peak ?? 0, lv.master[0], lv.master[1])
           const c = document.querySelector('.lm-stage canvas[data-gl]')
           if (c) out.canvases = 1
           if (c && c.dataset.exact !== '1') {
@@ -494,6 +496,59 @@ try {
   assert.ok(!cutProbe.rev.late, `reverse play only waits while it starts: ${JSON.stringify(cutProbe.rev)}`)
   assert.ok(cutProbe.fwd.audio.nodes > 0 && cutProbe.fwd.audio.elements === 0, `audio plays through Web Audio: ${JSON.stringify(cutProbe.fwd.audio)}`)
   log('audio: Web Audio buffers scheduled', cutProbe.fwd.audio.nodes, 'late joins', cutProbe.fwd.audio.late)
+  assert.ok(cutProbe.fwd.peak > 0.001, `the Mix is metered while playing (peak ${cutProbe.fwd.peak})`)
+
+  // ---- audio: track mixer fader, volume rubber band, Audio Gain (G), scrubbing
+  const audioState = () => page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const a1 = seq.tracks[seq.audio_tracks[0]]
+    return { a1: a1.volume_db, pan: a1.pan, clips: Object.values(a1.clips).sort((x, y) => x.start - y.start).map((c) => ({ id: c.id, vol: c.volume_db, gain: c.gain_db ?? 0 })) }
+  })
+  await page.locator('.dv-tab', { hasText: '오디오 트랙 믹서' }).click()
+  const knob = page.locator('[data-mixer="track"] [data-fader="A1"] .knob')
+  await knob.waitFor()
+  const kb = await knob.boundingBox()
+  await page.mouse.move(kb.x + kb.width / 2, kb.y + kb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(kb.x + kb.width / 2, kb.y + kb.height / 2 + 20, { steps: 4 })
+  await page.mouse.up()
+  await page.waitForFunction(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].volume_db < 0
+  }, null, { timeout: 10000 })
+  const afterFader = await audioState()
+  const band = page.locator(`[data-vband="${afterFader.clips[0].id}"] .hit`)
+  const bb = await page.locator(`[data-vband="${afterFader.clips[0].id}"]`).boundingBox()
+  const by = bb.y + 4 + (1 - Math.pow(10, -6 / 40)) * (bb.height - 8)
+  await page.mouse.move(bb.x + Math.min(30, bb.width / 2), by)
+  await page.mouse.down()
+  await page.mouse.move(bb.x + Math.min(30, bb.width / 2), by + 8, { steps: 4 })
+  await page.mouse.up()
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id].volume_db < 0
+  }, afterFader.clips[0].id, { timeout: 10000 })
+  assert.ok(await band.count(), 'audio clips show the volume rubber band')
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id], focusedPanel: 'timeline' }), afterFader.clips[1].id)
+  await page.keyboard.press('g')
+  await page.locator('.lm-dialog select').selectOption('adjust')
+  await page.locator('.lm-dialog input[type="number"]').fill('3')
+  await page.locator('.lm-dialog button[type="submit"]').click()
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id].gain_db === 3
+  }, afterFader.clips[1].id, { timeout: 10000 })
+  const scrubs0 = await page.evaluate(() => window.__lumina.audio.stats.scrubs)
+  await page.locator('.lm-tl-lanes').click({ position: { x: 5, y: 2 } })
+  await page.keyboard.press('ArrowRight')
+  await page.keyboard.press('ArrowRight')
+  await page.waitForFunction((n) => window.__lumina.audio.stats.scrubs >= n + 2, scrubs0, { timeout: 5000 })
+  const fin = await audioState()
+  log('audio: Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub')
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip

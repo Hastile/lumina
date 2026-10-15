@@ -35,6 +35,7 @@ type State = {
   shuttle: number // J/K/L rate: negative = reverse
   playbackResolution: 1 | 0.5 | 0.25 // Program/Source monitor resolution while playing (paused = full), like Premiere
   ecView: { clipId: string; start: number; end: number } | null // Effect Controls timeline zoom (sequence ticks)
+  audioScrub: boolean // Premiere's "Play audio while scrubbing"
   kfSel: { clipId: string; keys: string[] } | null // selected keyframes in Effect Controls (`target@sourceTicks`)
 
   pxPerSecond: number
@@ -74,6 +75,7 @@ export const useStore = create<State>(() => ({
   })() as 1 | 0.5 | 0.25,
   ecView: null,
   kfSel: null,
+  audioScrub: true,
   pxPerSecond: 40,
   scrollX: 0
 }))

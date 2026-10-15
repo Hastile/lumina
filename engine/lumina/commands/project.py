@@ -516,21 +516,37 @@ class SetTrack(Params):
     muted: bool | None = None
     solo: bool | None = None
     targeted: bool | None = None
+    volume_db: float | None = Field(default=None, ge=-96, le=6, description="audio track fader (dB)")
+    pan: float | None = Field(default=None, ge=-100, le=100, description="audio track pan, -100 L .. 100 R")
 
 
 @command("track.set", SetTrack)
 def track_set(ctx: Context, p: SetTrack):
-    """Set track header toggles (lock, sync lock, eye, mute, solo, target) or name."""
+    """Set track header toggles (lock, sync lock, eye, mute, solo, target), name, or an audio track's
+    mixer volume / pan."""
     seq = seq_of(ctx.doc, p.sequence_id)
     track = seq["tracks"].get(p.track_id)
     if not track:
         raise CommandError("NO_TRACK", f"track not found: {p.track_id}")
-    for key in ("name", "locked", "sync_lock", "hidden", "muted", "solo", "targeted"):
+    for key in ("name", "locked", "sync_lock", "hidden", "muted", "solo", "targeted", "volume_db", "pan"):
         value = getattr(p, key)
-        if value is not None and track[key] != value:
+        if value is not None and track.get(key) != value:
             ctx.m.set(["sequences", seq["id"], "tracks", p.track_id, key], value)
 
 
 def track_path(seq: dict, track_id: str) -> list[str]:
     get({"s": seq}, ["s", "tracks", track_id])
     return ["sequences", seq["id"], "tracks", track_id]
+
+
+class SetMaster(Params):
+    sequence_id: str | None = None
+    volume_db: float = Field(ge=-96, le=6, description="the Mix (master) fader, dB")
+
+
+@command("sequence.set_master", SetMaster)
+def sequence_set_master(ctx: Context, p: SetMaster):
+    """Audio Track Mixer's Mix fader: the sequence's master volume."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    if seq.get("master_volume_db", 0.0) != p.volume_db:
+        ctx.m.set(["sequences", seq["id"], "master_volume_db"], p.volume_db)

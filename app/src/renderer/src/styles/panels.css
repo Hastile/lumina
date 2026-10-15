@@ -113,18 +113,6 @@
 .lm-tools .lm-iconbtn.on { background: #3a3a3a; color: var(--accent); }
 .lm-tree { padding: 4px 8px; overflow: auto; }
 .lm-tree .node { display: flex; align-items: center; gap: 6px; height: 22px; color: var(--text); }
-.lm-mixer { flex-direction: row; gap: 4px; padding: 8px; overflow-x: auto; }
-.lm-mixer .strip { width: 64px; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #262626; border-radius: 3px; padding: 6px 0; }
-.lm-mixer .pan { font-size: 10px; color: var(--text-dim); }
-.lm-mixer .ms { display: flex; gap: 2px; }
-.lm-mixer .fader { position: relative; flex: 1; width: 20px; min-height: 60px; }
-.lm-mixer .fader .rail { position: absolute; left: 9px; top: 0; bottom: 0; width: 2px; background: #555; }
-.lm-mixer .fader .knob { position: absolute; left: 2px; top: 30%; width: 16px; height: 8px; background: #bbb; border-radius: 2px; }
-.lm-mixer .name { font-size: 11px; color: var(--text-dim); }
-.lm-meters { flex-direction: row; padding: 8px 4px; gap: 3px; }
-.lm-meters .bars { display: flex; gap: 3px; }
-.lm-meters .bar { width: 8px; height: 100%; background: #151515; border-radius: 1px; }
-.lm-meters .scale { display: flex; flex-direction: column; justify-content: space-between; font-size: 9px; color: var(--text-dim); }
 
 /* ---------------------------------------------------------------- Properties / Metadata / Essential Sound */
 .lm-props-title { padding: 8px 12px; font-weight: 600; border-bottom: 1px solid var(--border); flex: none; }
@@ -234,3 +222,43 @@
 .lm-kgraph .dim .grip { fill: #5a6b80; }
 .lm-kgraph .key { fill: #d8d8d8; }
 .lm-kgraph .head { stroke: var(--playhead); }
+
+/* audio meters (Premiere: green -> yellow -> red, peak hold, clip LEDs) */
+.lm-meters { flex-direction: row; padding: 8px 6px; gap: 3px; min-height: 0; }
+.lm-mscale { position: relative; width: 22px; font-size: 9px; color: var(--text-dim); margin: 10px 0 0; }
+.lm-mscale span { position: absolute; right: 2px; transform: translateY(50%); }
+.lm-mbar { display: flex; flex-direction: column; width: 9px; gap: 2px; cursor: pointer; }
+.lm-mbar .clipled { height: 6px; background: #3a1d1d; border-radius: 1px; }
+.lm-mbar .clipled.on { background: #ff3b30; }
+.lm-mbar .well { position: relative; flex: 1; background: #141414; border-radius: 1px; overflow: hidden; }
+.lm-mbar .fill { position: absolute; inset: 0; background: linear-gradient(to top, #2ea043 0%, #2ea043 70%, #d8c33a 85%, #e8862a 95%, #ff3b30 100%); }
+.lm-mbar .hold { position: absolute; left: 0; right: 0; height: 2px; background: #f0e070; }
+.lm-mpeak { display: none; }
+
+/* Audio Track / Clip Mixer strips */
+.lm-mixer { flex-direction: row; gap: 4px; padding: 8px; overflow-x: auto; min-height: 0; }
+.lm-mixer .strip { width: 74px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #262626; border-radius: 3px; padding: 6px 0 4px; }
+.lm-mixer .strip.mix { margin-left: 8px; background: #2c2c2c; }
+.lm-mixer .ms { display: flex; gap: 2px; min-height: 18px; }
+.lm-mixer .body-row { flex: 1; min-height: 80px; display: flex; gap: 6px; width: 100%; justify-content: center; }
+.lm-mixer .meters { display: flex; gap: 2px; }
+.lm-mixer .name { font-size: 11px; color: var(--text-dim); }
+.lm-mixer .clipname { font-size: 10px; color: var(--text-dim); max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 30px; }
+.lm-pan { display: flex; flex-direction: column; align-items: center; font-size: 9px; color: var(--text-dim); cursor: ns-resize; min-height: 30px; }
+.lm-pan.disabled { opacity: 0.35; cursor: default; }
+.lm-pan .ring { fill: #1b1b1b; stroke: #8a8a8a; stroke-width: 1.4; }
+.lm-pan .needle { stroke: #3d9bff; stroke-width: 2; stroke-linecap: round; }
+.lm-fader { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 34px; }
+.lm-fader.empty { opacity: 0.3; }
+.lm-fader .rail { position: relative; flex: 1; width: 6px; background: #151515; border-radius: 3px; margin: 5px 0; }
+.lm-fader .zero { position: absolute; left: -6px; right: -6px; height: 1px; background: #666; }
+.lm-fader .knob { position: absolute; left: -9px; width: 24px; height: 10px; background: linear-gradient(#d8d8d8, #9a9a9a); border-radius: 2px; cursor: ns-resize; box-shadow: 0 1px 2px #000; }
+.lm-fader .val { font-size: 10px; color: #3d9bff; width: 40px; text-align: center; background: transparent; border: 0; padding: 0; cursor: text; }
+input.val { color: #ddd; background: #111 !important; }
+
+/* audio clip volume rubber band */
+.lm-vband { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.lm-vband .line { fill: none; stroke: #e6d34a; stroke-width: 1.2; }
+.lm-vband .hit { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: ns-resize; }
+.lm-vband .kf { fill: #e6d34a; stroke: #1a1a1a; stroke-width: 0.8; pointer-events: all; cursor: ns-resize; }
+.lm-vband .db { fill: #fff; font-size: 10px; paint-order: stroke; stroke: #000; stroke-width: 2px; }

@@ -743,7 +743,7 @@
   },
   {
     "name": "track.set",
-    "description": "Set track header toggles (lock, sync lock, eye, mute, solo, target) or name.",
+    "description": "Set track header toggles (lock, sync lock, eye, mute, solo, target), name, or an audio track's\nmixer volume / pan.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -847,12 +847,76 @@
           ],
           "default": null,
           "title": "Targeted"
+        },
+        "volume_db": {
+          "anyOf": [
+            {
+              "maximum": 6,
+              "minimum": -96,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "audio track fader (dB)",
+          "title": "Volume Db"
+        },
+        "pan": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "audio track pan, -100 L .. 100 R",
+          "title": "Pan"
         }
       },
       "required": [
         "track_id"
       ],
       "title": "SetTrack",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.set_master",
+    "description": "Audio Track Mixer's Mix fader: the sequence's master volume.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "volume_db": {
+          "description": "the Mix (master) fader, dB",
+          "maximum": 6,
+          "minimum": -96,
+          "title": "Volume Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "volume_db"
+      ],
+      "title": "SetMaster",
       "type": "object"
     }
   },
@@ -1345,7 +1409,7 @@
   },
   {
     "name": "clip.set",
-    "description": "Set clip name, Enable (Shift+E), label color, opacity or volume.",
+    "description": "Set clip name, Enable (Shift+E), label color, opacity, volume or audio gain.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -1451,6 +1515,21 @@
           ],
           "default": null,
           "title": "Volume Db"
+        },
+        "gain_db": {
+          "anyOf": [
+            {
+              "maximum": 96,
+              "minimum": -96,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Audio Gain (dB)",
+          "title": "Gain Db"
         }
       },
       "required": [
@@ -1746,6 +1825,60 @@
         "marker_ids"
       ],
       "title": "RemoveMarkers",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.audio_gain",
+    "description": "Audio Gain: set, adjust, or normalize the clip gain of audio clips (peaks measured on the media).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "mode": {
+          "description": "set: Set Gain to; adjust: Adjust Gain by; normalize_max: Normalize Max Peak to (one gain change for the selection, its loudest peak lands on db); normalize_all: Normalize All Peaks to (each clip)",
+          "enum": [
+            "set",
+            "adjust",
+            "normalize_max",
+            "normalize_all"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "db": {
+          "maximum": 96,
+          "minimum": -96,
+          "title": "Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "mode",
+        "db"
+      ],
+      "title": "AudioGain",
       "type": "object"
     }
   },

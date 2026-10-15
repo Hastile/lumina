@@ -228,6 +228,7 @@ class Clip(_Model):
     label: LabelColor = "iris"
     opacity: float = 100.0
     volume_db: float = 0.0
+    gain_db: float = Field(default=0.0, description="Audio Gain (Premiere's G dialog), applied before Volume")
     motion: Motion = Field(default_factory=Motion)
     keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
     graphic: Graphic | None = None
@@ -244,6 +245,8 @@ class Track(_Model):
     muted: bool = False
     solo: bool = False
     targeted: bool = True
+    volume_db: float = Field(default=0.0, description="audio: Audio Track Mixer fader")
+    pan: float = Field(default=0.0, ge=-100, le=100, description="audio: track pan / balance, -100 left .. 100 right")
     clips: dict[str, Clip] = Field(default_factory=dict)
     transitions: dict[str, Transition] = Field(default_factory=dict)
 
@@ -277,6 +280,7 @@ class Sequence(_Model):
     playhead: int = 0
     in_point: int | None = None
     out_point: int | None = None
+    master_volume_db: float = Field(default=0.0, description="Audio Track Mixer's Mix fader")
 
 
 class Project(_Model):

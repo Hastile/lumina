@@ -159,6 +159,7 @@ const MENU: Record<string, Item[]> = {
   Clip: [
     { label: 'Rename...', action: 'clip.rename' },
     { label: 'Speed/Duration...', action: 'clip.speed', accel: 'Ctrl+R' },
+    { label: 'Audio Gain...', action: 'clip.audioGain', accel: 'G' },
     'sep',
     { label: 'Insert', action: 'clip.insert', accel: ',' },
     { label: 'Overwrite', action: 'clip.overwrite', accel: '.' },

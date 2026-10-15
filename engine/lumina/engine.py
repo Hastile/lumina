@@ -24,6 +24,14 @@ class MediaServices:
     def probe(self, path: str) -> dict:
         return probe_mod.probe(path)
 
+    def audio_peak(self, path: str, src_start: int, src_dur: int, speed: float) -> float:
+        """Sample peak (dBFS) of a source range, as Premiere's Audio Gain dialog measures it."""
+        import numpy as np
+
+        pcm = export_mod.decode_audio(path, src_start, src_dur, speed, 48000)
+        peak = float(np.abs(pcm).max()) if pcm.size else 0.0
+        return 20 * np.log10(peak) if peak > 0 else -float("inf")
+
 
 class Engine:
     def __init__(self, services: Any = None, run_jobs: bool = True):

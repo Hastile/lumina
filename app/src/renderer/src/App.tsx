@@ -12,7 +12,8 @@ import { ProgramMonitor, SourceMonitor } from './panels/Monitors'
 import { TimelinePanel } from './timeline/TimelinePanel'
 import { EffectControlsPanel } from './panels/EffectControls'
 import { ToolsPanel } from './panels/ToolsPanel'
-import { AudioMeters, AudioMixerPanel, MediaBrowserPanel } from './panels/Placeholders'
+import { MediaBrowserPanel } from './panels/Placeholders'
+import { AudioClipMixerPanel, AudioMeters, AudioTrackMixerPanel } from './panels/Audio'
 import { EffectsPanel } from './panels/EffectsPanel'
 import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel, TextPanel } from './panels/RightPanels'
 
@@ -32,7 +33,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   program: panel('program', ProgramMonitor),
   timeline: panel('timeline', TimelinePanel),
   effectControls: panel('effectControls', EffectControlsPanel),
-  audioMixer: panel('audioMixer', AudioMixerPanel),
+  audioMixer: panel('audioMixer', AudioClipMixerPanel),
   effects: panel('effects', EffectsPanel),
   mediaBrowser: panel('mediaBrowser', MediaBrowserPanel),
   tools: panel('tools', ToolsPanel),
@@ -42,7 +43,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   properties: panel('properties', PropertiesPanel),
   metadata: panel('metadata', MetadataPanel),
   text: panel('text', TextPanel),
-  audioTrackMixer: panel('audioTrackMixer', AudioMixerPanel),
+  audioTrackMixer: panel('audioTrackMixer', AudioTrackMixerPanel),
   graphicTemplates: panel('graphicTemplates', GraphicTemplatesPanel)
 }
 

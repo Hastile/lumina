@@ -1,4 +1,5 @@
 import { EFFECT_MIME, type EffectDrag } from '../panels/EffectsPanel'
+import { VolumeBand } from './VolumeBand'
 import { EFFECTS, TRANSITIONS, trackTransitions, type TransitionWindow } from '../util/effects'
 import { transitionDurationDialog } from './transitionDialog'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
@@ -449,6 +450,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         }}
       >
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} />}
+        {row.kind === 'audio' && x1 - x0 > 6 && <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} />}
         <span className="name">
           {clip.speed !== 1 && <b>{Math.round(clip.speed * 100)}% </b>}
           {clip.name}

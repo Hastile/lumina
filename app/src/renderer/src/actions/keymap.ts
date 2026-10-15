@@ -28,6 +28,7 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   'Ctrl+Shift+A': 'edit.deselectAll',
   // Clip
   'Ctrl+R': 'clip.speed',
+  G: 'clip.audioGain',
   ',': 'clip.insert',
   '.': 'clip.overwrite',
   'Shift+E': 'clip.enable',

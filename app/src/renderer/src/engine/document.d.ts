@@ -73,6 +73,14 @@ export type Hidden = boolean;
 export type Muted = boolean;
 export type Solo = boolean;
 export type Targeted = boolean;
+/**
+ * audio: Audio Track Mixer fader
+ */
+export type VolumeDb = number;
+/**
+ * audio: track pan / balance, -100 left .. 100 right
+ */
+export type Pan = number;
 export type Id5 = string;
 /**
  * null for graphics
@@ -115,7 +123,11 @@ export type Label1 =
   | "brown"
   | "yellow";
 export type Opacity = number;
-export type VolumeDb = number;
+export type VolumeDb1 = number;
+/**
+ * Audio Gain (Premiere's G dialog), applied before Volume
+ */
+export type GainDb = number;
 /**
  * sequence pixels [x, y]; null = frame center
  */
@@ -311,6 +323,10 @@ export type Color3 = "green" | "red" | "purple" | "orange" | "yellow" | "white" 
 export type Playhead = number;
 export type InPoint1 = number | null;
 export type OutPoint1 = number | null;
+/**
+ * Audio Track Mixer's Mix fader
+ */
+export type MasterVolumeDb = number;
 export type ActiveSequenceId = string | null;
 
 export interface Project {
@@ -398,6 +414,7 @@ export interface Sequence {
   playhead: Playhead;
   in_point: InPoint1;
   out_point: OutPoint1;
+  master_volume_db: MasterVolumeDb;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -427,6 +444,8 @@ export interface Track {
   muted: Muted;
   solo: Solo;
   targeted: Targeted;
+  volume_db: VolumeDb;
+  pan: Pan;
   clips: Clips;
   transitions: Transitions;
 }
@@ -449,7 +468,8 @@ export interface Clip {
   link_id: LinkId;
   label: Label1;
   opacity: Opacity;
-  volume_db: VolumeDb;
+  volume_db: VolumeDb1;
+  gain_db: GainDb;
   motion: Motion;
   keyframes: Keyframes;
   graphic: Graphic | null;

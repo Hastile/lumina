@@ -565,18 +565,19 @@ class SetClips(Params):
     label: LabelColor | None = None
     opacity: float | None = Field(default=None, ge=0, le=100)
     volume_db: float | None = Field(default=None, ge=-96, le=15)
+    gain_db: float | None = Field(default=None, ge=-96, le=96, description="Audio Gain (dB)")
 
 
 @command("clip.set", SetClips)
 def clip_set(ctx: Context, p: SetClips):
-    """Set clip name, Enable (Shift+E), label color, opacity or volume."""
+    """Set clip name, Enable (Shift+E), label color, opacity, volume or audio gain."""
     seq = seq_of(ctx.doc, p.sequence_id)
     for cid in p.clip_ids:
         tid, c = find_clip(seq, cid)
         require_unlocked(seq, tid)
-        for key in ("name", "enabled", "label", "opacity", "volume_db"):
+        for key in ("name", "enabled", "label", "opacity", "volume_db", "gain_db"):
             value = getattr(p, key)
-            if value is not None and c[key] != value:
+            if value is not None and c.get(key) != value:
                 ctx.m.set(clip_path(seq, tid, cid) + [key], value)
 
 

@@ -47,8 +47,17 @@ export type AudioVoice = {
   sourceIn: number
   speed: number
   span: [number, number]
-  gain: number
+  gain: number // Audio Gain x Volume (crossfades included), linear
+  track: string
 }
+
+/** The Audio Track Mixer: per-track fader and pan, and the Mix fader (linear gains, pan -1..1). */
+export type AudioMix = { tracks: { id: string; gain: number; pan: number }[]; master: number }
+
+type Bus = { gain: GainNode; pan: StereoPannerNode; meter: Meter }
+type Meter = { l: AnalyserNode; r: AnalyserNode }
+
+const SCRUB = 0.09 // s of sound per scrub step (Premiere plays about a frame plus its tail)
 
 type Live = { v: AudioVoice; gain: GainNode; nodes: Set<AudioBufferSourceNode>; stopped: boolean }
 
@@ -57,8 +66,12 @@ class AudioEngine {
   private session: { t0: number; c0: number; rate: number } | null = null
   private voices = new Map<string, Live>()
   private last = -Infinity
+  private buses = new Map<string, Bus>()
+  private master: { gain: GainNode; meter: Meter } | null = null
+  private mixState: AudioMix = { tracks: [], master: 1 }
+  private scrubbing: { at: number; nodes: AudioBufferSourceNode[] } | null = null
   /** Diagnostics for tests: buffers scheduled, and those that had to join late (an audible skip). */
-  stats = { nodes: 0, late: 0 }
+  stats = { nodes: 0, late: 0, scrubs: 0 }
 
   /** Whether a clip's media plays through Web Audio ('fail': use an <audio> element). */
   status(url: string): 'pending' | 'ok' | 'fail' {
@@ -70,6 +83,124 @@ class AudioEngine {
     if (!this.ctx) this.ctx = new AudioContext({ latencyHint: 'interactive' })
     if (this.ctx.state === 'suspended') void this.ctx.resume()
     return this.ctx
+  }
+
+  private meter(ctx: AudioContext, from: AudioNode): Meter {
+    const split = ctx.createChannelSplitter(2)
+    from.connect(split)
+    const mk = () => {
+      const a = ctx.createAnalyser()
+      a.fftSize = 2048
+      return a
+    }
+    const m = { l: mk(), r: mk() }
+    split.connect(m.l, 0)
+    split.connect(m.r, 1)
+    return m
+  }
+
+  /** Track bus: fader -> pan -> Mix fader -> output, metered after pan (like the mixer's meters). */
+  private bus(id: string): Bus {
+    const ctx = this.context()
+    if (!this.master) {
+      const gain = ctx.createGain()
+      gain.gain.value = this.mixState.master
+      gain.connect(ctx.destination)
+      this.master = { gain, meter: this.meter(ctx, gain) }
+    }
+    let b = this.buses.get(id)
+    if (!b) {
+      const gain = ctx.createGain()
+      const pan = ctx.createStereoPanner()
+      const t = this.mixState.tracks.find((x) => x.id === id)
+      gain.gain.value = t?.gain ?? 1
+      pan.pan.value = t?.pan ?? 0
+      gain.connect(pan)
+      pan.connect(this.master.gain)
+      b = { gain, pan, meter: this.meter(ctx, pan) }
+      this.buses.set(id, b)
+    }
+    return b
+  }
+
+  /** Mixer state (track faders, pans, Mix fader); applied smoothly to the live buses. */
+  mix(m: AudioMix): void {
+    this.mixState = m
+    const ctx = this.ctx
+    if (!ctx) return
+    for (const t of m.tracks) {
+      const b = this.buses.get(t.id)
+      if (!b) continue
+      b.gain.gain.setTargetAtTime(t.gain, ctx.currentTime, 0.01)
+      b.pan.pan.setTargetAtTime(t.pan, ctx.currentTime, 0.01)
+    }
+    this.master?.gain.gain.setTargetAtTime(m.master, ctx.currentTime, 0.01)
+  }
+
+  /** Peak levels (linear, 0..) of the last ~40 ms: the Mix and every track that has played. */
+  levels(): { master: [number, number]; tracks: Record<string, [number, number]> } {
+    const buf = new Float32Array(2048)
+    const peak = (a: AnalyserNode) => {
+      a.getFloatTimeDomainData(buf)
+      let p = 0
+      for (let i = 0; i < buf.length; i++) p = Math.max(p, Math.abs(buf[i]))
+      return p
+    }
+    const tracks: Record<string, [number, number]> = {}
+    for (const [id, b] of this.buses) tracks[id] = [peak(b.meter.l), peak(b.meter.r)]
+    return { master: this.master ? [peak(this.master.meter.l), peak(this.master.meter.r)] : [0, 0], tracks }
+  }
+
+  /** Paused playhead moved (scrubbing, arrow keys): play a short slice of the mix there. */
+  scrub(at: number, want: AudioVoice[]): void {
+    if (this.session) return
+    const ctx = this.context()
+    const prev = this.scrubbing
+    if (prev) for (const n of prev.nodes) n.stop(ctx.currentTime + 0.005)
+    const cur = { at, nodes: [] as AudioBufferSourceNode[] }
+    this.scrubbing = cur
+    this.stats.scrubs++
+    const T = TICKS_PER_SECOND
+    for (const v of want) {
+      if (at < v.span[0] || at >= v.span[1]) continue
+      void openAudio(v.url).then(async (d) => {
+        if (!d || this.scrubbing !== cur) return
+        const src = v.sourceIn / T + ((at - v.start) / T) * v.speed
+        const wb = await d.sink.getBuffer(src)
+        if (!wb || this.scrubbing !== cur) return
+        const n = ctx.createBufferSource()
+        n.buffer = wb.buffer
+        n.playbackRate.value = v.speed
+        const env = ctx.createGain()
+        const now = ctx.currentTime + 0.005
+        env.gain.setValueAtTime(0, now)
+        env.gain.linearRampToValueAtTime(v.gain, now + 0.005)
+        env.gain.setValueAtTime(v.gain, now + SCRUB - 0.012)
+        env.gain.linearRampToValueAtTime(0, now + SCRUB)
+        n.connect(env)
+        env.connect(this.bus(v.track).gain)
+        const offset = Math.max(0, src - wb.timestamp)
+        // a buffer is only ~20-40 ms long: chain the next one for the rest of the slice
+        n.start(now, offset)
+        cur.nodes.push(n)
+        let end = wb.timestamp + wb.duration
+        let when = now + (wb.duration - offset) / v.speed
+        while (when < now + SCRUB) {
+          const nb = await d.sink.getBuffer(end + 1e-4)
+          if (!nb || nb.timestamp + nb.duration <= end || this.scrubbing !== cur) break
+          const m = ctx.createBufferSource()
+          m.buffer = nb.buffer
+          m.playbackRate.value = v.speed
+          m.connect(env)
+          m.start(when, Math.max(0, end - nb.timestamp))
+          cur.nodes.push(m)
+          when += (nb.timestamp + nb.duration - end) / v.speed
+          end = nb.timestamp + nb.duration
+        }
+        for (const x of cur.nodes) x.stop(now + SCRUB)
+        setTimeout(() => env.disconnect(), (SCRUB + 0.2) * 1000)
+      })
+    }
   }
 
   get running(): boolean {
@@ -120,14 +251,14 @@ class AudioEngine {
     }
     for (const v of want) {
       let l = this.voices.get(v.key)
-      if (l && (l.v.url !== v.url || l.v.start !== v.start || l.v.sourceIn !== v.sourceIn || l.v.speed !== v.speed || l.v.span[1] !== v.span[1])) {
+      if (l && (l.v.track !== v.track || l.v.url !== v.url || l.v.start !== v.start || l.v.sourceIn !== v.sourceIn || l.v.speed !== v.speed || l.v.span[1] !== v.span[1])) {
         this.kill(l) // edited while playing
         l = undefined
       }
       if (!l) {
         const gain = ctx.createGain()
         gain.gain.value = v.gain
-        gain.connect(ctx.destination)
+        gain.connect(this.bus(v.track).gain)
         l = { v, gain, nodes: new Set(), stopped: false }
         this.voices.set(v.key, l)
         void this.schedule(l, s)

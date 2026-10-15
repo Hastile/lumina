@@ -150,6 +150,12 @@
           "title": "Volume Db",
           "type": "number"
         },
+        "gain_db": {
+          "default": 0.0,
+          "description": "Audio Gain (Premiere's G dialog), applied before Volume",
+          "title": "Gain Db",
+          "type": "number"
+        },
         "motion": {
           "$ref": "#/$defs/Motion"
         },
@@ -210,6 +216,7 @@
         "label",
         "opacity",
         "volume_db",
+        "gain_db",
         "motion",
         "keyframes",
         "graphic",
@@ -822,6 +829,12 @@
           ],
           "default": null,
           "title": "Out Point"
+        },
+        "master_volume_db": {
+          "default": 0.0,
+          "description": "Audio Track Mixer's Mix fader",
+          "title": "Master Volume Db",
+          "type": "number"
         }
       },
       "required": [
@@ -835,7 +848,8 @@
         "markers",
         "playhead",
         "in_point",
-        "out_point"
+        "out_point",
+        "master_volume_db"
       ],
       "title": "Sequence",
       "type": "object"
@@ -1446,6 +1460,20 @@
           "title": "Targeted",
           "type": "boolean"
         },
+        "volume_db": {
+          "default": 0.0,
+          "description": "audio: Audio Track Mixer fader",
+          "title": "Volume Db",
+          "type": "number"
+        },
+        "pan": {
+          "default": 0.0,
+          "description": "audio: track pan / balance, -100 left .. 100 right",
+          "maximum": 100,
+          "minimum": -100,
+          "title": "Pan",
+          "type": "number"
+        },
         "clips": {
           "additionalProperties": {
             "$ref": "#/$defs/Clip"
@@ -1471,6 +1499,8 @@
         "muted",
         "solo",
         "targeted",
+        "volume_db",
+        "pan",
         "clips",
         "transitions"
       ],

@@ -339,7 +339,20 @@ const ko: Record<string, string> = {
   'Ease In': '천천히 들어오기',
   'Ease Out': '천천히 나가기',
   'Temporal Interpolation': '시간 보간',
-  'Move Keyframes': '키프레임 이동'
+  'Move Keyframes': '키프레임 이동',
+  // audio
+  'Audio Gain': '오디오 게인',
+  'Audio Gain...': '오디오 게인...',
+  'Set Gain to': '게인 설정',
+  'Adjust Gain by': '게인 조정',
+  'Normalize Max Peak to': '최대 피크 표준화',
+  'Normalize All Peaks to': '모든 피크 표준화',
+  'Peak Amplitude': '피크 진폭',
+  'Select an audio clip': '오디오 클립을 선택하세요',
+  'Pan': '팬',
+  'Mix': '혼합',
+  'Track Volume': '트랙 볼륨',
+  'Mix Volume': '혼합 볼륨'
 }
 
 let locale: Locale = 'ko'

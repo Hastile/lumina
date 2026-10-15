@@ -136,6 +136,20 @@ def decode_audio(path: str, src_start: int, src_dur: int, speed: float, rate: in
     return np.frombuffer(proc.stdout, dtype=np.float32).reshape(-1, 2)
 
 
+def stereo_pan(pcm: np.ndarray, pan: float) -> np.ndarray:
+    """Track pan on a stereo signal, exactly as Web Audio's StereoPannerNode (the preview) does it:
+    equal-power balance, pan -100 (left) .. 100 (right)."""
+    x = max(-1.0, min(1.0, pan / 100))
+    if x == 0:
+        return pcm
+    left, right = pcm[:, 0], pcm[:, 1]
+    if x < 0:
+        g = (x + 1) * np.pi / 2
+        return np.stack([left + right * np.float32(np.cos(g)), right * np.float32(np.sin(g))], axis=1)
+    g = x * np.pi / 2
+    return np.stack([left * np.float32(np.cos(g)), right + left * np.float32(np.sin(g))], axis=1)
+
+
 def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: Callable[[], bool] = lambda: False,
               warn: Callable[[str], None] = lambda m: None, progress: Callable[[float], None] = lambda f: None) -> None:
     """Mix [a, b) of the sequence to interleaved stereo float32 at the sequence rate."""
@@ -157,8 +171,9 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
         for c in track["clips"].values():
             s0, e0 = ext.get(c["id"], (c["start"], c["end"]))
             if c["enabled"] and e0 > a and s0 < b:
-                jobs.append((c, s0, e0, fades.get(c["id"], [])))
-    for i, (c, s0, e0, fades) in enumerate(jobs):
+                jobs.append((c, s0, e0, fades.get(c["id"], []), track))
+    master = 10 ** (seq.get("master_volume_db", 0.0) / 20)
+    for i, (c, s0, e0, fades, track) in enumerate(jobs):
         if cancelled():
             return
         progress(i / max(1, len(jobs)))
@@ -200,6 +215,11 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
             pcm = pcm * gain[:, None]
         elif c["volume_db"] != 0:
             pcm = pcm * np.float32(10 ** (c["volume_db"] / 20))
+        # Audio Gain, the track fader and the Mix fader are plain gains; then the track's pan
+        g = 10 ** ((c.get("gain_db", 0.0) + track.get("volume_db", 0.0)) / 20) * master
+        if g != 1:
+            pcm = pcm * np.float32(g)
+        pcm = stereo_pan(pcm, track.get("pan", 0.0))
         buf[off:off + n] += pcm
     if buf is not None:
         np.clip(buf, -1.0, 1.0, out=buf)

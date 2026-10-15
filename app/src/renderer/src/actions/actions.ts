@@ -370,6 +370,37 @@ def('edit.deselectAll', t('Deselect All'), () => set({ selectedClips: [], select
 // Clip
 def('clip.rename', t('Rename'), rename)
 def('clip.speed', 'Speed/Duration', speedDialog)
+def('clip.audioGain', t('Audio Gain'), () => {
+  const seq = activeSequence()
+  if (!seq) return
+  // the selected audio clips, and the audio linked to selected video (Premiere)
+  const sel = selectedClipObjects(seq)
+  const links = new Set(sel.map((c) => c.link_id).filter(Boolean))
+  const audio = seq.audio_tracks.flatMap((id) => Object.values(seq.tracks[id].clips)).filter((c) => sel.includes(c) || (c.link_id && links.has(c.link_id)))
+  if (!audio.length) {
+    toast(t('Select an audio clip'), 'info')
+    return
+  }
+  const gain = audio[0].gain_db ?? 0
+  openDialog({
+    title: t('Audio Gain'),
+    okLabel: t('OK'),
+    fields: [
+      { key: 'mode', label: '', type: 'select', value: 'set', options: [
+        { value: 'set', label: t('Set Gain to') },
+        { value: 'adjust', label: t('Adjust Gain by') },
+        { value: 'normalize_max', label: t('Normalize Max Peak to') },
+        { value: 'normalize_all', label: t('Normalize All Peaks to') }
+      ] },
+      { key: 'db', label: 'dB', type: 'number', value: gain, min: -96, max: 96, step: 0.1, suffix: 'dB' }
+    ],
+    onSubmit: async (v) => {
+      const res = await exec<{ peaks_db: Record<string, number | null> }>('clip.audio_gain', { sequence_id: seq.id, clip_ids: audio.map((c) => c.id), mode: v.mode, db: Number(v.db) }, t('Audio Gain'))
+      const peaks = Object.values(res?.peaks_db ?? {}).filter((x): x is number => x !== null)
+      if (peaks.length) toast(`${t('Peak Amplitude')}: ${Math.max(...peaks).toFixed(1)} dB`, 'info')
+    }
+  })
+})
 def('clip.insert', t('Insert'), () => placeFromSource('insert'))
 def('clip.overwrite', t('Overwrite'), () => placeFromSource('overwrite'))
 def('clip.enable', t('Enable'), async () => {
