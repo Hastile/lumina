@@ -117,8 +117,8 @@ export class EngineClient {
     })
   }
 
-  exec<T = Record<string, unknown>>(name: string, params: Record<string, unknown> = {}, label?: string): Promise<T> {
-    return this.call<{ result: T }>('execute', { name, params, label }).then((r) => r.result)
+  exec<T = Record<string, unknown>>(name: string, params: Record<string, unknown> = {}, label?: string, record = true): Promise<T> {
+    return this.call<{ result: T }>('execute', { name, params, label, ...(record ? {} : { record: false }) }).then((r) => r.result)
   }
 
   onEvent(fn: (e: EngineEvent) => void): () => void {

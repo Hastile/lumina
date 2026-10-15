@@ -1030,6 +1030,48 @@ try {
   const tiles = await page.locator('[data-filmstrip] > div').count()
   log('tools: rolling', ((t1.v[0].end - pre.v[0].end) / TPS).toFixed(2), 's; slip; slide; Ctrl+C/V; marquee; rate stretch', Math.round(t6.v[3].speed * 100) + '%; filmstrip tiles', tiles)
 
+  // ---- timeline track areas: drag a track header edge (height), the video/audio divider, each area
+  // scrolls on its own, and the zoom bar's end knob zooms
+  {
+    const box = async (sel) => page.locator(sel).first().boundingBox()
+    const dragBy = async (sel, dx, dy) => {
+      const b = await box(sel)
+      await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+      await page.mouse.down()
+      await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2 + dy, { steps: 6 })
+      await page.mouse.up()
+    }
+    const a1 = '.lm-th.audio:has([data-track-resize="A1"])'
+    const h0 = (await box(a1)).height
+    await dragBy('[data-track-resize="A1"]', 0, 30)
+    const h1 = (await box(a1)).height
+    assert.ok(h1 >= h0 + 25, `A1 grew by dragging its edge (${h0} -> ${h1})`)
+    const v1 = '.lm-th.video:has([data-track-resize="V1"])'
+    const vh0 = (await box(v1)).height
+    await dragBy('[data-track-resize="V1"]', 0, -20)
+    assert.ok((await box(v1)).height >= vh0 + 15, 'V1 grew upward by dragging its top edge')
+    const d0 = (await box('[data-divider]')).y
+    await dragBy('[data-divider]', 0, -40)
+    const d1 = (await box('[data-divider]')).y
+    assert.ok(d1 < d0 - 30, `divider moved up (${d0} -> ${d1})`)
+    // make the audio area overflow, then wheel inside it: audio scrolls, video stays
+    await dragBy('[data-track-resize="A1"]', 0, 200)
+    const v1y = (await box(v1)).y
+    const a1y = (await box(a1)).y
+    const lanes = await box('.lm-tl-lanes')
+    await page.mouse.move(lanes.x + 100, d1 + 30)
+    await page.mouse.wheel(0, 60)
+    await page.waitForTimeout(150)
+    assert.ok((await box(a1)).y < a1y - 20, 'audio area scrolled')
+    assert.equal((await box(v1)).y, v1y, 'video area did not move')
+    // zoom bar: dragging the right knob left zooms in
+    const pps0 = await page.evaluate(() => window.__lumina.get().pxPerSecond)
+    await dragBy('[data-knob="end"]', -60, 0)
+    const pps1 = await page.evaluate(() => window.__lumina.get().pxPerSecond)
+    assert.ok(pps1 > pps0 * 1.05, `zoom knob zoomed in (${pps0} -> ${pps1})`)
+    await page.evaluate(() => { localStorage.removeItem('lumina.trackHeights'); localStorage.removeItem('lumina.tlSplit') })
+    log('track areas: A1', h0, '->', h1, 'px; divider', Math.round(d0 - d1), 'px up; audio area scrolls alone; zoom knob', pps0.toFixed(1), '->', pps1.toFixed(1), 'px/s')
+  }
   // ---- File > Save As remembers the project; File > Open starts in that folder; Open Recent reopens it
   const saved = join(WORK, 'e2e project.lumina')
   await app.evaluate(({ dialog }, target) => {

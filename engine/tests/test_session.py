@@ -221,3 +221,16 @@ def test_in_out_marks_are_partial_updates():
     s.execute("media.set_marks", {"media_id": a, "out_point": 2 * SEC})
     s.execute("media.set_marks", {"media_id": a, "in_point": SEC})
     assert (s.doc["media"][a]["in_point"], s.doc["media"][a]["out_point"]) == (SEC, 2 * SEC)
+
+
+def test_unrecorded_execute_keeps_undo_and_redo():
+    from lumina.session import Session
+
+    s = Session()
+    s.execute("project.rename", {"name": "A"})
+    s.execute("project.rename", {"name": "B"})
+    s.undo()
+    before = (len(s.undo_stack), len(s.redo_stack))
+    s.execute("project.rename", {"name": "C"}, record=False)
+    assert (len(s.undo_stack), len(s.redo_stack)) == before
+    assert s.doc["name"] == "C"

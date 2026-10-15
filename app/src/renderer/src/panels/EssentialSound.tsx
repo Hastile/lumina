@@ -8,6 +8,7 @@ import { t } from '@shared/i18n'
 import type { Clip, Sequence } from '../engine/document'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
+import { engine } from '../engine/client'
 import { activeSequence, exec, findClip, get, useStore } from '../state/store'
 import { valueAt } from '../util/motion'
 import { fmtDb } from './Audio'
@@ -105,7 +106,8 @@ export function EssentialSoundPanel() {
     if (!seq || !pending.length) return
     for (const id of pending) tried.current.add(id)
     void run(async () => {
-      const r = await exec<{ clips: Record<string, { tag: string | null }> }>('audio.auto_tag', { sequence_id: seq.id, clip_ids: pending, overwrite: false }, t('Auto-Tag'))
+      // no undo step: selecting a clip should not push the last edit out of Ctrl+Z
+      const r = await engine.exec<{ clips: Record<string, { tag: string | null }> }>('audio.auto_tag', { sequence_id: seq.id, clip_ids: pending, overwrite: false }, t('Auto-Tag'), false).catch(() => null)
       const bad = pending.filter((id) => !r?.clips[id]?.tag)
       if (bad.length) setFailed((f) => new Set([...f, ...bad]))
     })

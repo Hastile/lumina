@@ -22,6 +22,25 @@ const RULER_H = 30
 const VIDEO_H = 42
 const AUDIO_H = 46
 const SECTION_GAP = 6
+const MIN_TRACK_H = 22
+const MAX_TRACK_H = 320
+const VBAR_W = 10
+
+function loadJson<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    return v ? (JSON.parse(v) as T) : fallback
+  } catch {
+    return fallback
+  }
+}
+function saveJson(key: string, v: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(v))
+  } catch {
+    /* storage unavailable */
+  }
+}
 const EDGE_PX = 6
 const SNAP_PX = 8
 
@@ -108,22 +127,37 @@ function clipKeyframeTimes(clip: Clip, kind: 'video' | 'audio'): { t: number; pr
   return [...at].map(([t, props]) => ({ t, props })).sort((a, b) => a.t - b.t)
 }
 
-function buildRows(seq: Sequence): { rows: Row[]; height: number; audioTop: number } {
-  const rows: Row[] = []
-  let y = 0
-  const vids = [...seq.video_tracks].reverse()
-  vids.forEach((id) => {
-    const index = seq.video_tracks.indexOf(id)
-    rows.push({ track: seq.tracks[id], label: `V${index + 1}`, kind: 'video', index, top: y, height: VIDEO_H })
-    y += VIDEO_H
+type Layout = { rows: Row[]; videoH: number; audioTop: number; audioH: number; vMax: number; aMax: number; vScroll: number; aScroll: number }
+
+/** Premiere's two track areas: video above the divider with V1 against it (scrolling up reveals the
+ * higher tracks), audio below it with A1 against it; each scrolls on its own. Row tops are in the
+ * body's coordinates. */
+function buildRows(seq: Sequence, heights: Record<string, number>, bodyH: number, split: number, vScroll: number, aScroll: number): Layout {
+  const videoH = Math.max(0, Math.min(bodyH - SECTION_GAP, Math.round(bodyH * split)))
+  const audioTop = videoH + SECTION_GAP
+  const audioH = Math.max(0, bodyH - audioTop)
+  const hOf = (id: string, kind: 'video' | 'audio') => heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)
+  const vContent = seq.video_tracks.reduce((a, id) => a + hOf(id, 'video'), 0)
+  const aContent = seq.audio_tracks.reduce((a, id) => a + hOf(id, 'audio'), 0)
+  const vMax = Math.max(0, vContent - videoH)
+  const aMax = Math.max(0, aContent - audioH)
+  const vs = Math.max(0, Math.min(vMax, vScroll))
+  const as = Math.max(0, Math.min(aMax, aScroll))
+  const vrows: Row[] = []
+  let y = videoH + vs
+  seq.video_tracks.forEach((id, index) => {
+    const h = hOf(id, 'video')
+    y -= h
+    vrows.push({ track: seq.tracks[id], label: `V${index + 1}`, kind: 'video', index, top: y, height: h })
   })
-  y += SECTION_GAP
-  const audioTop = y
+  const rows = vrows.reverse()
+  y = audioTop - as
   seq.audio_tracks.forEach((id, index) => {
-    rows.push({ track: seq.tracks[id], label: `A${index + 1}`, kind: 'audio', index, top: y, height: AUDIO_H })
-    y += AUDIO_H
+    const h = hOf(id, 'audio')
+    rows.push({ track: seq.tracks[id], label: `A${index + 1}`, kind: 'audio', index, top: y, height: h })
+    y += h
   })
-  return { rows, height: y, audioTop }
+  return { rows, videoH, audioTop, audioH, vMax, aMax, vScroll: vs, aScroll: as }
 }
 
 function niceStep(pxPerSecond: number): number {
@@ -170,9 +204,15 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const showKfs = useStore((s) => s.showClipKeyframes)
 
   const lanesRef = useRef<HTMLDivElement>(null)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const hbarRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const vbarRef = useRef<HTMLDivElement>(null)
+  const abarRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(800)
+  const [bodyH, setBodyH] = useState(300)
+  const [heights, setHeights] = useState<Record<string, number>>(() => loadJson('lumina.trackHeights', {}))
+  const [split, setSplit] = useState<number>(() => loadJson('lumina.tlSplit', 0.5))
+  const [vScroll, setVScroll] = useState(0)
+  const [aScroll, setAScroll] = useState(0)
   const [drag, setDrag] = useState<Drag | null>(null)
   const [hover, setHover] = useState<{ clipId: string; edge: 'start' | 'end' | null } | null>(null)
   const [dropTarget, setDropTarget] = useState<{ row: number; t: number } | null>(null)
@@ -180,12 +220,15 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   useLayoutEffect(() => {
     const el = lanesRef.current
     if (!el) return
-    const ro = new ResizeObserver(() => setWidth(el.clientWidth))
+    const ro = new ResizeObserver(() => {
+      setWidth(el.clientWidth)
+      setBodyH(el.clientHeight)
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [seq.id])
 
-  const layout = useMemo(() => buildRows(seq), [seq])
+  const layout = useMemo(() => buildRows(seq, heights, bodyH, split, vScroll, aScroll), [seq, heights, bodyH, split, vScroll, aScroll])
   const end = sequenceEnd(seq)
   const contentW = Math.max(width, ((end / TICKS_PER_SECOND) + 30) * pps)
   const toX = useCallback((t: number) => (t / TICKS_PER_SECOND) * pps - scrollX, [pps, scrollX])
@@ -209,9 +252,35 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return () => window.removeEventListener('timeline:zoomFit', fit)
   }, [width])
 
+  // the native scrollbars of the two track areas follow the scroll offsets (video's is measured from V1)
   useEffect(() => {
-    if (hbarRef.current && Math.abs(hbarRef.current.scrollLeft - scrollX) > 1) hbarRef.current.scrollLeft = scrollX
-  }, [scrollX])
+    const v = vbarRef.current
+    if (v && Math.abs(v.scrollTop - (layout.vMax - layout.vScroll)) > 1) v.scrollTop = layout.vMax - layout.vScroll
+    const a = abarRef.current
+    if (a && Math.abs(a.scrollTop - layout.aScroll) > 1) a.scrollTop = layout.aScroll
+  }, [layout.vMax, layout.vScroll, layout.aScroll])
+
+  const resizeTrack = (id: string, h: number, commit: boolean) => {
+    const next = { ...heights, [id]: Math.round(Math.max(MIN_TRACK_H, Math.min(MAX_TRACK_H, h))) }
+    setHeights(next)
+    if (commit) saveJson('lumina.trackHeights', next)
+  }
+  const dragDivider = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const top = bodyRef.current!.getBoundingClientRect().top
+    let v = split
+    const move = (ev: MouseEvent) => {
+      v = Math.max(0.08, Math.min(0.92, (ev.clientY - top - SECTION_GAP / 2) / Math.max(1, bodyH)))
+      setSplit(v)
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      saveJson('lumina.tlSplit', v)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
 
   const st = seq.settings
   const tpf = ticksPerFrame(st)
@@ -243,13 +312,16 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return best
   }
 
-  const rowAt = (y: number): number => {
-    const idx = rows.findIndex((r) => y >= r.top && y < r.top + r.height)
-    return idx
-  }
+  // the part of a row inside its own track area
+  const shown = (r: Row): [number, number] =>
+    r.kind === 'video' ? [Math.max(0, r.top), Math.min(layout.videoH, r.top + r.height)] : [Math.max(layout.audioTop, r.top), Math.min(bodyH, r.top + r.height)]
+  const rowAt = (y: number): number => rows.findIndex((r) => {
+    const [a, b] = shown(r)
+    return y >= a && y < b
+  })
   const laneXY = (e: { clientX: number; clientY: number }) => {
     const r = lanesRef.current!.getBoundingClientRect()
-    return { x: e.clientX - r.left, y: e.clientY - r.top + (scrollRef.current?.scrollTop ?? 0) }
+    return { x: e.clientX - r.left, y: e.clientY - r.top }
   }
 
   // ------------------------------------------------------------ ruler
@@ -359,7 +431,10 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         const [top, bot] = [Math.min(drag.y0, y), Math.max(drag.y0, y)]
         const t0 = toT(l)
         const t1 = toT(r)
-        const hit = rows.filter((row) => row.top < bot && row.top + row.height > top && !row.track.locked)
+        const hit = rows.filter((row) => {
+          const [a, b] = shown(row)
+          return a < b && a < bot && b > top && !row.track.locked
+        })
           .flatMap((row) => Object.values(row.track.clips).filter((c) => c.start < t1 && c.end > t0))
         const links = new Set(hit.map((c) => c.link_id).filter(Boolean))
         const linked = e.altKey ? [] : Object.values(seq.tracks).flatMap((tr) => Object.values(tr.clips).filter((c) => c.link_id && links.has(c.link_id)))
@@ -441,13 +516,23 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   }
 
   const onWheel = (e: React.WheelEvent) => {
-    if (e.altKey || e.ctrlKey) {
+    const y = e.clientY - (bodyRef.current?.getBoundingClientRect().top ?? 0)
+    const overHeaders = !!(e.target as HTMLElement).closest('.lm-tl-headers')
+    if (e.altKey && overHeaders) {
+      // Alt+wheel over a track header: that track's height (Premiere)
+      const r = rows[rowAt(y)]
+      if (r) resizeTrack(r.track.id, r.height + (e.deltaY < 0 ? 6 : -6), true)
+    } else if (e.altKey || e.ctrlKey) {
       const { x } = laneXY(e)
       const tSec = (x + scrollX) / pps
       const next = Math.max(0.5, Math.min(4000, pps * (e.deltaY < 0 ? 1.25 : 0.8)))
       set({ pxPerSecond: next, scrollX: Math.max(0, tSec * next - x) })
     } else if (e.shiftKey) {
       set({ scrollX: Math.max(0, Math.min(contentW - width, scrollX + e.deltaY)) })
+    } else if (y < layout.videoH) {
+      setVScroll(Math.max(0, Math.min(layout.vMax, layout.vScroll - e.deltaY)))
+    } else if (y >= layout.audioTop) {
+      setAScroll(Math.max(0, Math.min(layout.aMax, layout.aScroll + e.deltaY)))
     }
   }
 
@@ -690,6 +775,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   }
 
   const inOut = seq.in_point != null || seq.out_point != null
+  const vClip = `inset(0 0 ${Math.max(0, bodyH - layout.videoH)}px 0)`
+  const aClip = `inset(${layout.audioTop}px 0 0 0)`
 
   return (
     <div className="lm-panel lm-timeline" style={{ cursor }}>
@@ -733,43 +820,98 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <div className="head" style={{ left: toX(time) }} />
         </div>
       </div>
-      <div className="lm-tl-body" ref={scrollRef} onWheel={onWheel}>
-        <div className="lm-tl-inner" style={{ height: layout.height + 40 }}>
-          <div className="lm-tl-headers" style={{ width: HEADER_W }}>
-            {rows.map((r) => (
-              <TrackHeader key={r.track.id} row={r} seq={seq} />
-            ))}
+      <div className="lm-tl-body" ref={bodyRef} onWheel={onWheel}>
+        <div className="lm-tl-headers" style={{ width: HEADER_W }}>
+          {(['video', 'audio'] as const).map((k) => (
+            <div key={k} className="lm-tl-pane" style={{ clipPath: k === 'video' ? vClip : aClip }}>
+              {rows.filter((r) => r.kind === k).map((r) => (
+                <TrackHeader key={r.track.id} row={r} seq={seq} onResize={(h, commit) => resizeTrack(r.track.id, h, commit)} />
+              ))}
+            </div>
+          ))}
+        </div>
+        <div
+          className="lm-tl-lanes"
+          ref={lanesRef}
+          onMouseDown={laneMouseDown}
+          onMouseMove={laneMouseMove}
+          onMouseLeave={() => setHover(null)}
+          onDragOver={(e) => {
+            e.preventDefault()
+            const { x, y } = laneXY(e)
+            setDropTarget({ row: rowAt(y), t: snapToFrame(toT(x), st) })
+          }}
+          onDragLeave={() => setDropTarget(null)}
+          onDrop={dropOnLanes}
+        >
+          {(['video', 'audio'] as const).map((k) => (
+            <div key={k} className="lm-tl-pane" data-pane={k} style={{ clipPath: k === 'video' ? vClip : aClip }}>
+              {rows.map((r, i) => r.kind === k && (
+                <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
+              ))}
+              {rows.map((r, i) => r.kind === k && Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
+              {rows.map((r) => r.kind === k && trackTransitions(r.track).map((w) => renderTransition(w, r)))}
+            </div>
+          ))}
+          {inOut && <div className="lm-lane-inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0), height: bodyH }} />}
+          <div className="lm-playhead" style={{ left: toX(time), height: bodyH }} />
+          {drag?.kind === 'marquee' && (
+            <div className="lm-tl-marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
+          )}
+          {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
+        </div>
+        <div className="lm-tl-vbars" style={{ width: VBAR_W }}>
+          <div className="lm-tl-vbar" data-vbar="video" ref={vbarRef} style={{ top: 0, height: layout.videoH }} onScroll={(e) => setVScroll(layout.vMax - (e.target as HTMLDivElement).scrollTop)}>
+            <div style={{ height: layout.videoH + layout.vMax }} />
           </div>
-          <div
-            className="lm-tl-lanes"
-            ref={lanesRef}
-            onMouseDown={laneMouseDown}
-            onMouseMove={laneMouseMove}
-            onMouseLeave={() => setHover(null)}
-            onDragOver={(e) => {
-              e.preventDefault()
-              const { x, y } = laneXY(e)
-              setDropTarget({ row: rowAt(y), t: snapToFrame(toT(x), st) })
-            }}
-            onDragLeave={() => setDropTarget(null)}
-            onDrop={dropOnLanes}
-          >
-            {rows.map((r, i) => (
-              <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
-            ))}
-            {rows.map((r, i) => Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
-            {rows.map((r) => trackTransitions(r.track).map((w) => renderTransition(w, r)))}
-            {inOut && <div className="lm-lane-inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0), height: layout.height }} />}
-            <div className="lm-playhead" style={{ left: toX(time), height: layout.height + 40 }} />
-            {drag?.kind === 'marquee' && (
-              <div className="lm-tl-marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
-            )}
-            {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: layout.height }} />}
+          <div className="lm-tl-vbar" data-vbar="audio" ref={abarRef} style={{ top: layout.audioTop, height: layout.audioH }} onScroll={(e) => setAScroll((e.target as HTMLDivElement).scrollTop)}>
+            <div style={{ height: layout.audioH + layout.aMax }} />
           </div>
         </div>
+        <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
       </div>
-      <div className="lm-tl-hbar" style={{ marginLeft: HEADER_W }} ref={hbarRef} onScroll={(e) => set({ scrollX: (e.target as HTMLDivElement).scrollLeft })}>
-        <div style={{ width: contentW, height: 1 }} />
+      <ZoomBar width={width} contentW={contentW} pps={pps} scrollX={scrollX} end={end} />
+    </div>
+  )
+}
+
+/** Premiere's zoom scroll bar: drag the thumb to scroll, its round ends to zoom. */
+function ZoomBar({ width, contentW, pps, scrollX, end }: { width: number; contentW: number; pps: number; scrollX: number; end: number }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const total = contentW / pps
+  const viewStart = scrollX / pps
+  const viewLen = width / pps
+  const barW = Math.max(1, ref.current?.clientWidth ?? width)
+  const left = (viewStart / total) * barW
+  const w = Math.max(24, (viewLen / total) * barW)
+  const grab = (e: React.MouseEvent, part: 'thumb' | 'start' | 'end') => {
+    e.preventDefault()
+    e.stopPropagation()
+    const x0 = e.clientX
+    const [s0, l0, tot] = [viewStart, viewLen, Math.max(total, end / TICKS_PER_SECOND + 30)]
+    const secPerPx = tot / barW
+    const move = (ev: MouseEvent) => {
+      const d = (ev.clientX - x0) * secPerPx
+      if (part === 'thumb') {
+        set({ scrollX: Math.max(0, Math.min(contentW - width, (s0 + d) * pps)) })
+        return
+      }
+      const [a, b] = part === 'start' ? [Math.max(0, Math.min(s0 + d, s0 + l0 - 0.05)), s0 + l0] : [s0, Math.max(s0 + 0.05, s0 + l0 + d)]
+      const next = Math.max(0.5, Math.min(4000, width / (b - a)))
+      set({ pxPerSecond: next, scrollX: Math.max(0, (part === 'start' ? b - width / next : a) * next) })
+    }
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+  return (
+    <div className="lm-tl-zoombar" ref={ref} style={{ marginLeft: HEADER_W, marginRight: VBAR_W }} data-zoombar="">
+      <div className="thumb" style={{ left, width: w }} onMouseDown={(e) => grab(e, 'thumb')}>
+        <span className="knob l" data-knob="start" onMouseDown={(e) => grab(e, 'start')} />
+        <span className="knob r" data-knob="end" onMouseDown={(e) => grab(e, 'end')} />
       </div>
     </div>
   )
@@ -805,8 +947,23 @@ function PlayheadTimecode({ value, st }: { value: number; st: Sequence['settings
   )
 }
 
-function TrackHeader({ row, seq }: { row: Row; seq: Sequence }) {
+function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize: (h: number, commit: boolean) => void }) {
   const t = row.track
+  // the edge away from the divider: a video track grows upward, an audio track downward
+  const resize = (e: React.MouseEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    const [y0, h0] = [e.clientY, row.height]
+    const at = (ev: MouseEvent) => h0 + (row.kind === 'video' ? y0 - ev.clientY : ev.clientY - y0)
+    const move = (ev: MouseEvent) => onResize(at(ev), false)
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      onResize(at(ev), true)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
   const toggle = (key: 'locked' | 'sync_lock' | 'hidden' | 'muted' | 'solo' | 'targeted') =>
     void exec('track.set', { sequence_id: seq.id, track_id: t.id, [key]: !t[key] }, `Track ${key}`)
   return (
@@ -847,6 +1004,7 @@ function TrackHeader({ row, seq }: { row: Row; seq: Sequence }) {
         </>
       )}
       <span className="tname">{t.name.replace(/^(Video|Audio) (\d+)$/, (_, k: string, n: string) => `${tx(k)} ${n}`)}</span>
+      <div className={`lm-th-resize ${row.kind}`} data-track-resize={row.label} onMouseDown={resize} />
     </div>
   )
 }

@@ -154,7 +154,8 @@ function onEvent(e: EngineEvent): void {
         const seq = activeSequence({ ...s, doc })
         if (seq) next.selectedClips = s.selectedClips.filter((id) => findClip(seq, id))
         if (s.sourceMediaId && !doc?.media[s.sourceMediaId]) next.sourceMediaId = null
-        if (!s.playing && seq && e.patches.some((p) => p.path[p.path.length - 1] === 'playhead')) next.programTime = seq.playhead
+        // (not the echo of a playhead this window sent: the user may have moved on since)
+        if (!s.playing && seq && seq.playhead !== sentPlayhead && e.patches.some((p) => p.path[p.path.length - 1] === 'playhead')) next.programTime = seq.playhead
         return next
       })
       break
@@ -197,11 +198,15 @@ export async function connectEngine(): Promise<void> {
 
 // Keep the engine's playhead in sync for agents (debounced, not every frame).
 let playheadTimer: ReturnType<typeof setTimeout> | undefined
+let sentPlayhead: number | null = null
 useStore.subscribe((s, prev) => {
   if (s.programTime === prev.programTime || s.playing === 'program') return
   clearTimeout(playheadTimer)
   playheadTimer = setTimeout(() => {
     const seq = activeSequence()
-    if (seq && seq.playhead !== get().programTime) void engine.exec('sequence.set_playhead', { sequence_id: seq.id, time: Math.round(get().programTime) }).catch(() => undefined)
+    if (seq && seq.playhead !== get().programTime) {
+      sentPlayhead = Math.round(get().programTime)
+      void engine.exec('sequence.set_playhead', { sequence_id: seq.id, time: sentPlayhead }).catch(() => undefined)
+    }
   }, 250)
 })

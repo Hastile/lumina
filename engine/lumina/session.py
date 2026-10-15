@@ -92,7 +92,9 @@ class Session:
 
     # ------------------------------------------------------------ commands
 
-    def execute(self, name: str, params: dict | None = None, label: str | None = None) -> dict:
+    def execute(self, name: str, params: dict | None = None, label: str | None = None, record: bool = True) -> dict:
+        """record=False: the change is applied and broadcast but makes no undo step and keeps the redo
+        stack (bookkeeping the GUI does on its own, like Auto-Tag on selecting a clip)."""
         with self.lock:
             spec = REGISTRY.get(name)
             try:
@@ -113,7 +115,7 @@ class Session:
             if not m.forward:
                 return {"result": result, "version": self.version, "changed": False}
             label = label or name
-            if spec.undoable:
+            if spec.undoable and record:
                 if self.txn is not None:
                     self.txn.forward.extend(m.forward)
                     self.txn.inverse = m.undo_patches() + self.txn.inverse

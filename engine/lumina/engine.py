@@ -97,7 +97,7 @@ class Engine:
         name = p.get("name")
         if not name:
             raise CommandError("BAD_PARAMS", "execute needs 'name'")
-        out = self.session.execute(name, p.get("params") or {}, p.get("label"))
+        out = self.session.execute(name, p.get("params") or {}, p.get("label"), record=p.get("record", True) is not False)
         if name in ("media.import", "project.import_premiere"):
             self._submit_missing_jobs()
         return out

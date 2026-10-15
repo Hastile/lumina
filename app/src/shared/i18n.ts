@@ -29,6 +29,7 @@ const ko: Record<string, string> = {
   Redo: '다시 실행',
   Clear: '지우기',
   'Ripple Delete': '잔물결 삭제',
+  'Drag to resize the video and audio track areas': '드래그하여 비디오/오디오 트랙 영역 크기 조절',
   'Auto-Tag could not tell the type of this clip: choose it below.': '자동 태그로 유형을 판단하지 못했습니다. 아래에서 직접 지정하세요.',
   'No Selection': '선택 항목 없음',
   '{n} clips selected': '클립 {n}개 선택됨',
