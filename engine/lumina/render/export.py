@@ -215,7 +215,7 @@ def _mix_into(doc: dict, seq: dict, a: int, b: int, buf: np.ndarray, rate: int, 
                 r[0], r[1] = min(r[0], ws), max(r[1], we)
         for c in track["clips"].values():
             s0, e0 = ext.get(c["id"], (c["start"], c["end"]))
-            if c["enabled"] and e0 > a and s0 < b:
+            if c["enabled"] and not c.get("muted") and e0 > a and s0 < b:
                 jobs.append((c, s0, e0, fades.get(c["id"], []), track))
     master = 10 ** (seq.get("master_volume_db", 0.0) / 20)
     for i, (c, s0, e0, fades, track) in enumerate(jobs):

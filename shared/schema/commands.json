@@ -1542,6 +1542,19 @@
           "default": null,
           "description": "Audio Gain (dB)",
           "title": "Gain Db"
+        },
+        "muted": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Essential Sound Mute",
+          "title": "Muted"
         }
       },
       "required": [
@@ -2070,6 +2083,41 @@
         }
       },
       "title": "AutoMatch",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.reset_match",
+    "description": "Essential Sound Loudness Reset: undo Auto-Match on the clips (the Audio Gain they had before).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "ResetMatch",
       "type": "object"
     }
   },

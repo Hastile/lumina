@@ -18,7 +18,8 @@ import { ToolsPanel } from './panels/ToolsPanel'
 import { MediaBrowserPanel } from './panels/Placeholders'
 import { AudioClipMixerPanel, AudioMeters, AudioTrackMixerPanel } from './panels/Audio'
 import { EffectsPanel } from './panels/EffectsPanel'
-import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel } from './panels/RightPanels'
+import { GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel } from './panels/RightPanels'
+import { EssentialSoundPanel } from './panels/EssentialSound'
 import { TextPanel } from './panels/TextPanel'
 
 const panel = (id: PanelId, C: React.FC) => {

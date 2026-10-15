@@ -229,8 +229,10 @@ export function nudgeSelectedKeyframes(frames: number): boolean {
   if (!seq || !clip) return false
   const d = frames * ticksPerFrame(seq.settings)
   const ds = Math.round(d * clip.speed)
+  // the selection follows at once (a Ctrl+C right after must copy the moved keyframes); undone on failure
+  set({ kfSel: { clipId: clip.id, keys: sel.keys.map((k) => `${k.slice(0, k.lastIndexOf('@'))}@${Number(k.slice(k.lastIndexOf('@') + 1)) + ds}`) } })
   void exec('keyframes.move', { sequence_id: seq.id, clip_id: clip.id, targets: selectionTargets(sel.keys), delta: d }, t('Move Keyframes')).then((r) => {
-    if (r) set({ kfSel: { clipId: clip.id, keys: sel.keys.map((k) => `${k.slice(0, k.lastIndexOf('@'))}@${Number(k.slice(k.lastIndexOf('@') + 1)) + ds}`) } })
+    if (!r) set({ kfSel: sel })
   })
   return true
 }

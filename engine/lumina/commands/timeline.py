@@ -266,6 +266,8 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "gain_db": 0.0,
             "audio_tag": None,
             "sequence_id": None,
+            "muted": False,
+            "auto_match": None,
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,
@@ -576,6 +578,7 @@ class SetClips(Params):
     opacity: float | None = Field(default=None, ge=0, le=100)
     volume_db: float | None = Field(default=None, ge=-96, le=15)
     gain_db: float | None = Field(default=None, ge=-96, le=96, description="Audio Gain (dB)")
+    muted: bool | None = Field(default=None, description="Essential Sound Mute")
 
 
 @command("clip.set", SetClips)
@@ -585,7 +588,7 @@ def clip_set(ctx: Context, p: SetClips):
     for cid in p.clip_ids:
         tid, c = find_clip(seq, cid)
         require_unlocked(seq, tid)
-        for key in ("name", "enabled", "label", "opacity", "volume_db", "gain_db"):
+        for key in ("name", "enabled", "label", "opacity", "volume_db", "gain_db", "muted"):
             value = getattr(p, key)
             if value is not None and c.get(key) != value:
                 ctx.m.set(clip_path(seq, tid, cid) + [key], value)

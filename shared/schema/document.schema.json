@@ -25,6 +25,39 @@
       "title": "AudioStream",
       "type": "object"
     },
+    "AutoMatchState": {
+      "additionalProperties": false,
+      "properties": {
+        "target": {
+          "description": "LUFS it was matched to",
+          "title": "Target",
+          "type": "number"
+        },
+        "lufs": {
+          "description": "loudness measured before the match",
+          "title": "Lufs",
+          "type": "number"
+        },
+        "gain_db": {
+          "description": "the Audio Gain Auto-Match set",
+          "title": "Gain Db",
+          "type": "number"
+        },
+        "previous_gain_db": {
+          "description": "the Audio Gain before it (Reset restores it)",
+          "title": "Previous Gain Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "target",
+        "lufs",
+        "gain_db",
+        "previous_gain_db"
+      ],
+      "title": "AutoMatchState",
+      "type": "object"
+    },
     "Bin": {
       "additionalProperties": false,
       "properties": {
@@ -188,6 +221,24 @@
           "description": "Essential Sound audio type",
           "title": "Audio Tag"
         },
+        "muted": {
+          "default": false,
+          "description": "Essential Sound Mute: the clip is silent (it stays enabled)",
+          "title": "Muted",
+          "type": "boolean"
+        },
+        "auto_match": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AutoMatchState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the last Loudness Auto-Match (for its status and Reset)"
+        },
         "motion": {
           "$ref": "#/$defs/Motion"
         },
@@ -251,6 +302,8 @@
         "volume_db",
         "gain_db",
         "audio_tag",
+        "muted",
+        "auto_match",
         "motion",
         "keyframes",
         "graphic",

@@ -255,3 +255,33 @@ def test_measure_agrees_with_ffmpeg_ebur128(tmp_path):
     assert m["true_peak"] >= m["sample_peak"] and m["lra"] < 1
     m6 = measure(str(wav), 0, 8 * 254016000000, filters=["volume=6dB"])
     assert abs(m6["integrated"] - m["integrated"] - 6) < 0.05
+
+
+def test_auto_match_reset_restores_the_previous_gain(monkeypatch):
+    s, sid, ids = _audio_clips()
+    monkeypatch.setattr(audio_cmd, "media_path", lambda m: m["path"])
+    s.execute("clip.set_audio_tag", {"clip_ids": ids, "tag": "dialogue"})
+    s.execute("clip.set", {"clip_ids": ids[:1], "gain_db": 2.0})
+    s.services.audio_measure = lambda path, start, dur, speed, ch, filters: _m(-30.0)
+    s.execute("audio.auto_match", {"clip_ids": ids[:1], "targets": {"dialogue": -20}, "music_bed_db": None})
+    c = clips(s, sid, "audio")[0]
+    assert c["gain_db"] == 10 and c["auto_match"] == {"target": -20, "lufs": -30, "gain_db": 10, "previous_gain_db": 2.0}
+    # matching again keeps the original "before"
+    s.execute("audio.auto_match", {"clip_ids": ids[:1], "targets": {"dialogue": -18}, "music_bed_db": None})
+    assert clips(s, sid, "audio")[0]["auto_match"]["previous_gain_db"] == 2.0
+    s.execute("audio.reset_match", {"clip_ids": ids[:1]})
+    c = clips(s, sid, "audio")[0]
+    assert c["gain_db"] == 2.0 and c["auto_match"] is None
+
+
+def test_muted_clip_is_silent_in_the_export_mix(monkeypatch):
+    from lumina.render import export as ex
+
+    s, sid, ids = _audio_clips()
+    s.execute("clip.set", {"clip_ids": ids[:1], "muted": True})
+    seen = []
+    monkeypatch.setattr(ex, "_clip_pcm", lambda doc, c, *a, **k: seen.append(c["id"]) or None)
+    import numpy as np
+    buf = np.zeros((48000, 2), np.float32)
+    ex._mix_into(s.doc, s.doc["sequences"][sid], 0, 40 * 254016000000, buf, 48000)
+    assert ids[0] not in seen and ids[1] in seen

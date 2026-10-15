@@ -216,6 +216,13 @@ class Transition(_Model):
         default="center", description="center at cut / start at cut (over clip_b) / end at cut (over clip_a)")
 
 
+class AutoMatchState(_Model):
+    target: float = Field(description="LUFS it was matched to")
+    lufs: float = Field(description="loudness measured before the match")
+    gain_db: float = Field(description="the Audio Gain Auto-Match set")
+    previous_gain_db: float = Field(description="the Audio Gain before it (Reset restores it)")
+
+
 class Clip(_Model):
     id: str
     media_id: str | None = Field(description="null for graphics and nested sequences")
@@ -233,6 +240,8 @@ class Clip(_Model):
     volume_db: float = 0.0
     gain_db: float = Field(default=0.0, description="Audio Gain (Premiere's G dialog), applied before Volume")
     audio_tag: Literal["dialogue", "music", "sfx", "ambience"] | None = Field(default=None, description="Essential Sound audio type")
+    muted: bool = Field(default=False, description="Essential Sound Mute: the clip is silent (it stays enabled)")
+    auto_match: AutoMatchState | None = Field(default=None, description="the last Loudness Auto-Match (for its status and Reset)")
     motion: Motion = Field(default_factory=Motion)
     keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
     graphic: Graphic | None = None

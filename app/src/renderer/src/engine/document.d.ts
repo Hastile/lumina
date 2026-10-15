@@ -141,6 +141,26 @@ export type GainDb = number;
  */
 export type AudioTag = ("dialogue" | "music" | "sfx" | "ambience") | null;
 /**
+ * Essential Sound Mute: the clip is silent (it stays enabled)
+ */
+export type Muted1 = boolean;
+/**
+ * LUFS it was matched to
+ */
+export type Target = number;
+/**
+ * loudness measured before the match
+ */
+export type Lufs = number;
+/**
+ * the Audio Gain Auto-Match set
+ */
+export type GainDb1 = number;
+/**
+ * the Audio Gain before it (Reset restores it)
+ */
+export type PreviousGainDb = number;
+/**
  * sequence pixels [x, y]; null = frame center
  */
 export type Position = number[] | null;
@@ -485,10 +505,25 @@ export interface Clip {
   volume_db: VolumeDb1;
   gain_db: GainDb;
   audio_tag: AudioTag;
+  muted: Muted1;
+  /**
+   * the last Loudness Auto-Match (for its status and Reset)
+   */
+  auto_match: AutoMatchState | null;
   motion: Motion;
   keyframes: Keyframes;
   graphic: Graphic | null;
   effects: Effects;
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "AutoMatchState".
+ */
+export interface AutoMatchState {
+  target: Target;
+  lufs: Lufs;
+  gain_db: GainDb1;
+  previous_gain_db: PreviousGainDb;
 }
 /**
  * Premiere's intrinsic Motion effect.

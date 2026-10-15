@@ -255,6 +255,36 @@ def audio_auto_match(ctx: Context, p: AutoMatch):
     for i, r in plan.items():
         tid, c, _ = where[i]
         require_unlocked(seq, tid)
+        if r["lufs"] is None:
+            continue
+        prev = (c.get("auto_match") or {}).get("previous_gain_db", c.get("gain_db", 0.0)) \
+            if (c.get("auto_match") or {}).get("gain_db") == c.get("gain_db", 0.0) else c.get("gain_db", 0.0)
         if c.get("gain_db", 0.0) != r["gain_db"]:
             ctx.m.set(clip_path(seq, tid, c["id"]) + ["gain_db"], r["gain_db"])
+        ctx.m.set(clip_path(seq, tid, c["id"]) + ["auto_match"],
+                  {"target": r["target"], "lufs": r["lufs"], "gain_db": r["gain_db"], "previous_gain_db": prev})
     return {"clips": {**out, **plan}}
+
+
+class ResetMatch(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] = Field(min_length=1)
+
+
+@command("audio.reset_match", ResetMatch)
+def audio_reset_match(ctx: Context, p: ResetMatch):
+    """Essential Sound Loudness Reset: undo Auto-Match on the clips (the Audio Gain they had before)."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    n = 0
+    for cid in p.clip_ids:
+        tid, c = find_clip(seq, cid)
+        m = c.get("auto_match")
+        if not m:
+            continue
+        require_unlocked(seq, tid)
+        path = clip_path(seq, tid, cid)
+        if c.get("gain_db", 0.0) == m["gain_db"]:  # untouched since the match
+            ctx.m.set(path + ["gain_db"], m["previous_gain_db"])
+        ctx.m.set(path + ["auto_match"], None)
+        n += 1
+    return {"count": n}

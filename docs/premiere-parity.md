@@ -114,7 +114,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Audio Meters (peak hold, clip LEDs), Audio Track Mixer (fader, pan, M/S, meters, Mix), Audio Clip Mixer | ✓ |
 | Volume rubber band on audio clips; Audio Gain (G: set, adjust, normalize max / all peaks); audio scrubbing | ✓ |
 | Audio effects: Parametric Equalizer, Single-band Compressor, Hard Limiter (preview = export for EQ; dynamics within ~1 dB) | ✓ |
-| Essential Sound: audio types, Auto-Tag (file name + speech/music/ambience analysis), Loudness Auto-Match (LUFS) | ✓ (heuristic tagger, not Premiere's AI model) |
+| Essential Sound: Premiere 2025 layout (Browse/Edit, type, preset, sections with switches, Clip Volume, Mute), audio types, Auto-Tag, Loudness Auto-Match + Reset + match status | ✓ (heuristic tagger; Enhance Speech, Repair, Clarity, Creative, Ducking, Pan, Stereo Width shown but not implemented) |
 | Auto-Match judgement: measured through speed + audio effects (compressor/limiter re-measured), one gain per source so cuts keep their dynamics (outliers pulled halfway), music under dialogue as a bed (-12 LU), true-peak ceiling, +20 dB boost cap, noise warning, sub-0.5 dB changes skipped | ✓ (Lumina extension) |
 | Keyframes on the rubber band dragged in time | ✓ |
 | Spatial interpolation menu for Position, clip pan | ✗ |
@@ -146,3 +146,4 @@ Korean (Premiere's Korean terminology) is the default; View > Language switches 
 | Panels get dragged by accident, resets lose the layout | Lock Workspace; Save Changes to This Workspace; Reset to Saved Layout returns to the saved one |
 | Keyframes are only visible in Effect Controls and get lost behind trims | keyframe marks on timeline clips (click jumps there; Timeline Display Settings > Show Keyframes); the lane counts keyframes hidden outside the clip and can shift them inside or delete them; Alt-drag stretches a selection in time (handles keep their shape); Alt+Left/Right nudges (clips too); Ctrl+C/V copies keyframes to the playhead, also onto another clip |
 | Speed/Duration ripple is a guess | the dialog previews it: duration change, how many clips move, the gap left, or the collision that blocks it (OK disabled); applies to all selected clips |
+| Too many places set a clip's loudness | Essential Sound shows the level path under Clip Volume (Audio Gain incl. Auto-Match + Clip Volume + track + Mix = total); Clip Volume is the same value as Effect Controls' Level, the Audio Clip Mixer and the rubber band; Auto-Match remembers the gain it replaced, so Reset gives it back |

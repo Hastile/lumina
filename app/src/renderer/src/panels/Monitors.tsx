@@ -281,7 +281,7 @@ export function activeLayers(
         // a nested sequence's audio, mapped to this timeline: its clips play through this clip's
         // track with this clip's Volume and Audio Gain on top (the nested clip's audio effects,
         // the inner pans and transitions at the nest's edges are export-only)
-        if (!clip.enabled) continue
+        if (!clip.enabled || clip.muted) continue
         const soon = lookahead > 0 && clip.start > at && clip.start - at <= lookahead
         if (!soon && (at < clip.start || at >= clip.end)) continue
         const n = inner(clip, at)
@@ -299,7 +299,7 @@ export function activeLayers(
         continue
       }
       const [s0, e0] = ext.get(clip.id) ?? [clip.start, clip.end]
-      if (!clip.enabled || at < s0 || at >= e0) continue
+      if (!clip.enabled || clip.muted || at < s0 || at >= e0) continue
       const m = clip.media_id ? media[clip.media_id] : undefined
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       audio.push({
@@ -310,7 +310,7 @@ export function activeLayers(
     if (lookahead > 0) {
       for (const clip of Object.values(track.clips)) {
         const s0 = ext.get(clip.id)?.[0] ?? clip.start
-        if (!clip.enabled || s0 <= at || s0 - at > lookahead) continue
+        if (!clip.enabled || clip.muted || s0 <= at || s0 - at > lookahead) continue
         const m = clip.media_id ? media[clip.media_id] : undefined
         if (!m || (!m.audio && m.kind !== 'audio')) continue
         // the gain it starts with: scheduled audio is heard before the picture reaches the cut

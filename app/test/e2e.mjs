@@ -633,15 +633,48 @@ try {
     const seq = s.doc.sequences[s.doc.active_sequence_id]
     return seq.tracks[seq.audio_tracks[0]].clips[id].audio_tag === 'sfx'
   }, afterFader.clips[1].id, { timeout: 10000 })
+  // untagged: Premiere's prompt; tagged: the Loudness section, Clip Volume, Mute and the level path
+  await page.locator('[data-essential-sound] [data-section="Loudness"]').waitFor()
+  assert.equal(await page.locator('[data-essential-sound] [data-match-status]').getAttribute('data-match-status'), 'none')
   await page.locator('[data-essential-sound] [data-action="auto-match"]').click()
-  await page.locator('[data-essential-sound] .results .res').first().waitFor({ timeout: 30000 })
-  const matched = await page.locator('[data-essential-sound] .results .res').first().innerText()
+  await page.locator('[data-essential-sound] [data-match-status="matched"]').waitFor({ timeout: 30000 })
+  const matched = await page.locator('[data-essential-sound] [data-match-status]').innerText()
   assert.match(matched, /LUFS/, matched)
   // the clip carries a Hard Limiter: Auto-Match re-measures it through the limiter and says why
-  const why = await page.locator('[data-essential-sound] .results .res').first().getAttribute('data-notes')
-  assert.match(why, /compressed/, why)
+  const why = await page.locator('[data-essential-sound] [data-match-why]').innerText()
+  assert.match(why, /압축기/, why)
+  const esClip = () => page.evaluate((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id]
+  }, afterFader.clips[1].id)
+  const matchedGain = (await esClip()).gain_db
+  // Clip Volume slider (keyboard on the focused range) commits one Volume step; Mute; the path adds up
+  const vol = page.locator('[data-essential-sound] [data-action="clip-volume"]')
+  if (await vol.isDisabled()) await page.locator('[data-essential-sound] [data-switch="clip-volume"]').click()
+  await vol.focus()
+  for (let i = 0; i < 30; i++) await page.keyboard.press('ArrowLeft')
+  await page.keyboard.up('ArrowLeft')
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id].volume_db < 0
+  }, afterFader.clips[1].id, { timeout: 10000 })
+  const path = await page.locator('[data-essential-sound] [data-level-path]').innerText()
+  assert.match(path, /=/, path)
+  await page.locator('[data-essential-sound] [data-switch="mute"]').click()
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id].muted
+  }, afterFader.clips[1].id, { timeout: 10000 })
+  await page.locator('[data-essential-sound] [data-switch="mute"]').click()
+  // Reset: back to the gain before the match
+  await page.locator('[data-essential-sound] [data-action="reset-match"]').click()
+  await page.locator('[data-essential-sound] [data-match-status="none"]').waitFor({ timeout: 10000 })
+  assert.notEqual((await esClip()).gain_db, matchedGain, 'Reset restored the gain before Auto-Match')
   const fin = await audioState()
-  log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub; Essential Sound', matched.replace(/\s+/g, ' '))
+  log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub; Essential Sound', matched, '·', why, '· path', path.replace(/\s+/g, ' '))
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip
@@ -907,10 +940,10 @@ try {
     await hist.waitFor()
     const labels = async () => page.evaluate(() => window.__lumina.get().history.undo_labels.length)
     const n0 = await labels()
-    await hist.locator(`[data-step="${n0 - 2}"]`).click()
+    await hist.locator(`[data-step="${n0 - 2}"]`).dispatchEvent('click')
     await until2(async () => (await labels()) === n0 - 2, 'history back')
     assert.equal(await hist.locator('.step.redo').count(), 2, 'two redo steps listed')
-    await hist.locator(`[data-step="${n0}"]`).click()
+    await hist.locator(`[data-step="${n0}"]`).dispatchEvent('click')
     await until2(async () => (await labels()) === n0, 'history forward')
     // paste goes to the lowest targeted track: target V2, copy the first cut, paste at the end
     await page.evaluate(() => {
