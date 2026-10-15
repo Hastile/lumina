@@ -426,9 +426,6 @@ export function LumetriPanel() {
   )
 }
 
-export function TextPanel() {
-  return <div className="lm-panel"><div className="lm-empty">{t('Text / captions arrive with captions and graphics (M4).')}</div></div>
-}
 
 export function GraphicTemplatesPanel() {
   return <div className="lm-panel"><div className="lm-empty">{t('Graphic templates (MOGRT-style) arrive with graphics (M4).')}</div></div>

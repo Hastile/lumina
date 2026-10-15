@@ -72,6 +72,23 @@ function previewTool(seq: Sequence, d: Extract<Drag, { kind: 'tool' }>): Map<str
   return out
 }
 
+/** Frames a linked clip is out of sync with its partner of the same source (engine edit_tools.sync_anchor),
+ * or 0. Positive: this clip plays its source later than the partner. */
+export function syncOffset(seq: Sequence, clip: Clip): number {
+  if (!clip.link_id) return 0
+  const src = clip.media_id ?? clip.sequence_id
+  const kind = Object.values(seq.tracks).find((t) => t.clips[clip.id])?.kind
+  for (const t of Object.values(seq.tracks)) {
+    if (t.kind === kind) continue
+    for (const o of Object.values(t.clips)) {
+      if (o.link_id !== clip.link_id || (o.media_id ?? o.sequence_id) !== src || o.speed !== clip.speed) continue
+      const anchor = (c: Clip) => c.start - c.source_in / c.speed
+      return Math.round((anchor(clip) - anchor(o)) / ticksPerFrame(seq.settings))
+    }
+  }
+  return 0
+}
+
 function buildRows(seq: Sequence): { rows: Row[]; height: number; audioTop: number } {
   const rows: Row[] = []
   let y = 0
@@ -130,6 +147,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const selected = useStore((s) => s.selectedClips)
   const selectedTransition = useStore((s) => s.selectedTransition)
   const playing = useStore((s) => s.playing === 'program')
+  const flash = useStore((s) => s.flashTracks)
 
   const lanesRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -279,7 +297,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       sel = linked
     }
     set({ selectedClips: sel })
-    const edge = hover?.clipId === clip.id ? hover.edge : null
+    // the edge under the pointer now (the hover state can lag a press that follows a quick move)
+    const cr = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const edge = !EDGE_TOOLS.has(tool) ? null : e.clientX - cr.left < EDGE_PX ? 'start' : cr.right - e.clientX < EDGE_PX ? 'end' : null
     if (tool === 'rolling' || tool === 'rate' || tool === 'slip' || tool === 'slide') {
       if ((tool === 'rolling' || tool === 'rate') && !edge) return
       setDrag({ kind: 'tool', tool, clipId: clip.id, ids: linked, edge, startX: e.clientX, dt: 0 })
@@ -540,6 +560,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             { label: tx('Speed/Duration...'), action: 'clip.speed' },
             'sep',
             { label: tx('Nest...'), action: 'clip.nest' },
+            ...(clip.sequence_id ? [{ label: tx('Un-nest'), action: 'clip.unnest' }] : []),
             'sep',
             { label: tx('Clear'), action: 'edit.clear' },
             { label: tx('Ripple Delete'), action: 'edit.rippleDelete' },
@@ -566,6 +587,28 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             {timecode(Math.round(pv.srcIn), st)} – {timecode(Math.round(pv.srcIn + (stop - start) * clip.speed), st)}
           </span>
         )}
+        {(() => {
+          const off = ghost || pv ? 0 : syncOffset(seq, clip)
+          if (!off) return null
+          return (
+            <span
+              className="lm-sync"
+              data-sync={off}
+              title={tx('Out of sync with its linked clip (frames). Right-click to fix.')}
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => {
+                e.stopPropagation()
+                openContextMenu(e, [
+                  { label: tx('Move into Sync'), run: () => void exec('clip.resync', { sequence_id: seq.id, clip_id: clip.id, mode: 'move' }, tx('Move into Sync')) },
+                  { label: tx('Slip into Sync'), run: () => void exec('clip.resync', { sequence_id: seq.id, clip_id: clip.id, mode: 'slip' }, tx('Slip into Sync')) }
+                ])
+              }}
+            >
+              {off > 0 ? '+' : ''}
+              {off}
+            </span>
+          )
+        })()}
         {row.kind === 'video' && (clip.effects?.length ?? 0) > 0 ? (
           <span className="fx on" title={(clip.effects ?? []).map((f) => tx(EFFECTS[f.type].label)).join(', ')}>fx</span>
         ) : (
@@ -673,7 +716,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             onDrop={dropOnLanes}
           >
             {rows.map((r, i) => (
-              <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''}`} style={{ top: r.top, height: r.height }} />
+              <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
             ))}
             {rows.map((r, i) => Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
             {rows.map((r) => trackTransitions(r.track).map((w) => renderTransition(w, r)))}
@@ -741,7 +784,7 @@ function TrackHeader({ row, seq }: { row: Row; seq: Sequence }) {
       }
     >
       <span className="patch">{row.label}</span>
-      <button className={`target ${t.targeted ? 'on' : ''}`} onClick={() => toggle('targeted')} title={tx('Toggle Track Targeting')}>
+      <button className={`target ${t.targeted ? 'on' : ''}`} onClick={() => toggle('targeted')} title={tx('Toggle Track Targeting: paste, Add Edit and keyboard edits go to the lowest targeted track')}>
         {row.label}
       </button>
       <button className={`lm-iconbtn ${t.locked ? 'on' : ''}`} onClick={() => toggle('locked')} title={tx('Toggle Track Lock')}>

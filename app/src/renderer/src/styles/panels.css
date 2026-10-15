@@ -299,3 +299,31 @@ input.val { color: #ddd; background: #111 !important; }
 
 .lm-clip.nested { background: color-mix(in srgb, var(--label-rose, #d0679a) 60%, #000); }
 .lm-clip .nest-badge { font-weight: 400; opacity: 0.8; }
+
+.lm-clip .lm-sync { position: absolute; right: 3px; top: 2px; background: #d42b2b; color: #fff; font: 700 9px/12px monospace; padding: 0 3px; border-radius: 2px; z-index: 3; cursor: context-menu; }
+
+.lm-history { overflow-y: auto; padding: 4px 0; }
+.lm-history .step { display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lm-history .step:hover { background: #333; }
+.lm-history .step.current { background: #2d4f7a; color: #fff; }
+.lm-history .step.redo { color: #777; font-style: italic; }
+.lm-history .step .n { color: var(--text-dim); font-size: 10px; min-width: 22px; text-align: right; }
+.lm-history .hidden { color: var(--text-dim); padding: 3px 10px; font-size: 11px; }
+
+.lm-lane.flash { animation: lm-lane-flash 0.7s ease-out; }
+@keyframes lm-lane-flash { from { background-color: rgba(80, 150, 255, 0.35); } to { background-color: transparent; } }
+
+.lm-textpanel { display: flex; flex-direction: column; }
+.lm-textpanel .bar { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-bottom: 1px solid #333; }
+.lm-textpanel .bar input:not([type]) { flex: 1; min-width: 60px; }
+.lm-textpanel .bar .dim { color: var(--text-dim); font-size: 11px; }
+.lm-textpanel .bar .lm-btn:last-child { margin-left: auto; }
+.lm-textpanel .rows { flex: 1; overflow-y: auto; }
+.lm-textpanel .row { display: grid; grid-template-columns: 78px 1fr; gap: 6px; padding: 4px 8px; border-bottom: 1px solid #2c2c2c; align-items: start; }
+.lm-textpanel .row.selected { background: #26384f; }
+.lm-textpanel .row .tc { font: 11px monospace; color: #6ab0ff; padding-top: 3px; cursor: pointer; }
+.lm-textpanel .row textarea { resize: none; background: transparent; border: 1px solid transparent; color: inherit; font: inherit; padding: 2px 4px; }
+.lm-textpanel .row textarea:focus { border-color: #2d8ceb; background: #1b1b1b; outline: none; }
+
+.lm-dropped { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3fbf5a; margin: 0 6px; cursor: pointer; vertical-align: middle; box-shadow: 0 0 0 1px #000; }
+.lm-dropped.warn { background: #e8c23a; }

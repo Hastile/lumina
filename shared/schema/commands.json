@@ -2412,6 +2412,47 @@
     }
   },
   {
+    "name": "clip.resync",
+    "description": "Out-of-sync linked clips (the red offset on the clip): Move into Sync or Slip into Sync\nagainst its linked partner.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "mode": {
+          "description": "Move into Sync (shift the clip) or Slip into Sync (shift its content)",
+          "enum": [
+            "move",
+            "slip"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "mode"
+      ],
+      "title": "Resync",
+      "type": "object"
+    }
+  },
+  {
     "name": "clip.set_property",
     "description": "Set a Motion/Opacity/Volume property. If it is animated, adds or updates the keyframe at `at` (like Premiere).",
     "undoable": true,
@@ -4655,6 +4696,124 @@
     }
   },
   {
+    "name": "graphic.match_style",
+    "description": "Give every text layer of the clips the style of one text layer (font, size, colours, stroke,\nshadow, alignment, tracking; optionally position) in one step - the text itself stays.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "source_clip_id": {
+          "title": "Source Clip Id",
+          "type": "string"
+        },
+        "source_layer_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: the source's first text layer",
+          "title": "Source Layer Id"
+        },
+        "clip_ids": {
+          "description": "graphic clips whose text layers take the style",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "include_position": {
+          "default": false,
+          "description": "also copy the layer position and area box",
+          "title": "Include Position",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "source_clip_id",
+        "clip_ids"
+      ],
+      "title": "MatchStyle",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.replace_text",
+    "description": "Find and replace in every text layer (the Text panel's Replace All), styled spans included.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "find": {
+          "minLength": 1,
+          "title": "Find",
+          "type": "string"
+        },
+        "replace": {
+          "default": "",
+          "title": "Replace",
+          "type": "string"
+        },
+        "match_case": {
+          "default": false,
+          "title": "Match Case",
+          "type": "boolean"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: every graphic clip of the sequence",
+          "title": "Clip Ids"
+        }
+      },
+      "required": [
+        "find"
+      ],
+      "title": "ReplaceText",
+      "type": "object"
+    }
+  },
+  {
     "name": "effect.add",
     "description": "Apply an effect (drag from the Effects panel). Video effects run in stack order before Motion;\naudio effects after Audio Gain and before Volume.",
     "undoable": true,
@@ -5623,6 +5782,38 @@
         "nested_id"
       ],
       "title": "PlaceSequence",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.unnest",
+    "description": "Un-nest (not in Premiere): put the part of the nested sequence the clip shows back on this\ntimeline, track for track, in place of the nested clip (and its linked partner). Tracks are added\nwhen the nested sequence has more. The nested clip's own Motion, Opacity, Volume and effects\ncannot be split across its contents: they are dropped and listed in ``warnings``.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "description": "a nested sequence clip (its linked partner of the same sequence goes too)",
+          "title": "Clip Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "Unnest",
       "type": "object"
     }
   },

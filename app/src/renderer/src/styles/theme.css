@@ -187,3 +187,8 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .lm-shortcuts .chip svg:hover { opacity: 1; }
 .lm-shortcuts .add { background: none; border: 1px dashed #555; color: var(--text-dim); border-radius: 3px; padding: 1px 6px; cursor: pointer; font-size: 11px; }
 .lm-shortcuts .add.on { border-color: #2d8ceb; color: #fff; }
+
+.lm-speed .pair { display: inline-flex; align-items: center; gap: 6px; }
+.lm-speed .pair input { width: 80px; }
+.lm-speed .note.bad { border-left-color: #d44; color: #f0a0a0; }
+.lm-speed h3 .dim { color: var(--text-dim); font-weight: 400; }

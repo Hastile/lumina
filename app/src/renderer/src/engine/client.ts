@@ -19,6 +19,9 @@ export type HistoryState = {
   redo_label: string | null
   dirty: boolean
   in_transaction: boolean
+  undo_labels?: string[]
+  undo_hidden?: number
+  redo_labels?: string[]
 }
 
 export type EngineEvent =

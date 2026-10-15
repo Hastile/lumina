@@ -679,3 +679,98 @@ def graphic_move_layer(ctx: Context, p: MoveLayer):
     if target != idx:
         layers.insert(target, layers.pop(idx))
         ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
+
+
+# ---------------------------------------------------------------- batch text
+
+TEXT_STYLE_KEYS = ("font_family", "font_size", "bold", "italic", "color", "stroke_color", "stroke_width", "background", "align",
+                   "vertical_align", "tracking", "shadow", "scale", "rotation", "opacity")
+
+
+class MatchStyle(Params):
+    sequence_id: str | None = None
+    source_clip_id: str
+    source_layer_id: str | None = Field(default=None, description="default: the source's first text layer")
+    clip_ids: list[str] = Field(min_length=1, description="graphic clips whose text layers take the style")
+    include_position: bool = Field(default=False, description="also copy the layer position and area box")
+
+
+@command("graphic.match_style", MatchStyle)
+def graphic_match_style(ctx: Context, p: MatchStyle):
+    """Give every text layer of the clips the style of one text layer (font, size, colours, stroke,
+    shadow, alignment, tracking; optionally position) in one step - the text itself stays."""
+    seq, _, src, _ = _ctx(ctx, p.sequence_id, p.source_clip_id)
+    layers = (src.get("graphic") or {}).get("layers") or []
+    ref = next((l for l in layers if (l["id"] == p.source_layer_id if p.source_layer_id else l.get("type", "text") == "text")), None)
+    if ref is None or ref.get("type", "text") != "text":
+        raise CommandError("NO_LAYER", "the source clip has no such text layer")
+    style = {k: copy.deepcopy(ref.get(k)) for k in TEXT_STYLE_KEYS}
+    if ref.get("runs"):  # a styled layer: its first run is the look
+        style.update({k: v for k, v in ref["runs"][0].items() if v is not None and k in TEXT_STYLE_KEYS})
+    if p.include_position:
+        style["position"] = list(ref["position"])
+        style["box"] = copy.deepcopy(ref.get("box"))
+    changed = 0
+    for cid in p.clip_ids:
+        if cid == src["id"]:
+            continue
+        _, tid, clip, _ = _ctx(ctx, p.sequence_id, cid)
+        if not clip.get("graphic"):
+            continue
+        new = copy.deepcopy(clip["graphic"]["layers"])
+        hit = False
+        for l in new:
+            if l.get("type", "text") == "text":
+                l.update(copy.deepcopy(style))
+                l["runs"] = None
+                l["approximate"] = False
+                hit = True
+        if hit:
+            ctx.m.set(clip_path(seq, tid, cid) + ["graphic", "layers"], new)
+            changed += 1
+    return {"clips": changed}
+
+
+class ReplaceText(Params):
+    sequence_id: str | None = None
+    find: str = Field(min_length=1)
+    replace: str = ""
+    match_case: bool = False
+    clip_ids: list[str] | None = Field(default=None, description="default: every graphic clip of the sequence")
+
+
+@command("graphic.replace_text", ReplaceText)
+def graphic_replace_text(ctx: Context, p: ReplaceText):
+    """Find and replace in every text layer (the Text panel's Replace All), styled spans included."""
+    import re
+
+    seq = seq_of(ctx.doc, p.sequence_id)
+    pat = re.compile(re.escape(p.find), 0 if p.match_case else re.IGNORECASE)
+    count = 0
+    for tid, track in seq["tracks"].items():
+        for clip in track["clips"].values():
+            if not clip.get("graphic") or (p.clip_ids and clip["id"] not in p.clip_ids):
+                continue
+            new = copy.deepcopy(clip["graphic"]["layers"])
+            hits = 0
+            for l in new:
+                if l.get("type", "text") != "text":
+                    continue
+                if l.get("runs"):
+                    for r in l["runs"]:
+                        r["text"], n = pat.subn(lambda m: p.replace, r["text"])
+                        hits += n
+                    l["text"] = "".join(r["text"] for r in l["runs"])
+                else:
+                    l["text"], n = pat.subn(lambda m: p.replace, l["text"])
+                    hits += n
+            if hits:
+                path = clip_path(seq, tid, clip["id"])
+                # a clip named after its text follows the new text
+                line = lambda ls: next((l["text"] for l in ls if l.get("type", "text") == "text"), "").split(chr(10))[0][:40]  # noqa: E731
+                named = clip["name"] == line(clip["graphic"]["layers"])
+                ctx.m.set(path + ["graphic", "layers"], new)
+                if named and line(new):
+                    ctx.m.set(path + ["name"], line(new))
+                count += hits
+    return {"replaced": count}

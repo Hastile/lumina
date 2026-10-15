@@ -298,3 +298,57 @@ def clip_paste_attributes(ctx: Context, p: PasteAttributes):
             if find_clip(seq, cid)[1]["speed"] != src["speed"]:
                 clip_set_speed(ctx, SetSpeed(sequence_id=seq["id"], clip_id=cid, speed=src["speed"], include_linked=False))
     return {"clip_ids": done}
+
+
+# ---------------------------------------------------------------- out of sync
+
+def sync_anchor(c: dict) -> float:
+    """The timeline time at which the clip's source time 0 would play: linked clips of one
+    source are in sync when their anchors agree."""
+    return c["start"] - c["source_in"] / c["speed"]
+
+
+def sync_partner(seq: dict, c: dict) -> dict | None:
+    """The linked clip of the same source on the other kind of track (video <-> audio)."""
+    if not c.get("link_id"):
+        return None
+    src = c.get("media_id") or c.get("sequence_id")
+    kind = next(t["kind"] for t in seq["tracks"].values() if c["id"] in t["clips"])
+    for t in seq["tracks"].values():
+        if t["kind"] == kind:
+            continue
+        for o in t["clips"].values():
+            if o["link_id"] == c["link_id"] and (o.get("media_id") or o.get("sequence_id")) == src and o["speed"] == c["speed"]:
+                return o
+    return None
+
+
+class Resync(Params):
+    sequence_id: str | None = None
+    clip_id: str
+    mode: Literal["move", "slip"] = Field(description="Move into Sync (shift the clip) or Slip into Sync (shift its content)")
+
+
+@command("clip.resync", Resync)
+def clip_resync(ctx: Context, p: Resync):
+    """Out-of-sync linked clips (the red offset on the clip): Move into Sync or Slip into Sync
+    against its linked partner."""
+    doc = ctx.doc
+    seq = seq_of(doc, p.sequence_id)
+    tid, c = find_clip(seq, p.clip_id)
+    require_unlocked(seq, tid)
+    o = sync_partner(seq, c)
+    if o is None:
+        raise CommandError("NO_PARTNER", "the clip has no linked clip of the same source")
+    off = round(sync_anchor(c) - sync_anchor(o))
+    if off == 0:
+        return {"offset": 0}
+    if p.mode == "move":
+        n = dict(c, start=c["start"] - off, end=c["end"] - off)
+        if n["start"] < 0 or not is_free(seq["tracks"][tid], n["start"], n["end"], exclude={c["id"]}):
+            raise CommandError("MOVE_BLOCKED", "there is no room to move the clip into sync; try Slip into Sync")
+    else:
+        n = dict(c, source_in=c["source_in"] + round(off * c["speed"]))
+    _check_source(doc, n)
+    write_clip(ctx, seq, tid, n)
+    return {"offset": off}

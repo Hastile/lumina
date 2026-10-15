@@ -42,6 +42,10 @@ type Props = {
 
 let stats = { videos: 0, exact: 0, frames: [] as number[] }
 
+/** Premiere's Dropped Frame Indicator: since playback started, the sequence frames shown and the ones
+ * skipped (the playhead jumped over them) or shown late (a video layer was not on its frame yet). */
+export const playbackStats = { shown: 0, dropped: 0, last: -1, playing: false }
+
 type VideoSlot = { url: string; src: FrameSource | null; tex: WebGLTexture | null; shown: number | null; disposed: boolean }
 type Still = { tex: WebGLTexture | null; w: number; h: number }
 type GraphicTex = { key: string; groups: { blend: Blend; x: number; y: number; w: number; h: number; tex: WebGLTexture }[] | null }
@@ -319,6 +323,16 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     c.begin()
     drawLayers(c, p.layers)
     c.end()
+    if (playingNow) {
+      const f = Math.floor(p.at / ticksPerFrame(p.seq.settings))
+      if (!playbackStats.playing) Object.assign(playbackStats, { shown: 0, dropped: 0, last: f, playing: true })
+      else if (f !== playbackStats.last) {
+        playbackStats.shown++
+        playbackStats.dropped += Math.max(0, Math.abs(f - playbackStats.last) - Math.max(1, Math.round(Math.abs(p.rate))))
+        if (stats.exact < stats.videos) playbackStats.dropped++
+        playbackStats.last = f
+      }
+    } else playbackStats.playing = false
     // for tests and diagnostics: were all visible video layers on their exact frame
     const el = canvas.current!
     el.dataset.exact = stats.exact === stats.videos ? '1' : '0'

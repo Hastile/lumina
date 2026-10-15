@@ -164,6 +164,7 @@ const MENU: Record<string, Item[]> = {
   Clip: [
     { label: 'Rename...', action: 'clip.rename' },
     { label: 'Nest...', action: 'clip.nest' },
+    { label: 'Un-nest', action: 'clip.unnest' },
     { label: 'Speed/Duration...', action: 'clip.speed', accel: 'Ctrl+R' },
     { label: 'Audio Gain...', action: 'clip.audioGain', accel: 'G' },
     'sep',
@@ -221,6 +222,8 @@ const MENU: Record<string, Item[]> = {
   Window: [
     { label: 'Workspaces > Editing', action: 'window.workspace.editing', accel: 'Alt+Shift+2' },
     { label: 'Reset to Saved Layout', action: 'window.resetLayout', accel: 'Alt+Shift+0' },
+    { label: 'Save Changes to This Workspace', action: 'window.saveLayout' },
+    { label: 'Lock Workspace', action: 'window.lockLayout' },
     'sep',
     { label: 'Project', action: 'window.project', accel: 'Shift+1' },
     { label: 'Source Monitor', action: 'window.source', accel: 'Shift+2' },
@@ -234,6 +237,7 @@ const MENU: Record<string, Item[]> = {
     { label: 'Audio Meters', action: 'window.audioMeters' },
     'sep',
     { label: 'Essential Sound', action: 'window.essentialSound' },
+    { label: 'History', action: 'window.history' },
     { label: 'Lumetri Color', action: 'window.lumetri' },
     { label: 'Properties', action: 'window.properties' },
     { label: 'Metadata', action: 'window.metadata' },

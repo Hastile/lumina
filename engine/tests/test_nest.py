@@ -41,3 +41,25 @@ def test_place_sequence_and_cycles():
     nv = clips(s, other)[0]
     with pytest.raises(CommandError):
         s.execute("clip.trim", {"sequence_id": other, "clip_id": nv["id"], "edge": "end", "delta": "1s"})
+
+
+def test_unnest_puts_the_shown_part_back():
+    s, sid, (a, b, *_) = make()
+    s.execute("clip.place", {"media_id": a, "at": "2s", "source_out": "4s"})
+    s.execute("clip.place", {"media_id": b, "at": "6s", "source_out": "4s"})
+    before = sorted((c["start"], c["end"], c["source_in"], c["media_id"]) for c in clips(s, sid))
+    r = s.execute("sequence.nest", {"clip_ids": [c["id"] for c in clips(s, sid)]})["result"]
+    out = s.execute("sequence.unnest", {"clip_id": r["video_clip_id"]})["result"]
+    assert out["warnings"] == []
+    assert sorted((c["start"], c["end"], c["source_in"], c["media_id"]) for c in clips(s, sid)) == before
+    assert not any(c.get("sequence_id") for t in s.doc["sequences"][sid]["tracks"].values() for c in t["clips"].values())
+    assert len(clips(s, sid, "audio")) == 2
+    check_sequence(s.doc, s.doc["sequences"][sid])
+    # trimmed nested clip: only what it shows comes back; its own Opacity is reported as dropped
+    s.undo()
+    s.execute("clip.trim", {"clip_id": r["video_clip_id"], "edge": "start", "delta": "3s"})
+    s.execute("clip.set", {"clip_ids": [r["video_clip_id"]], "opacity": 50})
+    out = s.execute("sequence.unnest", {"clip_id": r["video_clip_id"]})["result"]
+    v = clips(s, sid)
+    assert (v[0]["start"], v[0]["source_in"]) == (5 * SEC, 3 * SEC) and len(v) == 2
+    assert out["warnings"] and "opacity" in out["warnings"][0]

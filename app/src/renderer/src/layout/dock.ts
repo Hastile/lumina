@@ -20,7 +20,8 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   metadata: 'Metadata',
   text: 'Text',
   audioTrackMixer: 'Audio Track Mixer',
-  graphicTemplates: 'Graphic Templates'
+  graphicTemplates: 'Graphic Templates',
+  history: 'History'
 }
 
 let api: DockviewApi | null = null
@@ -64,6 +65,7 @@ export function buildEditingLayout(a: DockviewApi): void {
   // full-height column on the far right
   add('lumetri', { direction: 'right' })
   add('properties', { referencePanel: 'lumetri', direction: 'within' })
+  add('history', { referencePanel: 'lumetri', direction: 'within' })
 
   // Tools and Audio Meters have no tab strip in Premiere
   for (const id of ['tools', 'audioMeters'] as const) {
@@ -89,6 +91,83 @@ function sizeEditingLayout(a: DockviewApi): void {
   a.getPanel('project')?.group.api.setSize({ width: Math.round(total * 0.31) })
   a.getPanel('tools')?.group.api.setSize({ width: 40 })
   a.getPanel('audioMeters')?.group.api.setSize({ width: 60 })
+}
+
+// ---------------------------------------------------------------- saved workspace and lock
+
+const SAVED = 'lumina.layout'
+const LOCK = 'lumina.layoutLocked'
+
+const store = {
+  get: (k: string): string | null => {
+    try {
+      return localStorage.getItem(k)
+    } catch {
+      return null
+    }
+  },
+  set: (k: string, v: string | null): void => {
+    try {
+      if (v === null) localStorage.removeItem(k)
+      else localStorage.setItem(k, v)
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }
+}
+
+/** Startup: the user's saved workspace when there is one, else Premiere's Editing layout; and the lock. */
+export function restoreLayout(a: DockviewApi): void {
+  const saved = store.get(SAVED)
+  let ok = false
+  if (saved) {
+    try {
+      a.fromJSON(JSON.parse(saved))
+      ok = true
+    } catch (err) {
+      console.warn('[lumina] saved workspace could not be restored', err)
+    }
+  }
+  if (!ok) buildEditingLayout(a)
+  setLayoutLocked(isLayoutLocked())
+}
+
+/** Window > Workspaces > Save Changes to This Workspace. */
+export function saveLayout(): void {
+  if (api) store.set(SAVED, JSON.stringify(api.toJSON()))
+}
+
+/** Window > Workspaces > Reset to Saved Layout: back to what was saved (not to the factory layout). */
+export function resetToSaved(): void {
+  if (!api) return
+  const saved = store.get(SAVED)
+  if (saved) {
+    try {
+      api.fromJSON(JSON.parse(saved))
+      return
+    } catch {
+      /* fall through to the default */
+    }
+  }
+  buildEditingLayout(api)
+}
+
+/** Window > Workspaces > Editing (factory): also forgets the saved workspace. */
+export function factoryLayout(): void {
+  if (!api) return
+  store.set(SAVED, null)
+  buildEditingLayout(api)
+}
+
+export function isLayoutLocked(): boolean {
+  return store.get(LOCK) === '1'
+}
+
+/** Lock Workspace: panels and tabs can no longer be dragged around by accident (resizing still works). */
+export function setLayoutLocked(locked: boolean): void {
+  store.set(LOCK, locked ? '1' : null)
+  api?.updateOptions({ disableDnd: locked })
+  document.body.dataset.layoutLocked = locked ? '1' : ''
 }
 
 export function focusPanel(id: PanelId): void {

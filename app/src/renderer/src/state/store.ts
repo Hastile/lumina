@@ -5,7 +5,7 @@ import type { Clip, MediaItem, Project, Sequence, Track } from '../engine/docume
 export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'razor' | 'slip' | 'slide' | 'pen' | 'hand' | 'zoom' | 'type' | 'rectangle' | 'ellipse'
 
 export type PanelId =
-  | 'project' | 'source' | 'program' | 'timeline' | 'effectControls' | 'audioMixer' | 'effects' | 'mediaBrowser' | 'tools' | 'audioMeters'
+  | 'history' | 'project' | 'source' | 'program' | 'timeline' | 'effectControls' | 'audioMixer' | 'effects' | 'mediaBrowser' | 'tools' | 'audioMeters'
   | 'essentialSound' | 'lumetri' | 'properties' | 'metadata' | 'text' | 'audioTrackMixer' | 'graphicTemplates'
 
 export type Toast = { id: number; kind: 'error' | 'info'; text: string }
@@ -36,6 +36,7 @@ type State = {
   playbackResolution: 1 | 0.5 | 0.25 // Program/Source monitor resolution while playing (paused = full), like Premiere
   ecView: { clipId: string; start: number; end: number } | null // Effect Controls timeline zoom (sequence ticks)
   audioScrub: boolean // Premiere's "Play audio while scrubbing"
+  flashTracks: string[] // tracks an edit just landed on (highlighted briefly)
   kfSel: { clipId: string; keys: string[] } | null // selected keyframes in Effect Controls (`target@sourceTicks`)
 
   pxPerSecond: number
@@ -76,6 +77,7 @@ export const useStore = create<State>(() => ({
   ecView: null,
   kfSel: null,
   audioScrub: true,
+  flashTracks: [],
   pxPerSecond: 40,
   scrollX: 0
 }))

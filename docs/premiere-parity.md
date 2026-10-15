@@ -132,3 +132,16 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 
 ## Language
 Korean (Premiere's Korean terminology) is the default; View > Language switches to English.
+
+## Beyond Premiere: fixes for its common UX complaints
+
+| Complaint | Lumina |
+|---|---|
+| Out-of-sync linked clips are easy to miss | red frame offset on the clip; right-click: Move into Sync / Slip into Sync; Ripple Delete names the tracks it left out of sync |
+| Nests cannot be undone | Clip > Un-nest puts the shown part back, track for track (the nested clip's own Motion/effects are listed as dropped) |
+| Undo is hard to trust / see | History panel: every step (agent steps by command name), click to go back or forward; drags are one step |
+| Paste / edits land on unexpected tracks | paste follows the lowest targeted track (Premiere) and the destination tracks flash; the target button says what it does |
+| Captions/titles are edited one by one | Text panel: every text layer in time order, edit in place, Find / Replace All, Match Style (optionally position) |
+| Dropped frames are invisible | Dropped Frame Indicator on the Program monitor (counts in the tooltip, click resets) |
+| Panels get dragged by accident, resets lose the layout | Lock Workspace; Save Changes to This Workspace; Reset to Saved Layout returns to the saved one |
+| Speed/Duration ripple is a guess | the dialog previews it: duration change, how many clips move, the gap left, or the collision that blocks it (OK disabled); applies to all selected clips |

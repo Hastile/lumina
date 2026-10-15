@@ -817,6 +817,106 @@ try {
     await page.evaluate((id) => window.__lumina.engine.exec('sequence.set_active', { sequence_id: id }), outer)
     log('Nest: monitor before/after', same.toFixed(2), '; GPU vs export', exp.toFixed(2), '; preview audio peak', nestPeak.toFixed(3), '; double-click opened the nested sequence')
   }
+  // ---- UX fixes: un-nest, out-of-sync badge, History panel, paste to the targeted track,
+  // Text panel replace / match style, Speed/Duration preview, workspace lock, dropped-frame light
+  {
+    const menu = (id) => app.evaluate(({ BrowserWindow }, a) => BrowserWindow.getAllWindows()[0].webContents.send('menu:action', a), id)
+    const until2 = async (fn, what) => {
+      for (let i = 0; i < 50; i++) { const v = await fn(); if (v) return v; await page.waitForTimeout(100) }
+      throw new Error(`timeout: ${what}`)
+    }
+    // Un-nest puts the two cuts back
+    let cur = await tl()
+    await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), cur.v.find((c) => c.sequence_id).id)
+    await menu('clip.unnest')
+    cur = await until2(async () => { const x = await tl(); return x.v.length === t6.v.length && !x.v.some((c) => c.sequence_id) ? x : null }, 'un-nest')
+    // slip only the video of the first cut by 3 frames: the red badge shows the offset; Slip into Sync fixes it
+    const tpf = TPS / 30
+    await page.evaluate(([id, d]) => window.__lumina.engine.exec('clip.slip', { clip_id: id, delta: d, include_linked: false }), [cur.v[0].id, -3 * tpf])
+    const badge = page.locator(`[data-clip="${cur.v[0].id}"] .lm-sync`)
+    await badge.waitFor()
+    const off = Number(await badge.getAttribute('data-sync'))
+    assert.equal(Math.abs(off), 3, `out-of-sync badge shows 3 frames (${off})`)
+    await badge.click({ button: 'right' })
+    await page.locator('.lm-ctx').locator('text=싱크 맞춰 밀어넣기').first().click()
+    await badge.waitFor({ state: 'detached', timeout: 10000 })
+    // History panel: click two steps back, then the newest again
+    await menu('window.history')
+    const hist = page.locator('[data-history]')
+    await hist.waitFor()
+    const labels = async () => page.evaluate(() => window.__lumina.get().history.undo_labels.length)
+    const n0 = await labels()
+    await hist.locator(`[data-step="${n0 - 2}"]`).click()
+    await until2(async () => (await labels()) === n0 - 2, 'history back')
+    assert.equal(await hist.locator('.step.redo').count(), 2, 'two redo steps listed')
+    await hist.locator(`[data-step="${n0}"]`).click()
+    await until2(async () => (await labels()) === n0, 'history forward')
+    // paste goes to the lowest targeted track: target V2, copy the first cut, paste at the end
+    await page.evaluate(() => {
+      const s = window.__lumina.get(); const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Promise.all([window.__lumina.engine.exec('track.set', { track_id: seq.video_tracks[0], targeted: false }),
+        window.__lumina.engine.exec('track.set', { track_id: seq.video_tracks[1], targeted: true })])
+    })
+    cur = await tl()
+    await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), cur.v[0].id)
+    await page.locator('.lm-tl-lanes').click({ position: { x: 3, y: 3 }, modifiers: [] }).catch(() => {})
+    await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), cur.v[0].id)
+    await page.keyboard.press('Control+c')
+    await page.keyboard.press('End')
+    await page.keyboard.press('Control+v')
+    const onV2 = await until2(() => page.evaluate(() => {
+      const s = window.__lumina.get(); const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Object.keys(seq.tracks[seq.video_tracks[1]].clips).length > 0 ? document.querySelectorAll('.lm-lane.flash').length : 0
+    }), 'paste on V2')
+    assert.ok(onV2 >= 1, 'the destination track flashed')
+    await page.evaluate(() => {
+      const s = window.__lumina.get(); const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Promise.all([window.__lumina.engine.exec('track.set', { track_id: seq.video_tracks[0], targeted: true }),
+        window.__lumina.engine.exec('track.set', { track_id: seq.video_tracks[1], targeted: false })])
+    })
+    // Text panel: two captions, Replace All, Match Style
+    const caps = await page.evaluate(async () => {
+      const e = window.__lumina.engine
+      const a = await e.exec('graphic.create_text', { text: '첫 자막 테스트', at: 0, font_size: 90, color: '#ffcc00' })
+      const b = await e.exec('graphic.create_text', { text: '둘째 테스트', at: 254016000000, font_size: 40, color: '#ffffff' })
+      return [a.clip_id, b.clip_id]
+    })
+    await page.locator('.dv-tab', { hasText: '텍스트' }).first().click()
+    const tp = page.locator('[data-text-panel]')
+    await tp.locator('[data-text-row]').nth(1).waitFor()
+    await tp.locator('[data-find]').fill('테스트')
+    await tp.locator('[data-replace]').fill('TEST')
+    await tp.locator('[data-action="replace-all"]').click()
+    const layer = (id) => page.evaluate((cid) => {
+      const s = window.__lumina.get(); const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Object.values(seq.tracks).map((t) => t.clips[cid]).find(Boolean).graphic.layers[0]
+    }, id)
+    await until2(async () => (await layer(caps[1])).text === '둘째 TEST', 'replace all')
+    await tp.locator('[data-find]').fill('')
+    await page.evaluate((ids) => window.__lumina.set({ selectedClips: ids }), caps)
+    await tp.locator('[data-action="match-style"]').click()
+    await until2(async () => { const l = await layer(caps[1]); return l.font_size === 90 && l.color === '#ffcc00' }, 'match style')
+    // Speed/Duration: 50% without ripple on a clip with a neighbour is refused, with the reason
+    cur = await tl()
+    await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), cur.v[0].id)
+    await page.keyboard.press('Control+r')
+    const sd = page.locator('[data-speed-dialog]')
+    await sd.waitFor()
+    await sd.locator('[data-field="speed"]').fill('50')
+    await sd.locator('[data-field="ripple"]').uncheck()
+    assert.ok(await sd.locator('.note.bad').count() === 1 && await sd.locator('button[type="submit"]').isDisabled(), 'collision explained, OK disabled')
+    await sd.locator('[data-field="ripple"]').check()
+    const rippleNote = await sd.locator('[data-speed-note]').innerText()
+    assert.match(rippleNote, /이동/, rippleNote)
+    await page.keyboard.press('Escape')
+    // workspace lock and the dropped-frame light
+    await menu('window.lockLayout')
+    await page.waitForFunction(() => document.body.dataset.layoutLocked === '1')
+    await menu('window.lockLayout')
+    await page.waitForFunction(() => document.body.dataset.layoutLocked === '')
+    await page.locator('.lm-dropped').first().waitFor({ state: 'attached' })
+    log('UX: un-nest; sync badge', off, 'frames fixed by Slip into Sync; History back/forward; paste went to targeted V2; Replace All + Match Style; speed preview:', rippleNote.slice(0, 40))
+  }
   await page.locator('[data-filmstrip] > div').first().waitFor({ timeout: 30000 })
   const tiles = await page.locator('[data-filmstrip] > div').count()
   log('tools: rolling', ((t1.v[0].end - pre.v[0].end) / TPS).toFixed(2), 's; slip; slide; Ctrl+C/V; marquee; rate stretch', Math.round(t6.v[3].speed * 100) + '%; filmstrip tiles', tiles)

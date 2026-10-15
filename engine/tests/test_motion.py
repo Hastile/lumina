@@ -233,3 +233,23 @@ def test_keyframes_on_effect_params():
     e = clip()["effects"][0]
     assert "blurriness" not in e["keyframes"] and isinstance(e["params"]["blurriness"], float | int)
     assert fx is not None
+
+
+def test_match_style_and_replace_text_across_captions():
+    s, sid, _ = make()
+    a = s.execute("graphic.create_text", {"text": "첫 자막 안녕", "at": "0s", "font_size": 80, "color": "#ffcc00", "stroke_color": "#000000",
+                                          "stroke_width": 6, "position": [960, 900]})["result"]
+    b = s.execute("graphic.create_text", {"text": "둘째 안녕 안녕", "at": "5s", "font_size": 40, "color": "#ffffff", "position": [100, 100]})["result"]
+    s.execute("graphic.match_style", {"source_clip_id": a["clip_id"], "clip_ids": [b["clip_id"]]})
+    vt = s.doc["sequences"][sid]["video_tracks"]
+    get = lambda cid: next(c for t in vt for c in s.doc["sequences"][sid]["tracks"][t]["clips"].values() if c["id"] == cid)  # noqa: E731
+    lb = get(b["clip_id"])["graphic"]["layers"][0]
+    assert (lb["font_size"], lb["color"], lb["stroke_width"], lb["text"], lb["position"]) == (80, "#ffcc00", 6, "둘째 안녕 안녕", [100, 100])
+    s.execute("graphic.match_style", {"source_clip_id": a["clip_id"], "clip_ids": [b["clip_id"]], "include_position": True})
+    assert get(b["clip_id"])["graphic"]["layers"][0]["position"] == [960, 900]
+    r = s.execute("graphic.replace_text", {"find": "안녕", "replace": "hello"})["result"]
+    assert r["replaced"] == 3
+    assert get(b["clip_id"])["graphic"]["layers"][0]["text"] == "둘째 hello hello"
+    assert get(a["clip_id"])["name"] == "첫 자막 hello"
+    s.undo()
+    assert get(b["clip_id"])["graphic"]["layers"][0]["text"] == "둘째 안녕 안녕"

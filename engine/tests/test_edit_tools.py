@@ -92,3 +92,22 @@ def test_paste_attributes_copies_motion_effects_and_keyframes():
     assert r2["motion"]["scale"] == 150 and r2["effects"][0]["type"] == "gaussian_blur"
     k_src = src["keyframes"]["opacity"][0]["t"] - src["source_in"]
     assert r2["keyframes"]["opacity"][0]["t"] - r2["source_in"] == k_src, "keyframes keep their offset from the In point"
+
+
+def test_out_of_sync_clips_move_or_slip_back_into_sync():
+    from lumina.commands.edit_tools import sync_anchor
+
+    s, sid, (l, r) = _two_cuts()
+    a = clips(s, sid, "audio")[0]
+    # move only the video 1 s later (Alt-drag): linked but 30 frames out of sync
+    s.execute("clip.move", {"clip_ids": [l["id"]], "delta": 0, "include_linked": False})
+    s.execute("clip.trim", {"clip_id": l["id"], "edge": "start", "delta": "1s", "include_linked": False})
+    s.execute("clip.slip", {"clip_id": l["id"], "delta": SEC, "include_linked": False})
+    v = clips(s, sid)[0]
+    assert sync_anchor(v) - sync_anchor(a) == SEC
+    s.execute("clip.resync", {"clip_id": v["id"], "mode": "slip"})
+    assert sync_anchor(clips(s, sid)[0]) == sync_anchor(a)
+    s.undo()
+    s.execute("clip.resync", {"clip_id": v["id"], "mode": "move"})  # into the 1 s gap the trim left
+    moved = clips(s, sid)[0]
+    assert moved["start"] == 0 and sync_anchor(moved) == sync_anchor(a)

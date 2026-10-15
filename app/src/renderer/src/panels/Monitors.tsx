@@ -1,4 +1,5 @@
 import { newShapeLayer } from '../actions/actions'
+import { playbackStats } from '../playback/GLStage'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDownToLine, ArrowRightToLine, Bookmark, Brackets, ChevronFirst, ChevronLast, Pause, Play, SkipBack, SkipForward,
@@ -528,6 +529,27 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   )
 }
 
+/** Dropped Frame Indicator (Premiere): green while every frame plays on time, yellow once frames were
+ * dropped since playback started; the tooltip has the counts, a click resets them. */
+function DroppedFrames() {
+  const [s, setS] = useState({ shown: 0, dropped: 0 })
+  useEffect(() => {
+    const id = setInterval(() => setS((o) => (o.shown === playbackStats.shown && o.dropped === playbackStats.dropped ? o : { shown: playbackStats.shown, dropped: playbackStats.dropped })), 300)
+    return () => clearInterval(id)
+  }, [])
+  return (
+    <span
+      className={`lm-dropped ${s.dropped ? 'warn' : ''}`}
+      data-dropped={s.dropped}
+      title={`${t('Dropped Frames')}: ${s.dropped} / ${s.shown + s.dropped}`}
+      onClick={() => {
+        Object.assign(playbackStats, { shown: 0, dropped: 0 })
+        setS({ shown: 0, dropped: 0 })
+      }}
+    />
+  )
+}
+
 /** Premiere's Select Playback Resolution dropdown (paused frames are always full resolution). */
 function PlaybackResolution() {
   const res = useStore((s) => s.playbackResolution)
@@ -581,6 +603,7 @@ export function ProgramMonitor() {
       <div className="lm-monitor-bar">
         <Timecode value={time} rate={st} onCommit={(v) => goTo('program', v)} />
         <span style={{ flex: 1 }} />
+        <DroppedFrames />
         <PlaybackResolution />
         <span className="lm-tc dim">{timecode(seq.in_point != null && seq.out_point != null ? seq.out_point - seq.in_point : duration, st)}</span>
       </div>

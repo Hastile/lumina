@@ -6,7 +6,7 @@ import type { Clip, Sequence } from '../engine/document'
 import { deleteSelectedKeyframes } from '../panels/KeyframeSelect'
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
-import { dockApi, buildEditingLayout, focusPanel, toggleMaximize } from '../layout/dock'
+import { factoryLayout, focusPanel, isLayoutLocked, resetToSaved, saveLayout, setLayoutLocked, toggleMaximize } from '../layout/dock'
 import { openDialog } from '../state/dialog'
 import { exportFrame, openExportDialog } from '../layout/ExportDialog'
 import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, type PanelId, type Tool } from '../state/store'
@@ -149,24 +149,6 @@ function newSequenceDialog(): void {
   })
 }
 
-function speedDialog(): void {
-  const seq = seqOrToast()
-  if (!seq) return
-  const clips = selectedClipObjects(seq)
-  if (!clips.length) return toast(t('Select a clip first'), 'info')
-  const c = clips[0]
-  openDialog({
-    title: t('Clip Speed / Duration'),
-    fields: [
-      { key: 'speed', label: t('Speed'), type: 'number', value: Math.round(c.speed * 10000) / 100, min: 1, max: 10000, step: 1, suffix: '%' },
-      { key: 'ripple', label: t('Ripple Edit, Shifting Trailing Clips'), type: 'checkbox', value: true }
-    ],
-    onSubmit: async (v) => {
-      await exec('clip.set_speed', { sequence_id: seq.id, clip_id: c.id, speed: Number(v.speed) / 100, ripple: Boolean(v.ripple) })
-    }
-  })
-}
-
 function rename(): void {
   const s = get()
   const seq = activeSequence()
@@ -207,7 +189,10 @@ async function placeFromSource(mode: 'insert' | 'overwrite'): Promise<void> {
     sequence_id: seq.id, media_id: media.id, at: get().programTime, mode,
     video_track_id: v ?? null, audio_track_id: a ?? null, take_video: !!v, take_audio: !!a
   }, mode === 'insert' ? 'Insert' : 'Overwrite')
-  if (res) set({ programTime: res.end })
+  if (res) {
+    set({ programTime: res.end })
+    flashTracks([v, a].filter((x): x is string => !!x))
+  }
 }
 
 async function liftExtract(ripple: boolean): Promise<void> {
@@ -352,16 +337,50 @@ def('edit.clear', t('Clear'), async () => {
 def('edit.rippleDelete', t('Ripple Delete'), async () => {
   const seq = activeSequence()
   const ids = get().selectedClips
-  if (seq && ids.length) await exec('clip.remove', { sequence_id: seq.id, clip_ids: ids, ripple: true, include_linked: false }, 'Ripple Delete')
+  if (!seq || !ids.length) return
+  const r = await exec<{ unsynced_track_ids: string[] }>('clip.remove', { sequence_id: seq.id, clip_ids: ids, ripple: true, include_linked: false }, 'Ripple Delete')
+  // a sync-locked track that could not close the gap (something sits in it) stays behind: say so
+  const names = (r?.unsynced_track_ids ?? []).map((id) => seq.tracks[id]?.name).filter(Boolean)
+  if (names.length) toast(`${t('Ripple Delete left these tracks out of sync')}: ${names.join(', ')}`, 'info')
 })
 // Clipboard: the copied clips with their tracks, as Premiere's Copy (Ctrl+C) keeps them
-let clipboard: { track_id: string; clip: Clip }[] = []
+// kept by track kind and index, so they can land in another sequence or on other tracks
+let clipboard: { kind: 'video' | 'audio'; index: number; clip: Clip }[] = []
 const copySelection = (): boolean => {
   const seq = activeSequence()
   if (!seq) return false
   const ids = new Set(get().selectedClips)
-  clipboard = Object.values(seq.tracks).flatMap((tr) => Object.values(tr.clips).filter((c) => ids.has(c.id)).map((clip) => ({ track_id: tr.id, clip })))
+  clipboard = Object.values(seq.tracks).flatMap((tr) => {
+    const index = (tr.kind === 'video' ? seq.video_tracks : seq.audio_tracks).indexOf(tr.id)
+    return Object.values(tr.clips).filter((c) => ids.has(c.id)).map((clip) => ({ kind: tr.kind, index, clip }))
+  })
   return clipboard.length > 0
+}
+
+/** Where pasted clips go (Premiere): the copied arrangement starts on the lowest targeted track of
+ * each kind; with no track of a kind targeted, clips keep their own tracks. */
+function pasteTracks(seq: Sequence): { track_id: string; clip: Clip }[] | string {
+  const out: { track_id: string; clip: Clip }[] = []
+  for (const kind of ['video', 'audio'] as const) {
+    const items = clipboard.filter((x) => x.kind === kind)
+    if (!items.length) continue
+    const order = kind === 'video' ? seq.video_tracks : seq.audio_tracks
+    const target = order.findIndex((id) => seq.tracks[id].targeted)
+    const low = Math.min(...items.map((x) => x.index))
+    const offset = target >= 0 ? target - low : 0
+    for (const x of items) {
+      const id = order[x.index + offset]
+      if (!id) return t('Not enough tracks for the copied clips: add tracks or target a lower track')
+      out.push({ track_id: id, clip: x.clip })
+    }
+  }
+  return out
+}
+
+/** Light up the tracks an edit landed on for a moment, so it is clear where it went. */
+export function flashTracks(ids: string[]): void {
+  set({ flashTracks: [...new Set(ids)] })
+  setTimeout(() => set({ flashTracks: [] }), 700)
 }
 def('edit.cut', t('Cut'), async () => {
   const seq = activeSequence()
@@ -371,11 +390,12 @@ def('edit.copy', t('Copy'), () => void copySelection())
 const paste = async (mode: 'overwrite' | 'insert') => {
   const seq = activeSequence()
   if (!seq || !clipboard.length) return
-  const clips = clipboard.filter((x) => seq.tracks[x.track_id])
-  if (!clips.length) return toast(t('The copied clips are on tracks this sequence does not have'), 'info')
+  const clips = pasteTracks(seq)
+  if (typeof clips === 'string') return toast(clips, 'info')
   const r = await exec<{ clip_ids: string[]; end: number }>('clip.paste', { sequence_id: seq.id, clips, at: get().programTime, mode }, mode === 'insert' ? t('Paste Insert') : t('Paste'))
   if (r) {
     set({ selectedClips: r.clip_ids })
+    flashTracks(clips.map((x) => x.track_id))
     goTo('program', r.end)
   }
 }
@@ -386,8 +406,8 @@ def('edit.pasteAttributes', t('Paste Attributes...'), () => {
   const src = clipboard.length === 1 || new Set(clipboard.map((x) => x.clip.link_id)).size === 1 ? clipboard : []
   const targets = get().selectedClips
   if (!seq || !src.length || !targets.length) return toast(t('Copy one clip, then select the clips to paste its attributes onto'), 'info')
-  const video = src.find((x) => seq.tracks[x.track_id]?.kind === 'video' || src.length === 1) ?? src[0]
-  const audio = src.find((x) => seq.tracks[x.track_id]?.kind === 'audio')
+  const video = src.find((x) => x.kind === 'video') ?? src[0]
+  const audio = src.find((x) => x.kind === 'audio')
   openDialog({
     title: t('Paste Attributes'),
     okLabel: t('OK'),
@@ -433,7 +453,7 @@ def('edit.deselectAll', t('Deselect All'), () => set({ selectedClips: [], select
 
 // Clip
 def('clip.rename', t('Rename'), rename)
-def('clip.speed', 'Speed/Duration', speedDialog)
+def('clip.speed', 'Speed/Duration', () => void import('../layout/SpeedDialog').then((m) => m.speedDialogForSelection()))
 def('clip.audioGain', t('Audio Gain'), () => {
   const seq = activeSequence()
   if (!seq) return
@@ -479,6 +499,16 @@ def('clip.nest', t('Nest...'), () => {
       if (r) set({ selectedClips: [r.video_clip_id, r.audio_clip_id].filter((x): x is string => !!x) })
     }
   })
+})
+def('clip.unnest', t('Un-nest'), async () => {
+  const seq = activeSequence()
+  const c = seq && selectedClipObjects(seq).find((x) => x.sequence_id)
+  if (!seq || !c) return toast(t('Select a nested sequence clip'), 'info')
+  const r = await exec<{ clip_ids: string[]; warnings: string[] }>('sequence.unnest', { sequence_id: seq.id, clip_id: c.id }, t('Un-nest'))
+  if (r) {
+    set({ selectedClips: r.clip_ids })
+    if (r.warnings.length) toast(r.warnings.join(' · '), 'info')
+  }
 })
 def('clip.insert', t('Insert'), () => placeFromSource('insert'))
 def('clip.overwrite', t('Overwrite'), () => placeFromSource('overwrite'))
@@ -657,13 +687,16 @@ def('view.zoomOut', t('Zoom Out'), () => set((s) => ({ pxPerSecond: Math.max(0.5
 def('view.zoomFit', t('Zoom to Sequence'), () => void window.dispatchEvent(new CustomEvent('timeline:zoomFit')))
 
 // Window
-def('window.workspace.editing', 'Editing', () => {
-  const api = dockApi()
-  if (api) buildEditingLayout(api)
+def('window.workspace.editing', 'Editing', () => factoryLayout())
+def('window.resetLayout', t('Reset to Saved Layout'), () => resetToSaved())
+def('window.saveLayout', t('Save Changes to This Workspace'), () => {
+  saveLayout()
+  toast(t('Workspace saved: Reset to Saved Layout (Alt+Shift+0) returns to it'), 'info')
 })
-def('window.resetLayout', t('Reset to Saved Layout'), () => {
-  const api = dockApi()
-  if (api) buildEditingLayout(api)
+def('window.lockLayout', t('Lock Workspace'), () => {
+  const locked = !isLayoutLocked()
+  setLayoutLocked(locked)
+  toast(locked ? t('Workspace locked: panels cannot be dragged') : t('Workspace unlocked'), 'info')
 })
 def('window.project', t('Project'), panel('project'))
 def('window.source', t('Source Monitor'), panel('source'))
@@ -677,6 +710,7 @@ def('window.tools', t('Tools'), panel('tools'))
 def('window.audioMeters', t('Audio Meters'), panel('audioMeters'))
 def('window.essentialSound', t('Essential Sound'), panel('essentialSound'))
 def('window.lumetri', t('Lumetri Color'), panel('lumetri'))
+def('window.history', t('History'), panel('history'))
 def('window.properties', t('Properties'), panel('properties'))
 def('window.metadata', t('Metadata'), panel('metadata'))
 def('window.text', t('Text'), panel('text'))

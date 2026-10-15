@@ -3,10 +3,12 @@ import { t } from '@shared/i18n'
 import { DockviewReact, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react'
 import { Home } from 'lucide-react'
 import { installKeymap } from './actions/keymap'
-import { buildEditingLayout, setDockApi } from './layout/dock'
+import { restoreLayout, setDockApi } from './layout/dock'
 import { ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
 import { ExportDialog, RenderQueue } from './layout/ExportDialog'
 import { ShortcutsDialog } from './layout/ShortcutsDialog'
+import { SpeedDialog } from './layout/SpeedDialog'
+import { HistoryPanel } from './panels/HistoryPanel'
 import { connectEngine, set, useStore, type PanelId } from './state/store'
 import { ProjectPanel } from './panels/ProjectPanel'
 import { ProgramMonitor, SourceMonitor } from './panels/Monitors'
@@ -16,7 +18,8 @@ import { ToolsPanel } from './panels/ToolsPanel'
 import { MediaBrowserPanel } from './panels/Placeholders'
 import { AudioClipMixerPanel, AudioMeters, AudioTrackMixerPanel } from './panels/Audio'
 import { EffectsPanel } from './panels/EffectsPanel'
-import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel, TextPanel } from './panels/RightPanels'
+import { EssentialSoundPanel, GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel } from './panels/RightPanels'
+import { TextPanel } from './panels/TextPanel'
 
 const panel = (id: PanelId, C: React.FC) => {
   const Wrapped = (_: IDockviewPanelProps) => (
@@ -45,7 +48,8 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   metadata: panel('metadata', MetadataPanel),
   text: panel('text', TextPanel),
   audioTrackMixer: panel('audioTrackMixer', AudioTrackMixerPanel),
-  graphicTemplates: panel('graphicTemplates', GraphicTemplatesPanel)
+  graphicTemplates: panel('graphicTemplates', GraphicTemplatesPanel),
+  history: panel('history', HistoryPanel)
 }
 
 const LUMINA_THEME = { name: 'lumina', className: 'dockview-theme-lumina', colorScheme: 'dark' as const, gap: 4 }
@@ -94,7 +98,7 @@ export function App() {
 
   const onReady = (e: DockviewReadyEvent) => {
     setDockApi(e.api)
-    buildEditingLayout(e.api)
+    restoreLayout(e.api)
   }
 
   return (
@@ -106,6 +110,7 @@ export function App() {
       <DialogHost />
       <ExportDialog />
       <ShortcutsDialog />
+      <SpeedDialog />
       <RenderQueue />
       <ContextMenuHost />
       <Toasts />

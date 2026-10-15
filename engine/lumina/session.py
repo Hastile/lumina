@@ -84,6 +84,10 @@ class Session:
             "redo_label": self.redo_stack[-1].label if self.redo_stack else None,
             "dirty": self.version != self.saved_version,
             "in_transaction": self.txn is not None,
+            # the History panel: applied steps oldest first (the last 100), and the steps a redo would replay, next first
+            "undo_labels": [e.label for e in self.undo_stack[-100:]],
+            "undo_hidden": max(0, len(self.undo_stack) - 100),
+            "redo_labels": [e.label for e in reversed(self.redo_stack[-100:])],
         }
 
     # ------------------------------------------------------------ commands

@@ -156,3 +156,88 @@ def clip_place_sequence(ctx: Context, p: PlaceSequence):
         ids.append(c["id"])
     ctx.m.set(["sequences", seq["id"], "playhead"], at + dur)
     return {"clip_ids": ids, "end": at + dur}
+
+
+class Unnest(Params):
+    sequence_id: str | None = None
+    clip_id: str = Field(description="a nested sequence clip (its linked partner of the same sequence goes too)")
+
+
+_DEFAULT_LOOK = {"opacity": 100.0, "volume_db": 0.0, "gain_db": 0.0}
+
+
+@command("sequence.unnest", Unnest)
+def sequence_unnest(ctx: Context, p: Unnest):
+    """Un-nest (not in Premiere): put the part of the nested sequence the clip shows back on this
+    timeline, track for track, in place of the nested clip (and its linked partner). Tracks are added
+    when the nested sequence has more. The nested clip's own Motion, Opacity, Volume and effects
+    cannot be split across its contents: they are dropped and listed in ``warnings``."""
+    from .project import _make_track
+    from .timeline import DEFAULT_MOTION as DM
+
+    doc = ctx.doc
+    seq = seq_of(doc, p.sequence_id)
+    tid, c = find_clip(seq, p.clip_id)
+    if not c.get("sequence_id"):
+        raise CommandError("NOT_NESTED", f"{c['name']} is not a nested sequence clip")
+    if c["speed"] != 1.0:
+        raise CommandError("SPEED", "set the nested clip back to 100% speed before un-nesting")
+    inner = doc["sequences"].get(c["sequence_id"])
+    if inner is None:
+        raise CommandError("NOT_FOUND", "the nested sequence is gone")
+    nested = [(tid, c)]
+    for t2, o in ((t, o) for t, tr in seq["tracks"].items() for o in tr["clips"].values()):
+        if o["id"] != c["id"] and c.get("link_id") and o.get("link_id") == c["link_id"] and o.get("sequence_id") == c["sequence_id"]:
+            nested.append((t2, o))
+    warnings = []
+    for t2, n in nested:
+        require_unlocked(seq, t2)
+        changed = [k for k, v in _DEFAULT_LOOK.items() if n.get(k, v) != v]
+        changed += ["motion"] if any(n["motion"].get(k) != v for k, v in DM.items() if k not in ("position", "anchor")) or \
+            n["motion"].get("position") is not None else []
+        changed += ["effects"] if n["effects"] else []
+        changed += ["keyframes"] if n["keyframes"] else []
+        if changed:
+            warnings.append(f"{n['name']}: {', '.join(changed)} of the nested clip dropped")
+    lo = c["source_in"]
+    hi = c["source_in"] + (c["end"] - c["start"])
+    shift = c["start"] - c["source_in"]
+    for t2, n in nested:
+        ctx.m.delete(clip_path(seq, t2, n["id"]))
+    added = 0
+    links: dict[str, str] = {}
+    placed = []
+    for t2, n in nested:
+        kind = seq["tracks"][t2]["kind"]
+        key = "video_tracks" if kind == "video" else "audio_tracks"
+        base = seq[key].index(t2)
+        for i, itid in enumerate(inner[key]):
+            src = [x for x in inner["tracks"][itid]["clips"].values() if x["end"] > lo and x["start"] < hi]
+            if not src:
+                continue
+            while base + i >= len(seq[key]):  # the outer sequence needs another track
+                tr = _make_track(kind, len(seq[key]) + 1)
+                tr["targeted"] = False
+                ctx.m.set(["sequences", seq["id"], "tracks", tr["id"]], tr)
+                ctx.m.set(["sequences", seq["id"], key], list(seq[key]) + [tr["id"]])
+                added += 1
+            dest = seq[key][base + i]
+            require_unlocked(seq, dest)
+            ids = {}
+            for x in src:
+                s0, e0 = max(x["start"], lo), min(x["end"], hi)
+                new = dict(x, id=new_id(), start=s0 + shift, end=e0 + shift,
+                           source_in=x["source_in"] + round((s0 - x["start"]) * x["speed"]),
+                           link_id=links.setdefault(x["link_id"], new_id()) if x.get("link_id") else None,
+                           effects=[dict(e, id=new_id()) for e in x.get("effects", [])])
+                clear_range(ctx, seq, dest, new["start"], new["end"])
+                write_clip(ctx, seq, dest, new)
+                ids[x["id"]] = new["id"]
+                placed.append(new["id"])
+            # transitions between clips that came out whole
+            for trid, tr in (inner["tracks"][itid].get("transitions") or {}).items():
+                ends = [e for e in (tr.get("clip_a"), tr.get("clip_b")) if e]
+                if ends and all(e in ids for e in ends):
+                    nt = dict(tr, id=new_id(), clip_a=ids.get(tr.get("clip_a")), clip_b=ids.get(tr.get("clip_b")))
+                    ctx.m.set(["sequences", seq["id"], "tracks", dest, "transitions", nt["id"]], nt)
+    return {"clip_ids": placed, "tracks_added": added, "warnings": warnings}
