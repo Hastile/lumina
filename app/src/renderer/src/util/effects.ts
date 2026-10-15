@@ -31,6 +31,22 @@ export const EFFECTS: Record<Effect['type'], { label: string; category: string; 
       { name: 'repeat_edge', kind: 'bool', default: false, label: 'Repeat Edge Pixels' }
     ]
   },
+  lumetri: {
+    label: 'Lumetri Color',
+    category: 'Color Correction',
+    params: [
+      { name: 'temperature', kind: 'number', default: 0, label: 'Temperature', min: -100, max: 100 },
+      { name: 'tint', kind: 'number', default: 0, label: 'Tint', min: -100, max: 100 },
+      { name: 'exposure', kind: 'number', default: 0, label: 'Exposure', min: -5, max: 5 },
+      { name: 'contrast', kind: 'number', default: 0, label: 'Contrast', min: -100, max: 100 },
+      { name: 'highlights', kind: 'number', default: 0, label: 'Highlights', min: -100, max: 100 },
+      { name: 'shadows', kind: 'number', default: 0, label: 'Shadows', min: -100, max: 100 },
+      { name: 'whites', kind: 'number', default: 0, label: 'Whites', min: -100, max: 100 },
+      { name: 'blacks', kind: 'number', default: 0, label: 'Blacks', min: -100, max: 100 },
+      { name: 'saturation', kind: 'number', default: 100, label: 'Saturation', min: 0, max: 200 },
+      { name: 'vibrance', kind: 'number', default: 0, label: 'Vibrance', min: -100, max: 100 }
+    ]
+  },
   parametric_eq: {
     label: 'Parametric Equalizer',
     category: 'Filter and EQ',
@@ -141,6 +157,11 @@ export function effectCss(effect: Effect, clip: Clip, t: number, w: number, h: n
   if (effect.type === 'transform') {
     const { m, opacity } = transformEffectAt(effect, clip, t, w, h)
     return { transform: cssMatrix(m), transformOrigin: '0 0', opacity }
+  }
+  if (effect.type === 'lumetri') {
+    // the DOM fallback (no WebGL): CSS filters approximate exposure, contrast and saturation
+    const v = (k: string) => effectParam(effect, k, clip, t) as number
+    return { filter: `brightness(${2 ** (v('exposure') / 2.2)}) contrast(${1 + v('contrast') / 100}) saturate(${v('saturation') / 100})` }
   }
   const s = Math.max(0, effectParam(effect, 'blurriness', clip, t) as number) * BLUR_SIGMA_PER_UNIT
   return s > 0.05 ? { filter: `blur(${s}px)` } : null

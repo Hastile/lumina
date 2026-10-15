@@ -280,3 +280,19 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-tl-marquee { position: absolute; border: 1px solid #9ec5ff; background: rgba(80, 140, 255, 0.15); pointer-events: none; z-index: 20; }
 .lm-filmstrip { position: absolute; left: 0; right: 0; bottom: 0; overflow: hidden; pointer-events: none; opacity: 0.85; }
 .lm-filmstrip > div { position: absolute; top: 0; bottom: 0; background-repeat: no-repeat; border-right: 1px solid rgba(0, 0, 0, 0.35); }
+.lm-lumetri { display: flex; flex-direction: column; }
+.lm-lumetri-head { display: flex; justify-content: space-between; align-items: center; padding: 6px 8px; border-bottom: 1px solid #333; gap: 6px; }
+.lm-lumetri-head .dim { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lm-lumetri-body { flex: 1; overflow-y: auto; padding: 4px 8px 12px; }
+.lm-lumetri-section .sec { font-weight: 600; padding: 8px 0 4px; border-bottom: 1px solid #333; margin-bottom: 4px; }
+.lm-lumetri-section .gtitle { color: var(--text-dim); font-size: 11px; margin: 8px 0 2px; }
+.lm-lumetri-section .row { display: grid; grid-template-columns: 76px 1fr 44px; gap: 8px; align-items: center; height: 22px; }
+.lm-lumetri-section .row .label { font-size: 11px; }
+.lm-lumetri-section .row .lm-value { text-align: right; }
+.lm-lumetri-section .track { position: relative; height: 14px; cursor: pointer; }
+.lm-lumetri-section .track::before { content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 2px; background: #444; }
+.lm-lumetri-section .row.temperature .track::before { background: linear-gradient(90deg, #3a7bd5, #ddd, #e0a030); }
+.lm-lumetri-section .row.tint .track::before { background: linear-gradient(90deg, #3dbb4a, #ddd, #c23fc2); }
+.lm-lumetri-section .row.saturation .track::before { background: linear-gradient(90deg, #888, #e04a4a); }
+.lm-lumetri-section .track .fill { position: absolute; top: 6px; height: 2px; background: var(--accent, #2d8ceb); }
+.lm-lumetri-section .track .knob { position: absolute; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #ddd; box-shadow: 0 0 0 1px #000; }

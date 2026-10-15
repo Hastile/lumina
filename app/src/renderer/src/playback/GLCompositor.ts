@@ -10,6 +10,8 @@
 // row at v = 0 (WebGL ignores UNPACK_FLIP_Y / PREMULTIPLY for ImageBitmap
 // sources) and are marked ``flip`` so the shader reads them the same way.
 
+import { GRADE_GLSL, type GradeUniforms } from '../util/color'
+
 export type Affine = [number, number, number, number, number, number] // [a b c / d e f]
 export type Blend = 'normal' | 'add' | 'multiply'
 
@@ -69,6 +71,20 @@ void main() {
   color = acc / wsum;
 }`
 
+// Lumetri Color on a premultiplied buffer (util/color.ts GRADE_GLSL)
+const GRADE_FS = `#version 300 es
+precision highp float;
+in vec2 vUv;
+in vec2 vCrop;
+uniform sampler2D tex;
+out vec4 color;
+${GRADE_GLSL}
+void main() {
+  vec4 c = texture(tex, vUv);
+  if (c.a <= 0.0) { color = vec4(0.0); return; }
+  color = vec4(gradeRgb(c.rgb / c.a) * c.a, c.a);
+}`
+
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
   const sh = (type: number, src: string) => {
     const s = gl.createShader(type)!
@@ -102,6 +118,7 @@ export class GLCompositor {
   readonly gl: WebGL2RenderingContext
   private prog: WebGLProgram
   private blurProg: WebGLProgram
+  private gradeProg: WebGLProgram
   private quad: WebGLVertexArrayObject
   private white: WebGLTexture
   private main: RT | null = null
@@ -117,6 +134,7 @@ export class GLCompositor {
     this.gl = gl
     this.prog = compile(gl, VS, FS)
     this.blurProg = compile(gl, VS, BLUR_FS)
+    this.gradeProg = compile(gl, VS, GRADE_FS)
     this.quad = gl.createVertexArray()!
     gl.bindVertexArray(this.quad)
     const buf = gl.createBuffer()
@@ -310,6 +328,34 @@ export class GLCompositor {
       cur = { tex: r.tex, x: cur.x, y: cur.y, w: cur.w, h: cur.h, flip: false }
     }
     return cur
+  }
+
+  /** Lumetri Color of a placed buffer, texel for texel. */
+  grade(p: Placed, texW: number, texH: number, g: GradeUniforms): Placed {
+    const gl = this.gl
+    const r = this.rt(texW, texH)
+    this.scratch.push(r)
+    const t = { fbo: r.fbo, width: r.width, height: r.height }
+    this.bind(t)
+    gl.useProgram(this.gradeProg)
+    gl.bindVertexArray(this.quad)
+    gl.disable(gl.BLEND)
+    gl.activeTexture(gl.TEXTURE0)
+    gl.bindTexture(gl.TEXTURE_2D, p.tex)
+    const u = (n: string) => gl.getUniformLocation(this.gradeProg, n)
+    gl.uniform1i(u('tex'), 0)
+    gl.uniform4f(u('rect'), 0, 0, r.width, r.height)
+    gl.uniformMatrix3fv(u('toTarget'), false, mat3(IDENTITY))
+    gl.uniformMatrix3fv(u('toCrop'), false, mat3(IDENTITY))
+    gl.uniform2f(u('targetSize'), r.width, r.height)
+    gl.uniform1f(u('flip'), p.flip ? 1 : 0)
+    gl.uniform3f(u('gain'), ...g.gain)
+    gl.uniform1f(u('contrastK'), g.contrast)
+    gl.uniform4f(u('tones'), ...g.tones)
+    gl.uniform1f(u('saturation'), g.saturation)
+    gl.uniform1f(u('vibrance'), g.vibrance)
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4)
+    return { tex: r.tex, x: p.x, y: p.y, w: p.w, h: p.h, flip: false }
   }
 
   /** Read the presented frame (tests). */

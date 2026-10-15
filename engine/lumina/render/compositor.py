@@ -134,6 +134,12 @@ def apply_effects(clip: dict, img: Image.Image, origin, prescale, t: int, src_w:
         if effect["type"] == "transform":
             m, op = fx_.transform_effect_at(effect, clip, t, src_w, src_h)
             pre, pre_op = fx_.mul(m, pre), pre_op * op
+        elif effect["type"] == "lumetri":
+            from . import color
+
+            vals = {k: fx_.param(effect, k, clip, t, src_w, src_h) for k in fx_.EFFECTS["lumetri"]["params"]}
+            if not color.is_identity(vals):
+                img = color.grade_image(img, vals)  # per pixel: commutes with the pending affine
         elif effect["type"] == "gaussian_blur":
             sx, sy = fx_.blur_sigma(effect, clip, t)
             sx, sy = sx * prescale[0], sy * prescale[1]

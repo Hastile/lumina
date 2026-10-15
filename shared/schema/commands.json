@@ -4685,6 +4685,7 @@
           "enum": [
             "transform",
             "gaussian_blur",
+            "lumetri",
             "parametric_eq",
             "compressor",
             "hard_limiter"

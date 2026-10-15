@@ -3,6 +3,7 @@
 // layers of the Stage stay on top, transparent, for selection, dragging and
 // the drawing tools.
 
+import { gradeUniforms, isIdentity, LUMETRI_KEYS, type LumetriParams } from '../util/color'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { Clip, MediaItem, Sequence } from '../engine/document'
 import { engine, mediaUrl } from '../engine/client'
@@ -222,6 +223,9 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
           const { m, opacity: op } = transformEffectAt(fx, clip, t, w, h)
           pre = mul(m as Affine, pre)
           preOp *= op
+        } else if (fx.type === 'lumetri') {
+          const vals = Object.fromEntries(LUMETRI_KEYS.map((k) => [k, effectParam(fx, k, clip, t) as number])) as LumetriParams
+          if (!isIdentity(vals)) placed = c.grade(placed, Math.round(placed.w * s.ps), Math.round(placed.h * s.ps), gradeUniforms(vals))
         } else if (fx.type === 'gaussian_blur') {
           const sig = Math.max(0, effectParam(fx, 'blurriness', clip, t) as number) * BLUR_SIGMA_PER_UNIT
           const dims = Math.round(effectParam(fx, 'dimensions', clip, t) as number)

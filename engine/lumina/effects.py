@@ -40,6 +40,23 @@ EFFECTS: dict[str, dict] = {
             "repeat_edge": ("bool", False, "Repeat Edge Pixels"),
         },
     },
+    # Lumetri Color, Basic Correction + Creative saturation; the pixel maths is in render/color.py
+    "lumetri": {
+        "label": "Lumetri Color",
+        "category": "Color Correction",
+        "params": {
+            "temperature": ("number", 0.0, "Temperature"),
+            "tint": ("number", 0.0, "Tint"),
+            "exposure": ("number", 0.0, "Exposure"),
+            "contrast": ("number", 0.0, "Contrast"),
+            "highlights": ("number", 0.0, "Highlights"),
+            "shadows": ("number", 0.0, "Shadows"),
+            "whites": ("number", 0.0, "Whites"),
+            "blacks": ("number", 0.0, "Blacks"),
+            "saturation": ("number", 100.0, "Saturation"),
+            "vibrance": ("number", 0.0, "Vibrance"),
+        },
+    },
     # audio effects ("level": a number that is not keyframed); DSP in audio_fx.py
     "parametric_eq": {
         "label": "Parametric Equalizer",

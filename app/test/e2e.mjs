@@ -342,6 +342,8 @@ try {
     await engine.exec('effect.set_param', { sequence_id: seq.id, clip_id: clip.id, effect_id: tf, param: 'rotation', value: 10 })
     const { effect_ids: [bl] } = await engine.exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: 'gaussian_blur' })
     await engine.exec('effect.set_param', { sequence_id: seq.id, clip_id: clip.id, effect_id: bl, param: 'blurriness', value: 25 })
+    await engine.exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: 'lumetri', index: 0,
+      params: { temperature: 40, tint: -20, exposure: 0.7, contrast: 30, highlights: -40, shadows: 30, whites: 10, blacks: -20, saturation: 140, vibrance: 30 } })
     window.__luminaGLScale = 1
     const W = seq.settings.width
     const H = seq.settings.height
@@ -353,10 +355,7 @@ try {
     const png = c.toDataURL('image/png')
     const out = await engine.call('export.frame', { sequence_id: seq.id, time: t })
     delete window.__luminaGLScale
-    await engine.call('undo')
-    await engine.call('undo')
-    await engine.call('undo')
-    await engine.call('undo')
+    for (let i = 0; i < 5; i++) await engine.call('undo')
     return { png, path: out.path, W, H }
   })
   {
@@ -369,7 +368,7 @@ try {
       for (let i = 0; i < a.data.length; i += 4) for (let k = 0; k < 3; k++) sum += Math.abs(a.data[i + k] - b.data[i + k])
       const mean = sum / (a.width * a.height * 3)
       assert.ok(mean < 2, `GPU monitor vs export mean pixel difference ${mean.toFixed(2)}`)
-      log('Program monitor (GPU) vs export with Transform + Gaussian Blur: mean pixel difference', mean.toFixed(2))
+      log('Program monitor (GPU) vs export with Lumetri Color + Transform + Gaussian Blur: mean pixel difference', mean.toFixed(2))
     }
   }
 
@@ -681,6 +680,32 @@ try {
   for (let i = 0; i < 30 && t6.v[3].speed === 1; i++) { await page.waitForTimeout(100); t6 = await tl() }
   assert.ok(t6.v[3].speed < 1 && t6.v[3].end > t4.v[3].end, `rate stretch slowed the clip (${t6.v[3].speed})`)
   await page.keyboard.press('v')
+  // Lumetri Color panel: dragging Exposure adds the effect and previews live, as one undo step
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), t6.v[3].id)
+  await page.locator('.dv-tab', { hasText: 'Lumetri 색상' }).first().click()
+  const expo = page.locator('[data-lumetri-param="exposure"] .track')
+  await expo.waitFor()
+  const eb = await expo.boundingBox()
+  await page.mouse.move(eb.x + eb.width / 2, eb.y + eb.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(eb.x + eb.width * 0.6, eb.y + eb.height / 2, { steps: 4 })
+  await page.mouse.move(eb.x + eb.width * 0.7, eb.y + eb.height / 2, { steps: 4 })
+  await page.mouse.up()
+  const lum = await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean)
+    const f = c.effects.find((e) => e.type === 'lumetri')
+    return f && f.params.exposure > 1.5 && !s.history.in_transaction ? { exposure: f.params.exposure, undo: s.history.undo_label } : null
+  }, t6.v[3].id, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.equal(lum.undo, 'Lumetri 색상')
+  await page.keyboard.press('Control+z')
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return !Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).effects.some((e) => e.type === 'lumetri')
+  }, t6.v[3].id, { timeout: 10000 })
+  log('Lumetri panel: Exposure drag ->', lum.exposure.toFixed(1), 'in one undo step')
   await page.locator('[data-filmstrip] > div').first().waitFor({ timeout: 30000 })
   const tiles = await page.locator('[data-filmstrip] > div').count()
   log('tools: rolling', ((t1.v[0].end - pre.v[0].end) / TPS).toFixed(2), 's; slip; slide; Ctrl+C/V; marquee; rate stretch', Math.round(t6.v[3].speed * 100) + '%; filmstrip tiles', tiles)

@@ -189,7 +189,7 @@ class Graphic(_Model):
     source: str | None = Field(default=None, description="origin, e.g. 'mogrt:Title' for imported Premiere graphics")
 
 
-EffectType = Literal["transform", "gaussian_blur", "parametric_eq", "compressor", "hard_limiter"]
+EffectType = Literal["transform", "gaussian_blur", "lumetri", "parametric_eq", "compressor", "hard_limiter"]
 TransitionType = Literal["cross_dissolve", "dip_to_black", "dip_to_white", "constant_power"]
 
 

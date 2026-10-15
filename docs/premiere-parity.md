@@ -88,7 +88,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Ctrl+D / Ctrl+Shift+D / Shift+D default transitions; transitions drawn on the timeline, select + Delete, Set Transition Duration... | ✓ |
 | Transitions follow trims; removed when their edit point disappears (same undo step) | ✓ |
 | .prproj: Transform (Geometry2) with keyframes, Gaussian Blur, transitions (incl. Film Impact dissolves as Cross Dissolve) | ✓ |
-| Other effects (Lumetri, Crop effect, Warp Stabilizer, ...), transition handles UI, effect presets | ✗ |
+| Lumetri Color (Basic Correction: white balance, tone, saturation; Creative vibrance) with its panel, GPU preview = export | ✓ (curves, color wheels, HSL secondary, LUTs, vignette ✗) |
+| Other effects (Crop effect, Warp Stabilizer, ...), transition handles UI | ✗ |
 
 ## Playback (monitors)
 | Item | Status |
