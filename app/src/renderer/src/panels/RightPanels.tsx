@@ -1,6 +1,7 @@
 // Panels from Premiere 2025+'s Editing workspace right side and top-left tabs.
-// Properties and Metadata are functional; Essential Sound, Lumetri Color, Text
+// Properties, Metadata and Essential Sound are functional; Lumetri Color, Text
 // and Graphic Templates hold their place until their milestones.
+import { useState } from 'react'
 import { ChevronDown, AudioLines, Circle, MessageSquare, Music, Sparkles, Square, Wind, RotateCcw, Plus, Maximize, Minimize } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { MediaItem } from '../engine/document'
@@ -141,32 +142,106 @@ export function MetadataPanel() {
   )
 }
 
-const SOUND_TAGS: [string, React.FC<{ size?: number }>][] = [
-  ['Dialogue', MessageSquare],
-  ['Music', Music],
-  ['SFX', Sparkles],
-  ['Ambience', Wind]
+const SOUND_TAGS: [AudioTag, string, React.FC<{ size?: number }>][] = [
+  ['dialogue', 'Dialogue', MessageSquare],
+  ['music', 'Music', Music],
+  ['sfx', 'SFX', Sparkles],
+  ['ambience', 'Ambience', Wind]
 ]
+type AudioTag = 'dialogue' | 'music' | 'sfx' | 'ambience'
+// Auto-Match targets (engine/lumina/audio_analysis.py DEFAULT_TARGETS)
+const TARGETS: Record<AudioTag, number> = { dialogue: -23, music: -25, sfx: -21, ambience: -30 }
 
+type MatchResult = Record<string, { tag: string; lufs: number | null; target?: number; gain_db: number }>
+
+/** Essential Sound (Edit): tag audio clips by type (or Auto-Tag them), then Loudness Auto-Match. */
 export function EssentialSoundPanel() {
+  const seq = useStore((s) => activeSequence(s))
+  const selected = useStore((s) => s.selectedClips)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [targets, setTargets] = useState<Record<AudioTag, number>>(TARGETS)
+  const [result, setResult] = useState<MatchResult | null>(null)
+  if (!seq) return <div className="lm-panel"><div className="lm-empty">{t('(no sequences)')}</div></div>
+  // the selected audio clips, plus the audio linked to selected video
+  const sel = selected.map((id) => findClip(seq, id)).filter(Boolean).map((f) => f!.clip)
+  const links = new Set(sel.map((c) => c.link_id).filter(Boolean))
+  const audio = seq.audio_tracks.flatMap((id) => Object.values(seq.tracks[id].clips)).filter((c) => sel.includes(c) || (c.link_id && links.has(c.link_id)))
+  const ids = audio.map((c) => c.id)
+  const tags = new Set(audio.map((c) => c.audio_tag ?? null))
+  const tag = tags.size === 1 ? [...tags][0] : null
+  const run = async (label: string, fn: () => Promise<unknown>) => {
+    setBusy(label)
+    try {
+      await fn()
+    } finally {
+      setBusy(null)
+    }
+  }
+  const autoTag = () => run(t('Auto-Tag'), () => exec('audio.auto_tag', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, overwrite: ids.length > 0 }, t('Auto-Tag')))
+  const autoMatch = () =>
+    run(t('Auto-Match'), async () => {
+      const r = await exec<{ clips: MatchResult }>('audio.auto_match', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, targets }, t('Auto-Match'))
+      if (r) setResult(r.clips)
+    })
   return (
-    <div className="lm-panel">
+    <div className="lm-panel lm-es" data-essential-sound="">
       <div className="lm-subtabs">
         <span>{t('Browse')}</span>
         <span className="active">{t('Edit')}</span>
       </div>
       <div className="lm-es-body">
-        <div className="dim">{t('No selection')}</div>
-        <AudioLines size={40} color="#888" />
-        <div className="title">{t('Select a clip to tag:')}</div>
+        <div className="dim">{audio.length ? `${audio.length} ${t('audio clip(s) selected')}` : t('No selection')}</div>
+        {!tag && <AudioLines size={34} color="#888" />}
+        <div className="title">{tag ? t(SOUND_TAGS.find((x) => x[0] === tag)![1]) : t('Select a clip to tag:')}</div>
         <div className="tags">
-          {SOUND_TAGS.map(([tag, Icon]) => (
-            <button key={tag} className="lm-chip" disabled>
-              <Icon size={12} /> {t(tag)}
+          {SOUND_TAGS.map(([key, label, Icon]) => (
+            <button
+              key={key}
+              className={`lm-chip ${tag === key ? 'on' : ''}`}
+              data-tag={key}
+              disabled={!audio.length || !!busy}
+              onClick={() => void exec('clip.set_audio_tag', { sequence_id: seq.id, clip_ids: ids, tag: key }, t('Audio Type'))}
+            >
+              <Icon size={12} /> {t(label)}
             </button>
           ))}
         </div>
-        <div className="dim small">{t('Audio tagging and loudness tools arrive with the audio milestone (M3).')}</div>
+        <div className="row">
+          <button className="lm-btn" data-action="auto-tag" disabled={!!busy} onClick={() => void autoTag()}>
+            {busy === t('Auto-Tag') ? t('Analyzing...') : audio.length ? t('Auto-Tag') : t('Auto-Tag Sequence')}
+          </button>
+          {tag && (
+            <button className="lm-btn" disabled={!!busy} onClick={() => void exec('clip.set_audio_tag', { sequence_id: seq.id, clip_ids: ids, tag: null }, t('Clear Audio Type'))}>
+              {t('Clear Audio Type')}
+            </button>
+          )}
+        </div>
+        <div className="lm-es-section">
+          <div className="head">{t('Loudness')}</div>
+          {SOUND_TAGS.filter(([key]) => !tag || key === tag).map(([key, label]) => (
+            <label key={key} className="target">
+              <span>{t(label)}</span>
+              <input type="number" step={0.5} min={-40} max={-5} value={targets[key]} onChange={(e) => setTargets({ ...targets, [key]: Number(e.target.value) })} />
+              <span className="dim">LUFS</span>
+            </label>
+          ))}
+          <button className="lm-btn primary" data-action="auto-match" disabled={!!busy} onClick={() => void autoMatch()}>
+            {busy === t('Auto-Match') ? t('Analyzing...') : t('Auto-Match')}
+          </button>
+          {result && (
+            <div className="results">
+              {Object.entries(result).slice(0, 12).map(([id, r]) => {
+                const c = findClip(seq, id)?.clip
+                return (
+                  <div key={id} className="res">
+                    <span className="name">{c?.name ?? id}</span>
+                    <span>{r.lufs === null ? t('silent') : `${r.lufs.toFixed(1)} → ${r.target} LUFS (${r.gain_db > 0 ? '+' : ''}${r.gain_db.toFixed(1)} dB)`}</span>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )

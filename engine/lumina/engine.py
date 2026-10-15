@@ -32,6 +32,17 @@ class MediaServices:
         peak = float(np.abs(pcm).max()) if pcm.size else 0.0
         return 20 * np.log10(peak) if peak > 0 else -float("inf")
 
+    def audio_features(self, path: str, src_start: int, src_dur: int, channels: int = 2) -> dict:
+        from . import audio_analysis
+
+        rate = 16000
+        return audio_analysis.features(export_mod.decode_audio(path, src_start, src_dur, 1.0, rate, None, channels), rate)
+
+    def audio_loudness(self, path: str, src_start: int, src_dur: int, channels: int = 2) -> float | None:
+        from . import audio_analysis
+
+        return audio_analysis.loudness(path, src_start, src_dur, channels)
+
 
 class Engine:
     def __init__(self, services: Any = None, run_jobs: bool = True):

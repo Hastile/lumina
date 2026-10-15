@@ -204,7 +204,7 @@ const ko: Record<string, string> = {
   Dialogue: '대화',
   Music: '음악',
   SFX: 'SFX',
-  Ambience: '주변광',
+  Ambience: '앰비언스',
   'Audio tagging and loudness tools arrive with the audio milestone (M3).': '오디오 태그와 음량 도구는 오디오 단계(M3)에서 제공됩니다.',
   'Lumetri Color: color correction arrives with the GPU compositor (M3).': 'Lumetri 색상: 색 보정은 GPU 컴포지터 단계(M3)에서 제공됩니다.',
   'Text / captions arrive with captions and graphics (M4).': '캡션 텍스트 편집은 캡션 단계에서 제공됩니다. 그래픽 텍스트는 속성 패널에서 편집하세요.',
@@ -372,7 +372,17 @@ const ko: Record<string, string> = {
   'Mid Gain': '중역 게인',
   'Mid Q': '중역 Q',
   'High Frequency': '고주파',
-  'High Gain': '고역 게인'
+  'High Gain': '고역 게인',
+  // Essential Sound
+  'Auto-Tag': '자동 태그 지정',
+  'Auto-Tag Sequence': '시퀀스 자동 태그 지정',
+  'Auto-Match': '자동 일치',
+  'Loudness': '음량',
+  'Clear Audio Type': '오디오 유형 지우기',
+  'Audio Type': '오디오 유형',
+  'Analyzing...': '분석 중...',
+  'audio clip(s) selected': '개 오디오 클립 선택됨',
+  'silent': '무음'
 }
 
 let locale: Locale = 'ko'

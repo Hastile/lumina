@@ -1883,6 +1883,154 @@
     }
   },
   {
+    "name": "clip.set_audio_tag",
+    "description": "Essential Sound: mark audio clips as Dialogue, Music, SFX or Ambience (or clear the type).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "enum": [
+                "dialogue",
+                "music",
+                "sfx",
+                "ambience"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Essential Sound type; null clears it",
+          "title": "Tag"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "tag"
+      ],
+      "title": "SetAudioTag",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.auto_tag",
+    "description": "Essential Sound Auto-Tag: classify audio clips as dialogue / music / sfx / ambience from the file\nname and the sound (syllable-rate modulation and pauses, noise flatness, length).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: every audio clip of the sequence",
+          "title": "Clip Ids"
+        },
+        "overwrite": {
+          "default": false,
+          "description": "re-tag clips that already have a type",
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "title": "AutoTag",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.auto_match",
+    "description": "Essential Sound Loudness Auto-Match: measure each tagged clip's integrated loudness (LUFS) and set\nits Audio Gain so it lands on its type's target.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: every tagged audio clip of the sequence",
+          "title": "Clip Ids"
+        },
+        "targets": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "LUFS per type, e.g. {'dialogue': -16}; defaults: dialogue -23, music -25, sfx -21, ambience -30",
+          "title": "Targets",
+          "type": "object"
+        }
+      },
+      "title": "AutoMatch",
+      "type": "object"
+    }
+  },
+  {
     "name": "clip.set_property",
     "description": "Set a Motion/Opacity/Volume property. If it is animated, adds or updates the keyframe at `at` (like Premiere).",
     "undoable": true,

@@ -98,3 +98,58 @@ def test_audio_effect_filters_with_ffmpeg(tmp_path):
     squashed = rms(decode_audio(str(wav), 0, src, 1.0, 48000, ffmpeg_filters([comp], 48000)))
     assert squashed < base * 0.6, "a -9 dB RMS sine above a -30 dB threshold is reduced"
     assert compressor_makeup_db(-30, 4) == pytest.approx(13.5)
+
+
+def test_classifier_on_synthetic_sound():
+    from lumina.audio_analysis import classify, features, tag_from_name
+
+    rate = 16000
+    t = np.arange(rate * 12) / rate
+    rng = np.random.default_rng(1)
+    # speech-like: voice-band noise gated at syllable rate, phrases separated by pauses
+    syll = (np.sin(2 * np.pi * 4.5 * t) > 0.1) * (np.sin(2 * np.pi * 0.35 * t) > -0.4)
+    voice = np.convolve(rng.standard_normal(len(t)), np.ones(8) / 8, "same") * 0.3 * syll + 0.3 * syll * np.sin(2 * np.pi * 180 * t)
+    assert classify(features(voice, rate))[0] == "dialogue"
+    chords = sum(0.1 * np.sin(2 * np.pi * f * t) for f in (220, 277, 330, 440, 554)) * (1 + 0.2 * np.sin(2 * np.pi * 0.5 * t))
+    assert classify(features(chords, rate))[0] == "music"
+    noise = rng.standard_normal(len(t)) * 0.05
+    assert classify(features(noise, rate))[0] == "ambience"
+    assert classify(features(noise[: rate * 2], rate))[0] == "sfx"
+    assert classify(features(np.zeros(rate * 6), rate))[0] is None
+    assert tag_from_name("KF - Whoosh Dramatic - 3.mp3") == "sfx"
+    assert tag_from_name("브금_신나는.mp3") == "music" and tag_from_name("인터뷰_원본.wav") == "dialogue"
+    assert tag_from_name("팜술 출시일 떴다.mp3") is None
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg not installed")
+def test_loudness_with_ffmpeg(tmp_path):
+    import subprocess
+
+    from lumina.audio_analysis import loudness
+
+    wav = tmp_path / "sine.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=1000:d=4:sample_rate=48000", "-af", "volume=12dB",
+                    "-ac", "2", str(wav)], check=True)
+    lufs = loudness(str(wav), 0, 4 * 254016000000)
+    assert lufs is not None and -10 < lufs < -5  # a -9 dB RMS 1 kHz sine on both channels is about -6 LUFS
+
+
+def test_auto_tag_and_auto_match(monkeypatch):
+    s, sid, ids = _audio_clips()
+    monkeypatch.setattr(audio_cmd, "media_path", lambda m: m["path"])
+    s.services.audio_features = lambda path, start, dur, ch: (
+        {"duration": 20, "silent": False, "pause_ratio": 0.3, "syllabic": 0.5, "flatness": 0.1, "centroid": 900, "dynamics": 8}
+        if path.endswith("a.mp4") else
+        {"duration": 20, "silent": False, "pause_ratio": 0.02, "syllabic": 0.1, "flatness": 0.05, "centroid": 1500, "dynamics": 3})
+    r = s.execute("audio.auto_tag", {})["result"]["clips"]
+    assert [r[i]["tag"] for i in ids] == ["dialogue", "music"]
+    with pytest.raises(CommandError):
+        s.execute("clip.set_audio_tag", {"clip_ids": ids, "tag": "speech"})
+    s.services.audio_loudness = lambda path, start, dur, ch: -30.0 if path.endswith("a.mp4") else -12.0
+    m = s.execute("audio.auto_match", {"targets": {"dialogue": -16}})["result"]["clips"]
+    assert m[ids[0]]["gain_db"] == 14 and m[ids[1]]["gain_db"] == -13
+    s.undo()
+    assert [c["gain_db"] for c in clips(s, sid, "audio")] == [0, 0]
+    s.execute("clip.set_audio_tag", {"clip_ids": ids, "tag": None})
+    with pytest.raises(CommandError):
+        s.execute("audio.auto_match", {})

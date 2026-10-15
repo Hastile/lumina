@@ -102,6 +102,18 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Shift+J/L slow motion, trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |
 | Program monitor composited on the GPU (WebGL2) in the export renderer's order: Motion, crop, opacity, Transform/Gaussian Blur effects, transitions; text and shapes rasterized by the export renderer | ✓ mean pixel difference vs export < 1 (CSS fallback without WebGL2) |
 
+## Keyframes & audio
+| Item | Status |
+|---|---|
+| Effect Controls keyframes: click / Shift+click, marquee select, drag in time (Shift snaps to the playhead), Delete | ✓ |
+| Right-click Temporal Interpolation: Linear, Bezier, Auto Bezier, Continuous Bezier, Hold, Ease In, Ease Out; per-side icons | ✓ |
+| Shift while scrubbing the ruler snaps the playhead to edits, markers, In/Out | ✓ |
+| Audio Meters (peak hold, clip LEDs), Audio Track Mixer (fader, pan, M/S, meters, Mix), Audio Clip Mixer | ✓ |
+| Volume rubber band on audio clips; Audio Gain (G: set, adjust, normalize max / all peaks); audio scrubbing | ✓ |
+| Audio effects: Parametric Equalizer, Single-band Compressor, Hard Limiter (preview = export for EQ; dynamics within ~1 dB) | ✓ |
+| Essential Sound: audio types, Auto-Tag (file name + speech/music/ambience analysis), Loudness Auto-Match (LUFS) | ✓ (heuristic tagger, not Premiere's AI model) |
+| Spatial interpolation menu for Position, keyframes on the rubber band dragged in time, clip pan | ✗ |
+
 ## Export
 | Item | Status |
 |---|---|
@@ -111,7 +123,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Output verified with ffprobe (duration, size, streams) before "done" | ✓ |
 | What renders: Motion, crop, opacity, keyframes, speed, text graphics, track eye/mute/solo, clip volume + keyframes | ✓ |
 | Effects (Transform, Gaussian Blur) and transitions (Cross Dissolve, Dip to Black/White, Constant Power) | ✓ |
-| Other effects, nested sequences, blend modes, audio pan / track volume | ✗ (not rendered yet) |
+| Other effects, nested sequences, blend modes | ✗ (not rendered yet) |
 
 ## Language
 Korean (Premiere's Korean terminology) is the default; View > Language switches to English.

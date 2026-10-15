@@ -229,6 +229,7 @@ class Clip(_Model):
     opacity: float = 100.0
     volume_db: float = 0.0
     gain_db: float = Field(default=0.0, description="Audio Gain (Premiere's G dialog), applied before Volume")
+    audio_tag: Literal["dialogue", "music", "sfx", "ambience"] | None = Field(default=None, description="Essential Sound audio type")
     motion: Motion = Field(default_factory=Motion)
     keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
     graphic: Graphic | None = None

@@ -257,6 +257,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "opacity": 100.0,
             "volume_db": 0.0,
             "gain_db": 0.0,
+            "audio_tag": None,
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,

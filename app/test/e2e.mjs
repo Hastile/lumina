@@ -566,8 +566,19 @@ try {
   await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), afterFader.clips[1].id)
   await page.locator('.dv-tab', { hasText: '효과 컨트롤' }).click()
   await page.locator('.lm-panel.lm-ec .lm-ec-group', { hasText: '하드 리미터' }).locator('.pname', { hasText: '최대 진폭' }).waitFor()
+  // Essential Sound: tag the selected audio clip, then Loudness Auto-Match sets its gain from LUFS
+  await page.locator('[data-essential-sound] [data-tag="sfx"]').click()
+  await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return seq.tracks[seq.audio_tracks[0]].clips[id].audio_tag === 'sfx'
+  }, afterFader.clips[1].id, { timeout: 10000 })
+  await page.locator('[data-essential-sound] [data-action="auto-match"]').click()
+  await page.locator('[data-essential-sound] .results .res').first().waitFor({ timeout: 30000 })
+  const matched = await page.locator('[data-essential-sound] .results .res').first().innerText()
+  assert.match(matched, /LUFS/, matched)
   const fin = await audioState()
-  log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub')
+  log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub; Essential Sound', matched.replace(/\s+/g, ' '))
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip

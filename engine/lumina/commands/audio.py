@@ -73,3 +73,129 @@ def clip_audio_gain(ctx: Context, p: AudioGain):
         if c.get("gain_db", 0.0) != gains[c["id"]]:
             ctx.m.set(clip_path(seq, tid, c["id"]) + ["gain_db"], gains[c["id"]])
     return {"gain_db": gains, "peaks_db": {k: (round(v, 2) if math.isfinite(v) else None) for k, v in peaks.items()}}
+
+
+# ---------------------------------------------------------------- Essential Sound
+
+Tag = Literal["dialogue", "music", "sfx", "ambience"]
+
+
+def _audio_clips(ctx: Context, sequence_id: str | None, clip_ids: list[str] | None) -> tuple[dict, list[tuple[str, dict]]]:
+    seq = seq_of(ctx.doc, sequence_id)
+    if clip_ids:
+        out = [find_clip(seq, cid) for cid in clip_ids]
+        out = [(tid, c) for tid, c in out if seq["tracks"][tid]["kind"] == "audio"]
+    else:
+        out = [(tid, c) for tid in seq["audio_tracks"] for c in seq["tracks"][tid]["clips"].values()]
+    if not out:
+        raise CommandError("NO_AUDIO", "no audio clips")
+    return seq, out
+
+
+def _source(ctx: Context, clip: dict) -> tuple[str, int, int, int, dict] | None:
+    media = ctx.doc["media"].get(clip.get("media_id") or "")
+    if not media or not media.get("audio"):
+        return None
+    path = media_path(media)
+    if path is None:
+        return None
+    dur = round((clip["end"] - clip["start"]) * clip["speed"])
+    return path, clip["source_in"], dur, int((media["audio"] or {}).get("channels") or 2), media
+
+
+class SetAudioTag(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] = Field(min_length=1)
+    tag: Tag | None = Field(description="Essential Sound type; null clears it")
+
+
+@command("clip.set_audio_tag", SetAudioTag)
+def clip_set_audio_tag(ctx: Context, p: SetAudioTag):
+    """Essential Sound: mark audio clips as Dialogue, Music, SFX or Ambience (or clear the type)."""
+    seq, found = _audio_clips(ctx, p.sequence_id, p.clip_ids)
+    for tid, c in found:
+        require_unlocked(seq, tid)
+        if c.get("audio_tag") != p.tag:
+            ctx.m.set(clip_path(seq, tid, c["id"]) + ["audio_tag"], p.tag)
+    return {"count": len(found)}
+
+
+class AutoTag(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] | None = Field(default=None, description="default: every audio clip of the sequence")
+    overwrite: bool = Field(default=False, description="re-tag clips that already have a type")
+
+
+@command("audio.auto_tag", AutoTag)
+def audio_auto_tag(ctx: Context, p: AutoTag):
+    """Essential Sound Auto-Tag: classify audio clips as dialogue / music / sfx / ambience from the file
+    name and the sound (syllable-rate modulation and pauses, noise flatness, length)."""
+    from .. import audio_analysis
+
+    seq, found = _audio_clips(ctx, p.sequence_id, p.clip_ids)
+    feats = getattr(ctx.services, "audio_features", None)
+    out: dict[str, dict] = {}
+    by_media: dict[tuple, tuple] = {}
+    for tid, c in found:
+        if c.get("audio_tag") and not p.overwrite:
+            out[c["id"]] = {"tag": c["audio_tag"], "reason": "already tagged"}
+            continue
+        src = _source(ctx, c)
+        media = ctx.doc["media"].get(c.get("media_id") or "")
+        tag = audio_analysis.tag_from_name(media["name"]) if media else None
+        reason = "file name"
+        if tag is None and src and feats:
+            key = src[:3]
+            if key not in by_media:
+                by_media[key] = audio_analysis.classify(feats(src[0], src[1], src[2], src[3]))
+            tag, reason = by_media[key]
+        if tag is None:
+            out[c["id"]] = {"tag": None, "reason": reason if src else "no audio / offline"}
+            continue
+        require_unlocked(seq, tid)
+        if c.get("audio_tag") != tag:
+            ctx.m.set(clip_path(seq, tid, c["id"]) + ["audio_tag"], tag)
+        out[c["id"]] = {"tag": tag, "reason": reason}
+    return {"clips": out}
+
+
+class AutoMatch(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] | None = Field(default=None, description="default: every tagged audio clip of the sequence")
+    targets: dict[str, float] = Field(default_factory=dict, description="LUFS per type, e.g. {'dialogue': -16}; defaults: "
+                                      "dialogue -23, music -25, sfx -21, ambience -30")
+
+
+@command("audio.auto_match", AutoMatch)
+def audio_auto_match(ctx: Context, p: AutoMatch):
+    """Essential Sound Loudness Auto-Match: measure each tagged clip's integrated loudness (LUFS) and set
+    its Audio Gain so it lands on its type's target."""
+    from .. import audio_analysis
+
+    seq, found = _audio_clips(ctx, p.sequence_id, p.clip_ids)
+    measure = getattr(ctx.services, "audio_loudness", None)
+    if measure is None:
+        raise CommandError("NO_SERVICES", "loudness analysis needs media services")
+    targets = {**audio_analysis.DEFAULT_TARGETS, **p.targets}
+    out: dict[str, dict] = {}
+    cache: dict[tuple, float | None] = {}
+    for tid, c in found:
+        tag = c.get("audio_tag")
+        src = _source(ctx, c)
+        if not tag or not src:
+            continue
+        key = src[:3]
+        if key not in cache:
+            cache[key] = measure(src[0], src[1], src[2], src[3])
+        lufs = cache[key]
+        if lufs is None:
+            out[c["id"]] = {"tag": tag, "lufs": None, "gain_db": c.get("gain_db", 0.0)}
+            continue
+        require_unlocked(seq, tid)
+        gain = round(max(-96.0, min(96.0, targets[tag] - lufs)), 2)
+        if c.get("gain_db", 0.0) != gain:
+            ctx.m.set(clip_path(seq, tid, c["id"]) + ["gain_db"], gain)
+        out[c["id"]] = {"tag": tag, "lufs": round(lufs, 2), "target": targets[tag], "gain_db": gain}
+    if not out:
+        raise CommandError("NOT_TAGGED", "tag the clips first (Essential Sound: Dialogue / Music / SFX / Ambience)")
+    return {"clips": out}

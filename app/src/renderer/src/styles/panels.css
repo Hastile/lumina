@@ -262,3 +262,15 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-vband .hit { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: ns-resize; }
 .lm-vband .kf { fill: #e6d34a; stroke: #1a1a1a; stroke-width: 0.8; pointer-events: all; cursor: ns-resize; }
 .lm-vband .db { fill: #fff; font-size: 10px; paint-order: stroke; stroke: #000; stroke-width: 2px; }
+
+/* Essential Sound */
+.lm-es .lm-es-body { overflow-y: auto; }
+.lm-chip.on { border-color: var(--accent); color: #fff; background: #23384f; }
+.lm-es-body .row { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.lm-es-section { align-self: stretch; border-top: 1px solid #333; padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.lm-es-section .head { font-weight: 600; }
+.lm-es-section .target { display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center; }
+.lm-es-section .target input { width: 64px; }
+.lm-es-section .results { font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
+.lm-es-section .res { display: flex; justify-content: space-between; gap: 8px; }
+.lm-es-section .res .name { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }

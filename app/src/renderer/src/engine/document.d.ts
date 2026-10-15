@@ -129,6 +129,10 @@ export type VolumeDb1 = number;
  */
 export type GainDb = number;
 /**
+ * Essential Sound audio type
+ */
+export type AudioTag = ("dialogue" | "music" | "sfx" | "ambience") | null;
+/**
  * sequence pixels [x, y]; null = frame center
  */
 export type Position = number[] | null;
@@ -470,6 +474,7 @@ export interface Clip {
   opacity: Opacity;
   volume_db: VolumeDb1;
   gain_db: GainDb;
+  audio_tag: AudioTag;
   motion: Motion;
   keyframes: Keyframes;
   graphic: Graphic | null;

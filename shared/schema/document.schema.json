@@ -156,6 +156,25 @@
           "title": "Gain Db",
           "type": "number"
         },
+        "audio_tag": {
+          "anyOf": [
+            {
+              "enum": [
+                "dialogue",
+                "music",
+                "sfx",
+                "ambience"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Essential Sound audio type",
+          "title": "Audio Tag"
+        },
         "motion": {
           "$ref": "#/$defs/Motion"
         },
@@ -217,6 +236,7 @@
         "opacity",
         "volume_db",
         "gain_db",
+        "audio_tag",
         "motion",
         "keyframes",
         "graphic",
