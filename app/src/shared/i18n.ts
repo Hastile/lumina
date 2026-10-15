@@ -321,7 +321,10 @@ const ko: Record<string, string> = {
   'Apply Preset': '사전 설정 적용',
   // recent projects
   'Open Recent': '최근 항목 열기',
-  '(none)': '(없음)'
+  '(none)': '(없음)',
+  // playback
+  'Select Playback Resolution': '재생 해상도 선택',
+  'Full': '전체'
 }
 
 let locale: Locale = 'ko'

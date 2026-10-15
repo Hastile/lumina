@@ -196,3 +196,5 @@
 .lm-stage.drawing { cursor: crosshair; }
 .lm-draw { position: absolute; border: 1px solid #2d8ceb; background: rgba(45, 140, 235, 0.12); pointer-events: none; z-index: 100000; }
 .lm-draw.ellipse { border-radius: 50%; }
+
+.lm-playres { margin-right: 8px; font-size: 11px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border-soft); border-radius: 2px; padding: 0 2px; height: 18px; }

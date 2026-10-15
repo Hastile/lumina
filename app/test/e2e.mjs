@@ -118,19 +118,20 @@ try {
   assert.ok(s.time > TPS * 0.8, `playback advanced (${s.time / TPS}s)`)
   log('playback advanced to', (s.time / TPS).toFixed(2), 's')
 
-  // after stopping, the Program monitor's video must sit exactly on the playhead frame
-  await page.waitForTimeout(600)
-  const check = await page.evaluate(() => {
+  // after stopping, the Program monitor shows exactly the source frame active at the playhead
+  // (WebCodecs path: the canvas records the decoded frame's timestamp)
+  const check = await page.waitForFunction(() => {
     const s = window.__lumina.get()
     const seq = s.doc.sequences[s.doc.active_sequence_id]
     const t = s.programTime
     const clip = seq.video_tracks.flatMap((id) => Object.values(seq.tracks[id].clips)).find((c) => c.start <= t && t < c.end)
-    const expected = (clip.source_in + (t - clip.start)) / 254016000000
-    const v = [...document.querySelectorAll('.lm-frame video')].find((el) => !el.paused || el.readyState >= 2)
-    return { expected, actual: v?.currentTime, seeking: v?.seeking }
-  })
-  assert.ok(Math.abs(check.actual - check.expected) < 0.005, `monitor frame ${check.actual} vs ${check.expected}`)
-  log('program monitor on exact frame:', check.expected.toFixed(3), 's')
+    const want = (clip.source_in + (t - clip.start)) / 254016000000
+    const c = document.querySelector('.lm-stage .lm-layer[data-clip] canvas[data-webcodecs]')
+    if (!c || c.dataset.exact !== '1') return null
+    const frame = Number(c.dataset.frame)
+    return frame <= want + 1e-6 && want - frame < 1 / 30 ? { want, frame } : null
+  }, null, { timeout: 10000, polling: 'raf' }).then((h) => h.jsonValue())
+  log('program monitor on the exact frame:', check.frame.toFixed(3), 's for source time', check.want.toFixed(3))
 
   // ---- graphics: Type tool (T) + click in the Program monitor creates a text layer
   await page.keyboard.press('Home')
@@ -310,33 +311,37 @@ try {
     await engine.exec('clip.slip', { sequence_id: sid, clip_ids: [v[1].id], delta: '2s' }).catch(() => undefined)
     await engine.exec('sequence.set_playhead', { sequence_id: sid, time: '0.5s' })
     await new Promise((r) => setTimeout(r, 1500))
-    const out = { notReady: 0, seeks: 0, frames: 0 }
-    const hooked = new WeakSet()
-    const hook = (el) => {
-      if (hooked.has(el)) return
-      hooked.add(el)
-      el.addEventListener('seeking', () => { if (!el.paused) out.seeks++ })
+    // count monitor refreshes where a visible clip did not show its exact frame
+    const run = async (rate, ms) => {
+      const out = { frames: 0, inexact: 0, canvases: 0 }
+      play('program', rate)
+      const t0 = performance.now()
+      await new Promise((resolve) => {
+        const step = () => {
+          out.frames++
+          const cs = document.querySelectorAll('.lm-stage .lm-layer[data-clip] canvas[data-webcodecs]')
+          out.canvases = Math.max(out.canvases, cs.length)
+          for (const c of cs) if (c.dataset.exact !== '1') { out.inexact++; (out.at ??= []).push(`${(get().programTime / 254016000000).toFixed(3)} want ${c.dataset.want} frame ${c.dataset.frame} ${c.dataset.debug}`) }
+          if (performance.now() - t0 < ms) requestAnimationFrame(step)
+          else resolve()
+        }
+        requestAnimationFrame(step)
+      })
+      stop()
+      out.time = get().programTime / 254016000000
+      return out
     }
-    play('program', 1)
-    const t0 = performance.now()
-    await new Promise((resolve) => {
-      const step = () => {
-        document.querySelectorAll('.lm-stage video').forEach(hook)
-        out.frames++
-        for (const el of document.querySelectorAll('.lm-stage .lm-layer[data-clip] video')) if (el.readyState < 2 || el.seeking) out.notReady++
-        if (performance.now() - t0 < 3000) requestAnimationFrame(step)
-        else resolve()
-      }
-      requestAnimationFrame(step)
-    })
-    stop()
-    out.time = get().programTime / 254016000000
-    return out
+    const fwd = await run(1, 3000)
+    await new Promise((r) => setTimeout(r, 500))
+    const rev = await run(-1, 1500) // J: reverse, decoded in chunks from keyframes
+    return { fwd, rev }
   })
-  assert.ok(cutProbe.time > 2.5, `playback crossed the cuts (${cutProbe.time})`)
-  assert.equal(cutProbe.notReady, 0, `frames waiting on video at cuts: ${JSON.stringify(cutProbe)}`)
-  assert.equal(cutProbe.seeks, 0, `seeks while playing: ${JSON.stringify(cutProbe)}`)
-  log('playback across 3 cuts: no frame waited on a load or seek', cutProbe.frames, 'frames')
+  assert.ok(cutProbe.fwd.canvases > 0, 'the Program monitor decodes with WebCodecs')
+  assert.ok(cutProbe.fwd.time > 2.5, `playback crossed the cuts (${cutProbe.fwd.time})`)
+  assert.equal(cutProbe.fwd.inexact, 0, `forward play across cuts showed a stale frame: ${JSON.stringify(cutProbe)}`)
+  assert.ok(cutProbe.rev.time < cutProbe.fwd.time - 1, `J plays backwards (${cutProbe.rev.time})`)
+  assert.ok(cutProbe.rev.inexact <= 15, `reverse play only waits at its start: ${JSON.stringify(cutProbe.rev)}`)
+  log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip
   const pclip = await page.evaluate(() => {

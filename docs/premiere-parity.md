@@ -87,6 +87,17 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | .prproj: Transform (Geometry2) with keyframes, Gaussian Blur, transitions (incl. Film Impact dissolves as Cross Dissolve) | ✓ |
 | Other effects (Lumetri, Crop effect, Warp Stabilizer, ...), transition handles UI, effect presets | ✗ |
 
+## Playback (monitors)
+| Item | Status |
+|---|---|
+| Frame-exact Program/Source monitors: WebCodecs decoding (MP4/MOV/WebM/MKV via mediabunny) of the original media, one clock, the frame active at the playhead (same rule as export) | ✓ (codecs Chromium can't decode fall back to proxy / <video>) |
+| Cuts and transitions play without a stall: upcoming clips pre-decoded, decoder streams kept warm | ✓ |
+| Scrubbing shows the exact frame (typically 15-90 ms per jump) | ✓ |
+| J/K/L shuttle incl. reverse play (long-GOP sources decoded in 0.5 s chunks) and 2x-8x | ✓ |
+| Select Playback Resolution (Full, 1/2, 1/4; paused frames full) | ✓ |
+| Shift+J/L slow motion, trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |
+| GPU (WebGL) compositing of effects shared with export | ✗ (CSS compositing for now) |
+
 ## Export
 | Item | Status |
 |---|---|

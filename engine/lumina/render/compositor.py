@@ -356,11 +356,17 @@ class VideoDecoder:
         self.size = size
         self.frame_bytes = size[0] * size[1] * 4
         matrix, rng = color_matrix(path, src_height)
-        # fps round=up keeps, for each output frame, the last source frame at or
-        # before it -- what <video>.currentTime shows in the Program monitor
-        vf = (f"setpts=(PTS-STARTPTS)/{speed!r},fps={fps[0]}/{fps[1]}:round=up,"
+        # Each output frame shows the source frame active at its time (Premiere, and the
+        # Program monitor's WebCodecs path). An input seek drops frames before the seek
+        # point, which would lose the frame covering a start that falls between source
+        # frames, so seek MARGIN earlier and put t=0 back on the requested start; fps then
+        # repeats the last frame at or before each tick (round=up keeps a frame that starts
+        # just after a tick from being shown at that tick).
+        start = max(0, start_ticks) / TPS
+        margin = min(start, 0.25)
+        vf = (f"setpts=(PTS-{margin:.6f}/TB)/{speed!r},fps={fps[0]}/{fps[1]}:round=up:start_time=0,"
               f"scale={size[0]}:{size[1]}:flags=bicubic:in_color_matrix={matrix}:in_range={rng},format=rgba")
-        cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{max(0, start_ticks) / TPS:.6f}", "-i", path,
+        cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{start - margin:.6f}", "-i", path,
                "-an", "-sn", "-dn", "-vf", vf, "-frames:v", str(max_frames), "-f", "rawvideo", "-pix_fmt", "rgba", "-"]
         self.proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=subprocess.DEVNULL, **NO_WINDOW)
         self.q: queue.Queue = queue.Queue(maxsize=6)

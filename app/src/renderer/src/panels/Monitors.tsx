@@ -16,6 +16,7 @@ import { parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECON
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
 import { effectCss, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
+import { FrameCanvas } from '../playback/FrameCanvas'
 import { GraphicView } from './GraphicView'
 
 export function mediaSrc(m: MediaItem): string {
@@ -134,7 +135,14 @@ export function SourceMonitor() {
         {() => (
           <>
             {media && (media.video || media.kind === 'image') && (
-              <MediaLayer url={mediaSrc(media)} kind={media.kind === 'image' ? 'image' : 'video'} time={ticksToSeconds(time)} playing={playing} rate={rate} style={{ width: '100%', height: '100%' }} />
+              media.kind === 'image' ? (
+                <MediaLayer url={mediaSrc(media)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%' }} />
+              ) : (
+                <>
+                  <FrameCanvas url={mediaUrl(media.path)} fallbackUrl={media.proxy_path ? mediaUrl(media.proxy_path) : undefined} time={ticksToSeconds(time)} playing={playing} rate={rate} style={{ width: '100%', height: '100%' }} />
+                  {media.audio && <MediaLayer url={mediaSrc(media)} kind="audio" time={ticksToSeconds(time)} playing={playing} rate={rate} />}
+                </>
+              )
             )}
             {media && !media.video && media.kind !== 'image' && (
               <>
@@ -215,9 +223,14 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       const l = clipLayer(tid, clip, z)
       if (l) visual.push(l)
     }
-    if (lookahead > 0) {
+    if (lookahead !== 0) {
+      // forward: clips starting soon; reverse (negative lookahead): clips that just ended behind us
       for (const clip of Object.values(track.clips)) {
-        if (!clip.enabled || clip.graphic || clip.start <= at || clip.start - at > lookahead) continue
+        if (!clip.enabled || clip.graphic) continue
+        const soon = lookahead > 0
+          ? clip.start > at && clip.start - at <= lookahead
+          : clip.end <= at && at - clip.end <= -lookahead
+        if (!soon) continue
         const l = clipLayer(tid, clip, z, { preroll: true })
         if (l && l.media?.video) visual.push(l)
       }
@@ -285,7 +298,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const selected = useStore((s) => s.selectedClips)
   const [drag, setDrag] = useState<{ clipId: string; dx: number; dy: number } | null>(null)
   const [draw, setDraw] = useState<number[] | null>(null)
-  const { visual, audio } = activeLayers(seq, media, at, playing ? PREROLL : 0)
+  const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0)
 
   const toSeq = (e: React.MouseEvent) => {
     const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
@@ -366,15 +379,18 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     const isSel = selected.includes(clip.id)
     let content: React.ReactNode = clip.graphic ? (
       <GraphicView graphic={clip.graphic} />
+    ) : l.media!.kind === 'image' ? (
+      <MediaLayer url={mediaSrc(l.media!)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />
     ) : (
-      <MediaLayer
-        url={mediaSrc(l.media!)}
-        kind={l.media!.kind === 'image' ? 'image' : 'video'}
-        time={ticksToSeconds(sourceTime(clip, l.preroll ? clip.start : at))}
-        playing={playing && !l.preroll}
+      <FrameCanvas
+        url={mediaUrl(l.media!.path)}
+        fallbackUrl={l.media!.proxy_path ? mediaUrl(l.media!.proxy_path) : undefined}
+        // a prerolled clip waits on its first frame (forward) or its last frame (reverse)
+        time={ticksToSeconds(sourceTime(clip, !l.preroll ? at : rate < 0 ? clip.end - ticksPerFrame(seq.settings) : clip.start))}
+        playing={playing}
+        hold={l.preroll}
         rate={rate * clip.speed}
-        muted
-        style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }}
+        style={{ width: '100%', height: '100%' }}
       />
     )
     // standard effects run before Motion: the first effect is the innermost wrapper
@@ -424,6 +440,31 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   )
 }
 
+/** Premiere's Select Playback Resolution dropdown (paused frames are always full resolution). */
+function PlaybackResolution() {
+  const res = useStore((s) => s.playbackResolution)
+  return (
+    <select
+      className="lm-playres"
+      title={t('Select Playback Resolution')}
+      value={res}
+      onChange={(e) => {
+        const v = Number(e.target.value) as 1 | 0.5 | 0.25
+        set({ playbackResolution: v })
+        try {
+          localStorage.setItem('lumina.playbackResolution', String(v))
+        } catch {
+          // per-viewer convenience only
+        }
+      }}
+    >
+      <option value={1}>{t('Full')}</option>
+      <option value={0.5}>1/2</option>
+      <option value={0.25}>1/4</option>
+    </select>
+  )
+}
+
 export function ProgramMonitor() {
   const seq = useStore((s) => activeSequence(s))
   const mediaMap = useStore((s) => s.doc?.media)
@@ -452,6 +493,7 @@ export function ProgramMonitor() {
       <div className="lm-monitor-bar">
         <Timecode value={time} rate={st} onCommit={(v) => goTo('program', v)} />
         <span style={{ flex: 1 }} />
+        <PlaybackResolution />
         <span className="lm-tc dim">{timecode(seq.in_point != null && seq.out_point != null ? seq.out_point - seq.in_point : duration, st)}</span>
       </div>
       <Scrubber monitor="program" duration={Math.max(duration, 1)} time={time} inPoint={seq.in_point} outPoint={seq.out_point} markers={Object.values(seq.markers).map((m) => m.start)} />

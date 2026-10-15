@@ -33,6 +33,7 @@ type State = {
   programTime: number
   playing: 'source' | 'program' | null
   shuttle: number // J/K/L rate: negative = reverse
+  playbackResolution: 1 | 0.5 | 0.25 // Program/Source monitor resolution while playing (paused = full), like Premiere
 
   pxPerSecond: number
   scrollX: number
@@ -61,6 +62,14 @@ export const useStore = create<State>(() => ({
   programTime: 0,
   playing: null,
   shuttle: 0,
+  playbackResolution: (() => {
+    try {
+      const v = Number(localStorage.getItem('lumina.playbackResolution'))
+      return v === 1 || v === 0.25 ? v : 0.5
+    } catch {
+      return 0.5
+    }
+  })() as 1 | 0.5 | 0.25,
   pxPerSecond: 40,
   scrollX: 0
 }))

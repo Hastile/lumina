@@ -38,8 +38,9 @@ function tick(now: number): void {
   const s = get()
   const m = s.playing
   if (!m) return
-  const dt = (now - last) / 1000
-  last = now
+  // a rAF timestamp is the frame's start and can predate play(): never step backwards
+  const dt = Math.max(0, (now - last) / 1000)
+  last = Math.max(last, now)
   const t = getTime(m) + dt * s.shuttle * TICKS_PER_SECOND
   const end = duration(m)
   // stop at either end in the direction of travel (a 0 ms first frame at 0 must not stop forward play)
