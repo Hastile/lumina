@@ -96,7 +96,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | J/K/L shuttle incl. reverse play (long-GOP sources decoded in 0.5 s chunks) and 2x-8x | ✓ |
 | Select Playback Resolution (Full, 1/2, 1/4; paused frames full) | ✓ |
 | Shift+J/L slow motion, trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |
-| GPU (WebGL) compositing of effects shared with export | ✗ (CSS compositing for now) |
+| Program monitor composited on the GPU (WebGL2) in the export renderer's order: Motion, crop, opacity, Transform/Gaussian Blur effects, transitions; text and shapes rasterized by the export renderer | ✓ mean pixel difference vs export < 1 (CSS fallback without WebGL2) |
 
 ## Export
 | Item | Status |

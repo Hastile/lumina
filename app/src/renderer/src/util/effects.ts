@@ -48,7 +48,8 @@ export function effectParam(effect: Effect, name: string, clip: Clip, seqTime: n
   if (kfs && kfs.length) return interpolate(kfs, sourceTime(clip, seqTime))
   const v = (effect.params as Record<string, PV | undefined>)[name]
   if (v !== undefined) return v
-  const spec = EFFECTS[effect.type].params.find((p) => p.name === name)!
+  const spec = EFFECTS[effect.type].params.find((p) => p.name === name)
+  if (!spec) return 0 // not a parameter of this effect
   return spec.kind === 'point' && spec.default === null ? [w / 2, h / 2] : (spec.default as PV)
 }
 

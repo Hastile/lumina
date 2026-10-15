@@ -22,6 +22,8 @@ const WORK = mkdtempSync(join(tmpdir(), 'lumina-recent-'))
 const app = await electron.launch({ args: ['.'], env: { ...process.env, LUMINA_PRESETS: PRESETS, LUMINA_RECENT: join(WORK, 'recent.json') } })
 const page = await app.firstWindow()
 const log = (...a) => console.log('·', ...a)
+page.on('pageerror', (e) => console.log('[pageerror]', e.message, (e.stack ?? '').split('\n').slice(0, 6).join(' | ')))
+page.on('console', (m) => { if (m.type() === 'error' || /\[lumina\]/.test(m.text())) console.log('[console]', m.text().slice(0, 300)) })
 const state = () => page.evaluate(() => {
   const s = window.__lumina.get()
   const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
@@ -126,9 +128,9 @@ try {
     const t = s.programTime
     const clip = seq.video_tracks.flatMap((id) => Object.values(seq.tracks[id].clips)).find((c) => c.start <= t && t < c.end)
     const want = (clip.source_in + (t - clip.start)) / 254016000000
-    const c = document.querySelector('.lm-stage .lm-layer[data-clip] canvas[data-webcodecs]')
-    if (!c || c.dataset.exact !== '1') return null
-    const frame = Number(c.dataset.frame)
+    const c = document.querySelector('.lm-stage canvas[data-gl]')
+    if (!c || c.dataset.exact !== '1' || !c.dataset.frames) return null
+    const frame = Number(c.dataset.frames.split(',')[0])
     return frame <= want + 1e-6 && want - frame < 1 / 30 ? { want, frame } : null
   }, null, { timeout: 10000, polling: 'raf' }).then((h) => h.jsonValue())
   log('program monitor on the exact frame:', check.frame.toFixed(3), 's for source time', check.want.toFixed(3))
@@ -231,6 +233,50 @@ try {
   await page.waitForFunction((fid) => (document.querySelector(`.lm-stage [data-fx="${fid}"]`)?.style.transform ?? '').startsWith('matrix(0.5'), fx.id, { timeout: 10000 })
   log('Effects panel: Transform applied by double-click, shown in Effect Controls, rendered in the Program monitor')
 
+  // ---- WYSIWYG: the GPU-composited Program monitor matches the export renderer pixel for pixel
+  await page.keyboard.press('Shift+4')
+  await page.locator('.lm-stage canvas[data-gl]').waitFor({ state: 'attached' })
+  const wysiwyg = await page.evaluate(async () => {
+    const { engine, get } = window.__lumina
+    const s = get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const t = s.programTime
+    const clip = seq.video_tracks.flatMap((id) => Object.values(seq.tracks[id].clips)).find((c) => c.start <= t && t < c.end && c.media_id)
+    const { effect_ids: [tf] } = await engine.exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: 'transform' })
+    await engine.exec('effect.set_param', { sequence_id: seq.id, clip_id: clip.id, effect_id: tf, param: 'rotation', value: 10 })
+    const { effect_ids: [bl] } = await engine.exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: 'gaussian_blur' })
+    await engine.exec('effect.set_param', { sequence_id: seq.id, clip_id: clip.id, effect_id: bl, param: 'blurriness', value: 25 })
+    window.__luminaGLScale = 1
+    const W = seq.settings.width
+    const H = seq.settings.height
+    const c = document.querySelector('.lm-stage canvas[data-gl]')
+    for (let i = 0; i < 100 && !(c.width === W && c.dataset.exact === '1'); i++) await new Promise((r) => setTimeout(r, 50))
+    window.__lumina.set({ programTime: t + 1 })
+    window.__lumina.set({ programTime: t })
+    await new Promise((r) => setTimeout(r, 400))
+    const png = c.toDataURL('image/png')
+    const out = await engine.call('export.frame', { sequence_id: seq.id, time: t })
+    delete window.__luminaGLScale
+    await engine.call('undo')
+    await engine.call('undo')
+    await engine.call('undo')
+    await engine.call('undo')
+    return { png, path: out.path, W, H }
+  })
+  {
+    const { PNG } = await import('pngjs')
+    {
+      const { readFileSync } = await import('node:fs')
+      const a = PNG.sync.read(Buffer.from(wysiwyg.png.split(',')[1], 'base64'))
+      const b = PNG.sync.read(readFileSync(wysiwyg.path))
+      let sum = 0
+      for (let i = 0; i < a.data.length; i += 4) for (let k = 0; k < 3; k++) sum += Math.abs(a.data[i + k] - b.data[i + k])
+      const mean = sum / (a.width * a.height * 3)
+      assert.ok(mean < 2, `GPU monitor vs export mean pixel difference ${mean.toFixed(2)}`)
+      log('Program monitor (GPU) vs export with Transform + Gaussian Blur: mean pixel difference', mean.toFixed(2))
+    }
+  }
+
   // ---- transitions: Ctrl+D at the edit point nearest the playhead, then select + Delete
   await page.evaluate(() => window.__lumina.engine.exec('clip.razor', { at: '1s' }))
   await page.evaluate(() => window.__lumina.engine.exec('sequence.set_playhead', { time: '1s' }))
@@ -319,9 +365,13 @@ try {
       await new Promise((resolve) => {
         const step = () => {
           out.frames++
-          const cs = document.querySelectorAll('.lm-stage .lm-layer[data-clip] canvas[data-webcodecs]')
-          out.canvases = Math.max(out.canvases, cs.length)
-          for (const c of cs) if (c.dataset.exact !== '1') { out.inexact++; (out.at ??= []).push(`${(get().programTime / 254016000000).toFixed(3)} want ${c.dataset.want} frame ${c.dataset.frame} ${c.dataset.debug}`) }
+          const c = document.querySelector('.lm-stage canvas[data-gl]')
+          if (c) out.canvases = 1
+          if (c && c.dataset.exact !== '1') {
+            out.inexact++
+            if (performance.now() - t0 > 800) out.late = (out.late ?? 0) + 1 // past the decoder warm-up
+            ;(out.at ??= []).push(`${(get().programTime / 254016000000).toFixed(3)} frames ${c.dataset.frames}`)
+          }
           if (performance.now() - t0 < ms) requestAnimationFrame(step)
           else resolve()
         }
@@ -336,11 +386,11 @@ try {
     const rev = await run(-1, 1500) // J: reverse, decoded in chunks from keyframes
     return { fwd, rev }
   })
-  assert.ok(cutProbe.fwd.canvases > 0, 'the Program monitor decodes with WebCodecs')
+  assert.ok(cutProbe.fwd.canvases > 0, 'the Program monitor composites on the GPU')
   assert.ok(cutProbe.fwd.time > 2.5, `playback crossed the cuts (${cutProbe.fwd.time})`)
   assert.equal(cutProbe.fwd.inexact, 0, `forward play across cuts showed a stale frame: ${JSON.stringify(cutProbe)}`)
   assert.ok(cutProbe.rev.time < cutProbe.fwd.time - 1, `J plays backwards (${cutProbe.rev.time})`)
-  assert.ok(cutProbe.rev.inexact <= 15, `reverse play only waits at its start: ${JSON.stringify(cutProbe.rev)}`)
+  assert.ok(!cutProbe.rev.late, `reverse play only waits while it starts: ${JSON.stringify(cutProbe.rev)}`)
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip

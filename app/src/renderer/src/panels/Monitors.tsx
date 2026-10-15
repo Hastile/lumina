@@ -17,6 +17,7 @@ import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
 import { effectCss, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
 import { FrameCanvas } from '../playback/FrameCanvas'
+import { GLStage } from '../playback/GLStage'
 import { GraphicView } from './GraphicView'
 
 export function mediaSrc(m: MediaItem): string {
@@ -298,6 +299,9 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const selected = useStore((s) => s.selectedClips)
   const [drag, setDrag] = useState<{ clipId: string; dx: number; dy: number } | null>(null)
   const [draw, setDraw] = useState<number[] | null>(null)
+  // pixels come from the GPU compositor; the DOM layers stay for selection and dragging
+  const [glFailed, setGlFailed] = useState(false)
+  const gl = !glFailed
   const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0)
 
   const toSeq = (e: React.MouseEvent) => {
@@ -370,8 +374,14 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     window.addEventListener('mouseup', up)
   }
 
+  const resolved = (l: { clip: Clip | null; media: MediaItem | null }) => {
+    const r = transformAt(l.clip!, at, seq, l.media)
+    if (drag?.clipId === l.clip!.id) r.position = [r.position[0] + drag.dx, r.position[1] + drag.dy]
+    return r
+  }
+
   const renderLayer = (l: VisualLayer) => {
-    if (!l.clip) return <div key={l.key} style={{ position: 'absolute', inset: 0, width: W, height: H, background: l.color }} />
+    if (!l.clip) return <div key={l.key} style={{ position: 'absolute', inset: 0, width: W, height: H, background: gl ? undefined : l.color }} />
     const clip = l.clip
     const r = transformAt(clip, at, seq, l.media)
     if (drag?.clipId === clip.id) r.position = [r.position[0] + drag.dx, r.position[1] + drag.dy]
@@ -379,6 +389,8 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     const isSel = selected.includes(clip.id)
     let content: React.ReactNode = clip.graphic ? (
       <GraphicView graphic={clip.graphic} />
+    ) : gl ? (
+      <div style={{ width: '100%', height: '100%' }} />
     ) : l.media!.kind === 'image' ? (
       <MediaLayer url={mediaSrc(l.media!)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />
     ) : (
@@ -412,7 +424,19 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   }
 
   return (
-    <div className={`lm-stage ${tool === 'type' ? 'typing' : tool === 'rectangle' || tool === 'ellipse' ? 'drawing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
+    <div className={`lm-stage ${gl ? 'gl' : ''} ${tool === 'type' ? 'typing' : tool === 'rectangle' || tool === 'ellipse' ? 'drawing' : ''}`} style={{ width: W, height: H, transform: `scale(${scale})` }} onMouseDown={onMouseDown}>
+      {gl && (
+        <GLStage
+          seq={seq}
+          layers={visual}
+          at={at}
+          playing={playing}
+          rate={rate}
+          scale={Math.min(1, scale * (window.devicePixelRatio || 1))}
+          resolve={resolved}
+          onFailed={() => setGlFailed(true)}
+        />
+      )}
       {trackGroups(visual).map((g) => (
         // one stable container per track and one slot per clip: a clip keeps its media element
         // across cuts, preroll and the start/end of a transition (a remount would flash)

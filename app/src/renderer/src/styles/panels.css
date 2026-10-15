@@ -198,3 +198,7 @@
 .lm-draw.ellipse { border-radius: 50%; }
 
 .lm-playres { margin-right: 8px; font-size: 11px; background: var(--bg-input); color: var(--text); border: 1px solid var(--border-soft); border-radius: 2px; padding: 0 2px; height: 18px; }
+
+/* GPU-composited Program monitor: the DOM layers stay (selection, dragging, tools) but draw nothing */
+.lm-glstage { pointer-events: none; z-index: 0; }
+.lm-stage.gl .lm-layer > :not(.lm-layer-box) { opacity: 0; }

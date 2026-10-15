@@ -49,6 +49,7 @@ class Engine:
             "timeline.state": lambda p: views.timeline_state(self.session.doc, p.get("sequence_id")),
             "jobs.list": lambda p: self.jobs.list() + self.exports.list(),
             "export.presets": lambda p: export_mod.presets(),
+            "render.graphic": self._render_graphic,
             "presets.list": lambda p: presets_mod.load(),
             "presets.import_premiere": lambda p: presets_mod.import_premiere(p.get("path")),
             "presets.remove": lambda p: {"removed": presets_mod.remove(p["preset_id"])},
@@ -128,6 +129,26 @@ class Engine:
         img = export_mod.export_frame(self.session.doc, seq["id"], t, path, p.get("max_size"))
         return {"path": path, "time": t, "seconds": timebase.ticks_to_seconds(t),
                 "timecode": timebase.timecode(t, st["fps_num"], st["fps_den"]), "width": img.width, "height": img.height}
+
+    def _render_graphic(self, p: dict) -> dict:
+        """A graphic clip's layers rasterised by the export renderer, for the Program
+        monitor's GPU compositor: [{blend, x, y, width, height, png (base64)}] in
+        sequence pixels (each run of layers sharing a blend mode, cropped to its pixels)."""
+        import base64
+        import io
+
+        from .render.compositor import render_graphic_groups
+
+        out = []
+        for blend, img in render_graphic_groups(p["graphic"], int(p["width"]), int(p["height"])):
+            box = img.getbbox()
+            if not box:
+                continue
+            buf = io.BytesIO()
+            img.crop(box).save(buf, "PNG", compress_level=1)
+            out.append({"blend": blend, "x": box[0], "y": box[1], "width": box[2] - box[0], "height": box[3] - box[1],
+                        "png": base64.b64encode(buf.getvalue()).decode("ascii")})
+        return {"groups": out}
 
     def _convert_time(self, p: dict) -> dict:
         from .commands.project import seq_of

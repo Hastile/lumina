@@ -182,7 +182,7 @@ function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
   const val = (n: string) => effectParam(fx, n, c.clip, at, w, h)
   const set = (param: string, value: number | boolean | number[], label: string) =>
     void exec('effect.set_param', { ...base, param, value, at }, label)
-  const uniform = !!val('uniform')
+  const uniform = fx.type === 'transform' && !!val('uniform')
   return (
     <Group
       title={t(def.label)}
