@@ -467,6 +467,7 @@ class ActiveClip:
     still: Image.Image | None = None
     origin: tuple[float, float] = (0.0, 0.0)
     groups: list | None = None  # graphics with blend modes: [(blend, image, origin)]
+    sub: "Compositor | None" = None  # nested sequence
 
 
 class Compositor:
@@ -474,8 +475,9 @@ class Compositor:
     call :meth:`frame` with increasing times (random access works, but costs a
     decoder restart per jump)."""
 
-    def __init__(self, doc: dict, sequence_id: str, warn=None):
+    def __init__(self, doc: dict, sequence_id: str, warn=None, depth: int = 0):
         self.doc = doc
+        self.depth = depth
         self.seq = doc["sequences"][sequence_id]
         st = self.seq["settings"]
         self.w, self.h = st["width"], st["height"]
@@ -546,6 +548,14 @@ class Compositor:
             if len(groups) == 1 and groups[0][0] == "normal":
                 return ActiveClip(clip, None, self.w, self.h, still=groups[0][1], origin=groups[0][2])
             return ActiveClip(clip, None, self.w, self.h, still=groups[0][1], origin=groups[0][2], groups=groups)
+        if clip.get("sequence_id"):
+            # nested sequence: rendered by its own compositor, shown at this sequence's frame size
+            if clip["sequence_id"] not in self.doc["sequences"] or self.depth >= 8:
+                return None
+            sub = Compositor(self.doc, clip["sequence_id"], self.warn, self.depth + 1)
+            if not sub.seq["video_tracks"]:
+                return None
+            return ActiveClip(clip, None, self.w, self.h, sub=sub)
         media = self.doc["media"].get(clip["media_id"] or "")
         if not media or not media.get("video"):
             return None
@@ -578,6 +588,9 @@ class Compositor:
         if ac and ac.decoder and self.expected.get(clip["id"]) != t:
             ac.decoder.close()  # random access: restart at the new time
             ac = None
+        if ac and ac.sub and ac.sub.seq is not self.doc["sequences"].get(clip["sequence_id"]):
+            self._close(ac)
+            ac = None
         if ac is None:
             ac = self._open(clip, t)
             if ac is None:
@@ -588,6 +601,10 @@ class Compositor:
             self.expected[clip["id"]] = t + self.tpf
             if img is None:
                 return
+        elif ac.sub:
+            img = ac.sub.frame_rgba(clip["source_in"] + round((t - clip["start"]) * clip["speed"]))
+            if img.size != (self.w, self.h):
+                img = img.resize((self.w, self.h), Image.Resampling.BILINEAR)
         else:
             img = ac.still
         tr = transform_at(clip, t, self.seq, ac.media)
@@ -626,6 +643,13 @@ class Compositor:
     def frame(self, t: int) -> Image.Image:
         # transparent until the end so blend modes see "nothing below" as
         # transparent (as Premiere does); flattened onto black on return
+        canvas = self.frame_rgba(t)
+        out = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255))
+        out.alpha_composite(canvas)
+        return out
+
+    def frame_rgba(self, t: int) -> Image.Image:
+        """The composited frame with transparency where nothing is (what a nested sequence shows)."""
         canvas = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 0))
         items = []
         for track, trans in self.tracks:
@@ -635,20 +659,22 @@ class Compositor:
                     items.append(item)
         live = {c["id"] for it in items for c in ([it[1]] if it[0] == "clip" else it[3:]) if c is not None}
         for cid in [k for k in self.active if k not in live]:
-            ac = self.active.pop(cid)
-            if ac.decoder:
-                ac.decoder.close()
+            self._close(self.active.pop(cid))
         for item in items:
             if item[0] == "clip":
                 self._draw(canvas, item[1], t)
             else:
                 self._transition(canvas, item[1], item[2], item[3], item[4], t)
-        out = Image.new("RGBA", (self.w, self.h), (0, 0, 0, 255))
-        out.alpha_composite(canvas)
-        return out
+        return canvas
+
+    @staticmethod
+    def _close(ac: ActiveClip) -> None:
+        if ac.decoder:
+            ac.decoder.close()
+        if ac.sub:
+            ac.sub.close()
 
     def close(self) -> None:
         for ac in self.active.values():
-            if ac.decoder:
-                ac.decoder.close()
+            self._close(ac)
         self.active.clear()

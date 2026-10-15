@@ -296,3 +296,6 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-lumetri-section .row.saturation .track::before { background: linear-gradient(90deg, #888, #e04a4a); }
 .lm-lumetri-section .track .fill { position: absolute; top: 6px; height: 2px; background: var(--accent, #2d8ceb); }
 .lm-lumetri-section .track .knob { position: absolute; top: 2px; width: 10px; height: 10px; border-radius: 50%; background: #ddd; box-shadow: 0 0 0 1px #000; }
+
+.lm-clip.nested { background: color-mix(in srgb, var(--label-rose, #d0679a) 60%, #000); }
+.lm-clip .nest-badge { font-weight: 400; opacity: 0.8; }

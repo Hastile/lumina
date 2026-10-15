@@ -112,7 +112,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "source_in": it["source_in"], "speed": it["speed"], "enabled": True,
                         "link_id": links.setdefault(it["link"], new_id()) if it["link"] else None,
                         "label": it["label"] if kind == "video" else "caribbean",
-                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None,
+                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": None,
                         "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
                         "keyframes": it.get("keyframes", {}),
                         "graphic": graphic,

@@ -285,6 +285,34 @@ export class GLCompositor {
     this.scratch = []
   }
 
+  // ---- nested sequences
+
+  private stack: { main: RT; group: RT; seq: { w: number; h: number } }[] = []
+
+  /** Start drawing a nested sequence of ``w`` x ``h``: frameTarget / groupTarget point at fresh
+   * buffers (same canvas pixels per sequence pixel) until endSub. */
+  beginSub(w: number, h: number): void {
+    this.stack.push({ main: this.main!, group: this.group!, seq: this.seq })
+    const main = this.rt(w * this.k, h * this.k)
+    const group = this.rt(w * this.k, h * this.k)
+    this.scratch.push(main, group)
+    this.main = main
+    this.group = group
+    this.seq = { w, h }
+    this.clear(this.frameTarget)
+  }
+
+  /** Finish a nested sequence: its frame (transparent where empty), placed in its own pixels. */
+  endSub(): Placed {
+    const done = this.main!
+    const prev = this.stack.pop()!
+    const out: Placed = { tex: done.tex, x: 0, y: 0, w: this.seq.w, h: this.seq.h }
+    this.main = prev.main
+    this.group = prev.group
+    this.seq = prev.seq
+    return out
+  }
+
   // ---- effects in source space
 
   /** Render ``p`` through ``pre`` (source -> source) at ``ps`` pixels per source pixel into a

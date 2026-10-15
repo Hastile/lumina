@@ -45,7 +45,7 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | Pen (P), Type (T) tools on the timeline | ✗ |
 | Marquee selection | ✓ (Shift adds) |
 | Rubber bands (volume on audio, opacity on video; keyframes drag in value and time) | ✓ |
-| Nested sequences | ✗ (M2) |
+| Nested sequences: Clip > Nest, drag a sequence onto the timeline, double-click to open; rendered recursively in preview and export (picture and sound) | ✓ (a nested clip's own audio effects, and inner pans, are export-only in the preview; a sequence of another size is fitted to the frame) |
 
 ## Premiere project hand-off (.prproj, read-only)
 `File > Open Project` and `File > Import` accept `.prproj`, and so does dropping one onto the Project panel.

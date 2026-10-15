@@ -465,6 +465,21 @@ def('clip.audioGain', t('Audio Gain'), () => {
     }
   })
 })
+def('clip.nest', t('Nest...'), () => {
+  const seq = activeSequence()
+  const ids = get().selectedClips
+  if (!seq || !ids.length) return toast(t('Select the clips to nest'), 'info')
+  const n = 1 + Object.values(get().doc!.sequences).filter((q) => q.name.startsWith('Nested Sequence')).length
+  openDialog({
+    title: t('Nested Sequence Name'),
+    okLabel: t('OK'),
+    fields: [{ key: 'name', label: t('Name'), type: 'text', value: `Nested Sequence ${String(n).padStart(2, '0')}` }],
+    onSubmit: async (v) => {
+      const r = await exec<{ video_clip_id?: string; audio_clip_id?: string }>('sequence.nest', { sequence_id: seq.id, clip_ids: ids, name: String(v.name) }, t('Nest'))
+      if (r) set({ selectedClips: [r.video_clip_id, r.audio_clip_id].filter((x): x is string => !!x) })
+    }
+  })
+})
 def('clip.insert', t('Insert'), () => placeFromSource('insert'))
 def('clip.overwrite', t('Overwrite'), () => placeFromSource('overwrite'))
 def('clip.enable', t('Enable'), async () => {

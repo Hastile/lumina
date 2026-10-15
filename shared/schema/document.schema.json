@@ -72,8 +72,21 @@
               "type": "null"
             }
           ],
-          "description": "null for graphics",
+          "description": "null for graphics and nested sequences",
           "title": "Media Id"
+        },
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "nested sequence (Premiere's Nest): the clip shows that sequence, and source_in is a time in it",
+          "title": "Sequence Id"
         },
         "name": {
           "title": "Name",
@@ -225,6 +238,7 @@
       "required": [
         "id",
         "media_id",
+        "sequence_id",
         "name",
         "start",
         "end",

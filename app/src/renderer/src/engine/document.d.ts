@@ -87,9 +87,13 @@ export type VolumeDb = number;
 export type Pan = number;
 export type Id5 = string;
 /**
- * null for graphics
+ * null for graphics and nested sequences
  */
 export type MediaId = string | null;
+/**
+ * nested sequence (Premiere's Nest): the clip shows that sequence, and source_in is a time in it
+ */
+export type SequenceId = string | null;
 export type Name5 = string;
 /**
  * timeline start, ticks (inclusive)
@@ -468,6 +472,7 @@ export interface Clips {
 export interface Clip {
   id: Id5;
   media_id: MediaId;
+  sequence_id: SequenceId;
   name: Name5;
   start: Start;
   end: End;

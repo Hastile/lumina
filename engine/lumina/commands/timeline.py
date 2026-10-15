@@ -36,7 +36,14 @@ def source_at(clip: dict, t: int) -> int:
     return clip["source_in"] + round((t - clip["start"]) * clip["speed"])
 
 
+def sequence_end(seq: dict) -> int:
+    return max((c["end"] for t in seq["tracks"].values() for c in t["clips"].values()), default=0)
+
+
 def media_limit(doc: dict, clip: dict) -> int | None:
+    if clip.get("sequence_id"):
+        inner = doc["sequences"].get(clip["sequence_id"])
+        return sequence_end(inner) if inner else None
     item = doc["media"].get(clip["media_id"])
     if item is None or item["kind"] == "image":
         return None
@@ -258,6 +265,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "volume_db": 0.0,
             "gain_db": 0.0,
             "audio_tag": None,
+            "sequence_id": None,
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,

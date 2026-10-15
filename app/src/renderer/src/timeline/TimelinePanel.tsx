@@ -436,7 +436,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     }
     const ids = JSON.parse(e.dataTransfer.getData(DRAG_MIME) || '[]') as string[]
     const doc = get().doc!
-    const items = ids.map((id) => doc.media[id]).filter((m): m is MediaItem => !!m)
+    // media, and sequences (dropped as nested sequence clips)
+    const items = ids.map((id): MediaItem | Sequence | undefined => doc.media[id] ?? doc.sequences[id]).filter((m): m is MediaItem | Sequence => !!m && m.id !== seq.id)
     if (!items.length) return
     const { x, y } = laneXY(e)
     let at = snapToFrame(toT(x), st)
@@ -448,10 +449,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     await engine.call('transaction.begin', { label: mode === 'insert' ? 'Insert' : 'Overwrite' })
     try {
       for (const m of items) {
-        const res = await engine.exec<{ end: number }>('clip.place', {
-          sequence_id: seq.id, media_id: m.id, at, mode, video_track_id: seq.video_tracks[vIdx], audio_track_id: seq.audio_tracks[aIdx],
-          source_in: 0, source_out: m.kind === 'image' ? null : m.duration
-        })
+        const tracks = { video_track_id: seq.video_tracks[vIdx], audio_track_id: seq.audio_tracks[aIdx] }
+        const res = 'settings' in m
+          ? await engine.exec<{ end: number }>('clip.place_sequence', { sequence_id: seq.id, nested_id: m.id, at, mode, ...tracks })
+          : await engine.exec<{ end: number }>('clip.place', {
+            sequence_id: seq.id, media_id: m.id, at, mode, ...tracks, source_in: 0, source_out: m.kind === 'image' ? null : m.duration
+          })
         at = res.end
       }
       await engine.call('transaction.commit')
@@ -515,11 +518,16 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       <div
         key={clip.id}
         data-clip={clip.id}
-        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
+        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
         onMouseDown={(e) => clipMouseDown(e, clip, rowIdx)}
         onDoubleClick={() => {
-          if (m) {
+          if (clip.sequence_id) {
+            // open the nested sequence at the frame under the playhead (Premiere)
+            const inner = clip.sequence_id
+            const t = clip.source_in + Math.round((Math.max(clip.start, Math.min(clip.end - 1, get().programTime)) - clip.start) * clip.speed)
+            void exec('sequence.set_active', { sequence_id: inner }).then(() => goTo('program', t))
+          } else if (m) {
             set({ sourceMediaId: m.id, sourceTime: clip.source_in })
           }
         }}
@@ -530,6 +538,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             { label: clip.link_id ? 'Unlink' : 'Link', action: 'clip.link' },
             'sep',
             { label: tx('Speed/Duration...'), action: 'clip.speed' },
+            'sep',
+            { label: tx('Nest...'), action: 'clip.nest' },
             'sep',
             { label: tx('Clear'), action: 'edit.clear' },
             { label: tx('Ripple Delete'), action: 'edit.rippleDelete' },
@@ -547,6 +557,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} prop={row.kind === 'audio' ? 'volume_db' : 'opacity'} />
         )}
         <span className="name">
+          {clip.sequence_id && <b className="nest-badge">⧉ </b>}
           {(pv?.speed ?? clip.speed) !== 1 && <b>{Math.round((pv?.speed ?? clip.speed) * 100)}% </b>}
           {clip.name}
         </span>

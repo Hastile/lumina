@@ -218,7 +218,9 @@ class Transition(_Model):
 
 class Clip(_Model):
     id: str
-    media_id: str | None = Field(description="null for graphics")
+    media_id: str | None = Field(description="null for graphics and nested sequences")
+    sequence_id: str | None = Field(default=None, description="nested sequence (Premiere's Nest): the clip shows that "
+                                    "sequence, and source_in is a time in it")
     name: str
     start: int = Field(description="timeline start, ticks (inclusive)")
     end: int = Field(description="timeline end, ticks (exclusive)")

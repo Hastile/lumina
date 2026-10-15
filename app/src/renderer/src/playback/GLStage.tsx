@@ -9,7 +9,7 @@ import type { Clip, MediaItem, Sequence } from '../engine/document'
 import { engine, mediaUrl } from '../engine/client'
 import { useStore } from '../state/store'
 import { BLUR_SIGMA_PER_UNIT, effectParam, transformEffectAt, trs } from '../util/effects'
-import { sourceTime, type Resolved } from '../util/motion'
+import { sourceTime, transformAt, type Resolved } from '../util/motion'
 import { ticksPerFrame, ticksToSeconds } from '../util/time'
 import { FrameSource, openMedia } from './FrameSource'
 import { GLCompositor, IDENTITY, mul, type Affine, type Blend, type Placed, type Target } from './GLCompositor'
@@ -22,6 +22,10 @@ export type GLLayer = {
   group?: string
   fade?: number
   preroll?: boolean
+  /** a layer inside a nested sequence: its sequence and that sequence's time */
+  ctx?: { seq: Sequence; at: number }
+  /** a nested sequence clip: what it shows */
+  nested?: { seq: Sequence; at: number; layers: GLLayer[] }
 }
 
 type Props = {
@@ -140,14 +144,14 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     return s
   }
 
-  const graphic = (clip: Clip): GraphicTex => {
+  const graphic = (clip: Clip, seqOf?: Sequence): GraphicTex => {
     const key = JSON.stringify(clip.graphic)
     let g = graphics.current.get(clip.id)
     if (!g || g.key !== key) {
       const old = g
       const slot: GraphicTex = { key, groups: old?.groups ?? null }
       graphics.current.set(clip.id, slot)
-      const { width, height } = props.current.seq.settings
+      const { width, height } = (seqOf ?? props.current.seq).settings
       void engine
         .call<{ groups: { blend: Blend; x: number; y: number; width: number; height: number; png: string }[] }>('render.graphic', { graphic: clip.graphic, width, height })
         .then(async (r) => {
@@ -176,13 +180,21 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
 
   const drawClip = (c: GLCompositor, target: Target, l: GLLayer, fade: number, blend: Blend) => {
     const clip = l.clip!
-    const { seq: sq, at: t } = props.current
+    const { seq: sq, at: t } = l.ctx ?? props.current
     const [W, H] = [sq.settings.width, sq.settings.height]
     let sources: { placed: Placed; ps: number; blend: Blend }[] = []
     let w = W
     let h = H
-    if (clip.graphic) {
-      const g = graphic(clip)
+    if (l.nested) {
+      // the nested sequence composited on its own, transparent where empty, shown at this sequence's size
+      const { seq: inner } = l.nested
+      c.beginSub(inner.settings.width, inner.settings.height)
+      drawLayers(c, l.nested.layers)
+      const placed = c.endSub()
+      const k = c.seqToFrame[0]
+      sources = [{ placed: { ...placed, w: W, h: H }, ps: (inner.settings.width * k) / W, blend }]
+    } else if (clip.graphic) {
+      const g = graphic(clip, sq)
       sources = (g.groups ?? []).map((gr) => ({ placed: { tex: gr.tex, x: gr.x, y: gr.y, w: gr.w, h: gr.h, flip: true }, ps: 1, blend: gr.blend === 'multiply' ? 'multiply' : blend }))
     } else if (l.media?.kind === 'image') {
       const s = still(l.media)
@@ -207,7 +219,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
       }
     }
     if (!sources.length) return
-    const r = props.current.resolve(l)
+    const r = l.ctx ? transformAt(clip, t, sq, l.media) : props.current.resolve(l)
     const motion = trs(r.position, r.anchor, r.scaleX / 100, r.scaleY / 100, r.rotation) as Affine
     const opacity = Math.max(0, Math.min(1, r.opacity / 100)) * fade
     const [cl, ct, cr, cb] = r.crop
@@ -251,6 +263,28 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     }
   }
 
+  /** Composite a sequence's layers, bottom to top, into the current frame target. */
+  const drawLayers = (c: GLCompositor, layers: GLLayer[]) => {
+    let group: string | undefined
+    for (const l of layers) {
+      if (l.preroll) continue
+      if (l.group !== group) {
+        if (group) c.endGroup()
+        group = l.group
+        if (group) c.beginGroup()
+      }
+      // read the targets per layer: a nested clip swaps them while it draws
+      const target = group ? c.groupTarget : c.frameTarget
+      const blend: Blend = group ? 'add' : 'normal'
+      const fade = l.fade ?? 1
+      if (!l.clip) {
+        const [r, g, b] = hex(l.color ?? '#000')
+        c.solid(target, [r, g, b, fade], blend)
+      } else drawClip(c, target, l, fade, blend)
+    }
+    if (group) c.endGroup()
+  }
+
   const draw = () => {
     const c = comp.current
     const p = props.current
@@ -263,14 +297,18 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     c.resize(W, H, (window as unknown as { __luminaGLScale?: number }).__luminaGLScale ?? p.scale)
     // drive decoders (visible clips and prerolled ones)
     const live = new Set<string>()
-    const tpf = ticksPerFrame(p.seq.settings)
-    for (const l of p.layers) {
-      if (!l.clip || l.clip.graphic || !l.media?.video || l.media.kind === 'image') continue
-      live.add(l.key)
-      const v = videoSlot(l.key, l.media)
-      const t = l.preroll ? (p.rate < 0 ? l.clip.end - tpf : l.clip.start) : p.at
-      v.src?.update(ticksToSeconds(sourceTime(l.clip, t)), playingNow, playingNow ? p.rate * l.clip.speed : 0)
+    const drive = (layers: GLLayer[], sq: Sequence, at: number, rate: number) => {
+      const tpf = ticksPerFrame(sq.settings)
+      for (const l of layers) {
+        if (l.nested && l.clip) drive(l.nested.layers, l.nested.seq, l.nested.at, rate * l.clip.speed)
+        if (!l.clip || l.clip.graphic || !l.media?.video || l.media.kind === 'image') continue
+        live.add(l.key)
+        const v = videoSlot(l.key, l.media)
+        const t = l.preroll ? (rate < 0 ? l.clip.end - tpf : l.clip.start) : at
+        v.src?.update(ticksToSeconds(sourceTime(l.clip, t)), playingNow, playingNow ? rate * l.clip.speed : 0)
+      }
     }
+    drive(p.layers, p.seq, p.at, p.rate)
     for (const [k, v] of videos.current) {
       if (live.has(k)) continue
       v.disposed = true
@@ -279,24 +317,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
       videos.current.delete(k)
     }
     c.begin()
-    const frame = c.frameTarget
-    let group: string | undefined
-    for (const l of p.layers) {
-      if (l.preroll) continue
-      if (l.group !== group) {
-        if (group) c.endGroup()
-        group = l.group
-        if (group) c.beginGroup()
-      }
-      const target = group ? c.groupTarget : frame
-      const blend: Blend = group ? 'add' : 'normal'
-      const fade = l.fade ?? 1
-      if (!l.clip) {
-        const [r, g, b] = hex(l.color ?? '#000')
-        c.solid(target, [r, g, b, fade], blend)
-      } else drawClip(c, target, l, fade, blend)
-    }
-    if (group) c.endGroup()
+    drawLayers(c, p.layers)
     c.end()
     // for tests and diagnostics: were all visible video layers on their exact frame
     const el = canvas.current!

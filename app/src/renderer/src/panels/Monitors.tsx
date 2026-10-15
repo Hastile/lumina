@@ -177,6 +177,8 @@ type VisualLayer = {
   group?: string // transition group: children are summed (plus-lighter) inside an isolated group
   fade?: number
   preroll?: boolean // upcoming clip: mounted hidden, paused on its first frame
+  ctx?: { seq: Sequence; at: number } // inside a nested sequence: its sequence and time
+  nested?: { seq: Sequence; at: number; layers: VisualLayer[] } // a nested sequence clip
 }
 type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number; span: [number, number]; track: string; preroll?: boolean }
 
@@ -184,14 +186,31 @@ type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; vol
  * cut never makes a playing element seek; with ``lookahead`` (ticks) clips starting soon are
  * added as hidden ``preroll`` layers already seeked to their first frame, so playback crosses
  * a cut without loading or seeking. */
-export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at: number, lookahead = 0): { visual: VisualLayer[]; audio: AudioLayer[] } {
+export function activeLayers(
+  seq: Sequence, media: Record<string, MediaItem>, at: number, lookahead = 0,
+  sequences: Record<string, Sequence> = {}, depth = 0, prefix = ''
+): { visual: VisualLayer[]; audio: AudioLayer[] } {
   const visual: VisualLayer[] = []
   const audio: AudioLayer[] = []
   const tpf = ticksPerFrame(seq.settings)
+  // a nested sequence clip: the layers of its sequence at the matching time (keys prefixed by the clip)
+  const inner = (clip: Clip, t: number) => {
+    const s = clip.sequence_id ? sequences[clip.sequence_id] : undefined
+    if (!s || depth >= 8) return null
+    const it = clip.source_in + Math.round((Math.max(clip.start, Math.min(clip.end - 1, t)) - clip.start) * clip.speed)
+    return { seq: s, at: it, ...activeLayers(s, media, it, lookahead * clip.speed, sequences, depth + 1, `${prefix}${clip.id}/`) }
+  }
   const clipLayer = (_tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
-    if (clip.graphic) return { key: `g-${clip.id}`, clip, media: null, z, ...extra }
+    const ctx = depth ? { ctx: { seq, at } } : {}
+    if (clip.graphic) return { key: `${prefix}g-${clip.id}`, clip, media: null, z, ...ctx, ...extra }
+    if (clip.sequence_id) {
+      const n = inner(clip, at)
+      if (!n) return null
+      const layers = n.visual.map((l) => (l.ctx ? l : { ...l, ctx: { seq: n.seq, at: n.at } }))
+      return { key: `${prefix}n-${clip.id}${suffix}`, clip, media: null, z, ...ctx, ...extra, nested: { seq: n.seq, at: n.at, layers } }
+    }
     const m = clip.media_id ? media[clip.media_id] : undefined
-    if (m && (m.video || m.kind === 'image')) return { key: `v-${clip.id}${suffix}`, clip, media: m, z, ...extra }
+    if (m && (m.video || m.kind === 'image')) return { key: `${prefix}v-${clip.id}${suffix}`, clip, media: m, z, ...ctx, ...extra }
     return null
   }
   seq.video_tracks.forEach((tid, z) => {
@@ -234,7 +253,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
           : clip.end <= at && at - clip.end <= -lookahead
         if (!soon) continue
         const l = clipLayer(tid, clip, z, { preroll: true })
-        if (l && l.media?.video) visual.push(l)
+        if (l && (l.media?.video || l.nested)) visual.push(l)
       }
     }
   })
@@ -257,6 +276,27 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       }
     }
     for (const clip of Object.values(track.clips)) {
+      if (clip.sequence_id) {
+        // a nested sequence's audio, mapped to this timeline: its clips play through this clip's
+        // track with this clip's Volume and Audio Gain on top (the nested clip's audio effects,
+        // the inner pans and transitions at the nest's edges are export-only)
+        if (!clip.enabled) continue
+        const soon = lookahead > 0 && clip.start > at && clip.start - at <= lookahead
+        if (!soon && (at < clip.start || at >= clip.end)) continue
+        const n = inner(clip, at)
+        if (!n) continue
+        const map = (t: number) => clip.start + (t - clip.source_in) / clip.speed
+        const nestVol = dbToGain(valueAt(clip, 'volume_db', Math.max(clip.start, at), seq) as number) * (gains.get(clip.id) ?? 1)
+        const master = dbToGain(n.seq.master_volume_db ?? 0)
+        for (const al of n.audio) {
+          const span: [number, number] = [Math.max(clip.start, map(al.span[0])), Math.min(clip.end, map(al.span[1]))]
+          if (span[0] >= span[1]) continue
+          const c = { ...al.clip, start: map(al.clip.start), end: map(al.clip.end), speed: al.clip.speed * clip.speed, gain_db: (al.clip.gain_db ?? 0) + (clip.gain_db ?? 0) }
+          const trackGain = dbToGain(n.seq.tracks[al.track]?.volume_db ?? 0)
+          audio.push({ ...al, key: `a-${clip.id}/${al.key}`, clip: c, span, track: tid, volume: al.volume * nestVol * trackGain * master, preroll: soon || al.preroll })
+        }
+        continue
+      }
       const [s0, e0] = ext.get(clip.id) ?? [clip.start, clip.end]
       if (!clip.enabled || at < s0 || at >= e0) continue
       const m = clip.media_id ? media[clip.media_id] : undefined
@@ -306,7 +346,8 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   // pixels come from the GPU compositor; the DOM layers stay for selection and dragging
   const [glFailed, setGlFailed] = useState(false)
   const gl = !glFailed
-  const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0)
+  const sequences = useStore((s) => s.doc?.sequences) ?? {}
+  const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0, sequences)
   const voices = audio
     .filter((a) => a.clip.speed > 0 && audioEngine.status(mediaSrc(a.media)) === 'ok')
     .map((a) => ({
@@ -412,7 +453,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     const isSel = selected.includes(clip.id)
     let content: React.ReactNode = clip.graphic ? (
       <GraphicView graphic={clip.graphic} />
-    ) : gl ? (
+    ) : gl || l.nested ? (
       <div style={{ width: '100%', height: '100%' }} />
     ) : l.media!.kind === 'image' ? (
       <MediaLayer url={mediaSrc(l.media!)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />

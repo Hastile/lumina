@@ -5492,6 +5492,141 @@
     }
   },
   {
+    "name": "sequence.nest",
+    "description": "Nest (Clip > Nest): move the clips into a new sequence with the same settings, keeping their tracks\nand spacing, and replace them with one nested clip (linked video and audio) spanning them.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default 'Nested Sequence N'",
+          "title": "Name"
+        },
+        "include_linked": {
+          "default": true,
+          "title": "Include Linked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "Nest",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.place_sequence",
+    "description": "Drop a sequence onto the timeline as a nested clip (drag a sequence from the Project panel).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the sequence to place into (default active)",
+          "title": "Sequence Id"
+        },
+        "nested_id": {
+          "description": "the sequence to place as a nested clip",
+          "title": "Nested Id",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "mode": {
+          "default": "overwrite",
+          "enum": [
+            "overwrite",
+            "insert"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "video_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Video Track Id"
+        },
+        "audio_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Audio Track Id"
+        }
+      },
+      "required": [
+        "nested_id"
+      ],
+      "title": "PlaceSequence",
+      "type": "object"
+    }
+  },
+  {
     "name": "project.import_premiere",
     "description": "Import an Adobe Premiere Pro project: bins, media, sequences, clips, links, markers.",
     "undoable": true,

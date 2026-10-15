@@ -220,3 +220,36 @@ def test_audio_constant_power_fade_out(media):
     full, mid, end = rms(pcm[sr // 2:sr]), rms(pcm[int(2.45 * sr):int(2.55 * sr)]), rms(pcm[-sr // 50:])
     assert mid / full == pytest.approx(np.cos(np.pi / 4), rel=0.08)  # equal power at the midpoint
     assert end / full < 0.1
+
+
+def test_nested_sequence_renders_and_mixes_like_its_contents(media):
+    from lumina.render.export import mix_audio
+
+    e, (vid,) = engine_with([media["video"]])
+    r = run(e, "sequence.create_from_media", media_id=vid)
+    outer = e.session.doc["active_sequence_id"]
+    run(e, "effect.add", clip_ids=[r["video_clip_id"]], type="lumetri", params={"exposure": 0.5})
+    before = [frame(e, t) for t in (0, SEC // 2 + 254016000000 // 30 * 3)]
+    seq = e.session.doc["sequences"][outer]
+    mix_audio(e.session.doc, seq, 0, 2 * SEC, media["dir"] / "a.f32")
+    a0 = np.fromfile(media["dir"] / "a.f32", dtype=np.float32)
+    n = run(e, "sequence.nest", clip_ids=[r["video_clip_id"]])
+    seq = e.session.doc["sequences"][outer]
+    clips = [c for t in seq["tracks"].values() for c in t["clips"].values()]
+    assert len(clips) == 2 and all(c["sequence_id"] == n["nested_sequence_id"] for c in clips)
+    assert clips[0]["link_id"] and clips[0]["link_id"] == clips[1]["link_id"]
+    inner = e.session.doc["sequences"][n["nested_sequence_id"]]
+    assert sum(len(t["clips"]) for t in inner["tracks"].values()) == 2, "video and its linked audio moved inside"
+    after = [frame(e, t, sequence_id=outer) for t in (0, SEC // 2 + 254016000000 // 30 * 3)]
+    for x, y in zip(before, after):
+        assert np.abs(x - y).max() <= 1, "a nested clip shows exactly its sequence"
+    mix_audio(e.session.doc, seq, 0, 2 * SEC, media["dir"] / "b.f32")
+    a1 = np.fromfile(media["dir"] / "b.f32", dtype=np.float32)
+    assert np.abs(a0 - a1).max() < 1e-4
+    # the nested clip's own Volume applies on top
+    run(e, "clip.set", clip_ids=[n["audio_clip_id"]], volume_db=-6.0)
+    mix_audio(e.session.doc, seq, 0, 2 * SEC, media["dir"] / "c.f32")
+    a2 = np.fromfile(media["dir"] / "c.f32", dtype=np.float32)
+    assert np.sqrt(np.mean(a2 ** 2)) / np.sqrt(np.mean(a0 ** 2)) == pytest.approx(10 ** (-6 / 20), rel=0.01)
+    with pytest.raises(Exception):
+        run(e, "clip.place_sequence", sequence_id=n["nested_sequence_id"], nested_id=outer)

@@ -756,6 +756,67 @@ try {
     return !Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).effects.some((e) => e.type === 'lumetri')
   }, t6.v[3].id, { timeout: 10000 })
   log('Lumetri panel: Exposure drag ->', lum.exposure.toFixed(1), 'in one undo step')
+  // ---- Clip > Nest: the first two cuts become one nested sequence clip that looks the same, in the
+  // GPU monitor and in the export; double-click opens it
+  {
+    const grab = () => page.evaluate(async () => {
+      const c = document.querySelector('.lm-stage canvas[data-gl]')
+      window.__luminaGLScale = 1
+      const s = window.__lumina.get()
+      const t = s.programTime
+      window.__lumina.set({ programTime: t + 1 })
+      window.__lumina.set({ programTime: t })
+      for (let i = 0; i < 100 && !(c.width === s.doc.sequences[s.doc.active_sequence_id].settings.width && c.dataset.exact === '1'); i++) await new Promise((r) => setTimeout(r, 50))
+      await new Promise((r) => setTimeout(r, 300))
+      const png = c.toDataURL('image/png')
+      const out = await window.__lumina.engine.call('export.frame', { sequence_id: s.doc.active_sequence_id, time: t })
+      delete window.__luminaGLScale
+      return { png, path: out.path }
+    })
+    const { PNG } = await import('pngjs')
+    const { readFileSync } = await import('node:fs')
+    const diff = (a, b) => {
+      let sum = 0
+      for (let i = 0; i < a.data.length; i += 4) for (let k = 0; k < 3; k++) sum += Math.abs(a.data[i + k] - b.data[i + k])
+      return sum / (a.width * a.height * 3)
+    }
+    const png = (x) => PNG.sync.read(Buffer.from(x.split(',')[1], 'base64'))
+    await page.keyboard.press('Shift+4')
+    await page.evaluate((t) => window.__lumina.set({ programTime: t }), Math.round(t6.v[1].start + 0.5 * TPS))
+    const before = await grab()
+    const outer = await page.evaluate(() => window.__lumina.get().doc.active_sequence_id)
+    await page.evaluate((ids) => window.__lumina.set({ selectedClips: ids }), [t6.v[0].id, t6.v[1].id])
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].webContents.send('menu:action', 'clip.nest'))
+    await page.locator('.lm-dialog .actions .lm-btn.primary').click()
+    let tn = await tl()
+    for (let i = 0; i < 30 && !tn.v[0].sequence_id; i++) { await page.waitForTimeout(100); tn = await tl() }
+    assert.ok(tn.v[0].sequence_id && tn.a[0].sequence_id && tn.v.length === t6.v.length - 1, 'two cuts became one nested clip (video + audio)')
+    await page.locator('.lm-clip.nested').first().waitFor()
+    const after = await grab()
+    const same = diff(png(before.png), png(after.png))
+    const exp = diff(png(after.png), PNG.sync.read(readFileSync(after.path)))
+    assert.ok(same < 1, `nested clip looks like its contents (${same.toFixed(2)})`)
+    assert.ok(exp < 2, `GPU monitor vs export for a nested clip (${exp.toFixed(2)})`)
+    // the nested clip's audio plays in the preview (through its track)
+    const nestPeak = await page.evaluate(async (t) => {
+      window.__lumina.set({ programTime: t })
+      await new Promise((r) => setTimeout(r, 200))
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'Space', key: ' ', bubbles: true }))
+      let peak = 0
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 50))
+        peak = Math.max(peak, ...window.__lumina.audio.levels().master)
+      }
+      document.body.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyK', key: 'k', bubbles: true }))
+      return peak
+    }, Math.round(tn.v[0].start + 0.3 * TPS))
+    assert.ok(nestPeak > 0.001, `nested audio is heard in the preview (peak ${nestPeak})`)
+    const vb = await page.locator('.lm-clip.nested').first().boundingBox()
+    await page.mouse.dblclick(vb.x + vb.width / 2, vb.y + vb.height / 2)
+    await page.waitForFunction((id) => window.__lumina.get().doc.active_sequence_id === id, tn.v[0].sequence_id, { timeout: 10000 })
+    await page.evaluate((id) => window.__lumina.engine.exec('sequence.set_active', { sequence_id: id }), outer)
+    log('Nest: monitor before/after', same.toFixed(2), '; GPU vs export', exp.toFixed(2), '; preview audio peak', nestPeak.toFixed(3), '; double-click opened the nested sequence')
+  }
   await page.locator('[data-filmstrip] > div').first().waitFor({ timeout: 30000 })
   const tiles = await page.locator('[data-filmstrip] > div').count()
   log('tools: rolling', ((t1.v[0].end - pre.v[0].end) / TPS).toFixed(2), 's; slip; slide; Ctrl+C/V; marquee; rate stretch', Math.round(t6.v[3].speed * 100) + '%; filmstrip tiles', tiles)

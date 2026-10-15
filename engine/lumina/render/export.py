@@ -154,12 +154,53 @@ def stereo_pan(pcm: np.ndarray, pan: float) -> np.ndarray:
     return np.stack([left * np.float32(np.cos(g)), right + left * np.float32(np.sin(g))], axis=1)
 
 
-def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: Callable[[], bool] = lambda: False,
-              warn: Callable[[str], None] = lambda m: None, progress: Callable[[float], None] = lambda f: None) -> None:
-    """Mix [a, b) of the sequence to interleaved stereo float32 at the sequence rate."""
-    rate = seq["settings"]["sample_rate"]
-    total = round((b - a) * rate / TPS)
-    buf = np.lib.format.open_memmap(out_path.with_suffix(".npy"), mode="w+", dtype=np.float32, shape=(total, 2)) if total > 0 else None
+def filter_pcm(pcm: np.ndarray, rate: int, filters: list[str]) -> np.ndarray:
+    """Run stereo float PCM through ffmpeg audio filters (a nested clip's Audio Gain and effects)."""
+    if not filters or not len(pcm):
+        return pcm
+    cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-f", "f32le", "-ar", str(rate), "-ac", "2", "-i", "-",
+           "-af", ",".join(filters), "-f", "f32le", "-ar", str(rate), "-ac", "2", "-"]
+    proc = subprocess.run(cmd, input=np.ascontiguousarray(pcm, dtype=np.float32).tobytes(), capture_output=True, timeout=3600, **NO_WINDOW)
+    if proc.returncode != 0:
+        raise RenderError(proc.stderr.decode("utf-8", "replace").strip()[-300:] or "audio filter failed")
+    out = np.frombuffer(proc.stdout, dtype=np.float32).reshape(-1, 2)
+    if len(out) < len(pcm):
+        out = np.concatenate([out, np.zeros((len(pcm) - len(out), 2), np.float32)])
+    return out[: len(pcm)]
+
+
+def _clip_pcm(doc: dict, c: dict, s: int, e: int, rate: int, warn: Callable[[str], None], depth: int) -> np.ndarray | None:
+    """A clip's audio for the sequence range [s, e), after its Audio Gain and audio effects."""
+    pre = ([f"volume={c['gain_db']}dB"] if c.get("gain_db") else []) + ffmpeg_filters(c.get("effects") or [], rate)
+    src = c["source_in"] + round((s - c["start"]) * c["speed"])
+    if c.get("sequence_id"):
+        inner = doc["sequences"].get(c["sequence_id"])
+        if inner is None or depth >= 8:
+            return None
+        n_out = round((e - s) * rate / TPS)
+        span = round((e - s) * c["speed"])
+        n_in = round(span * rate / TPS)
+        pcm = np.zeros((max(0, n_in), 2), dtype=np.float32)
+        _mix_into(doc, inner, src, src + span, pcm, rate, warn=warn, depth=depth + 1)
+        if n_in != n_out and n_in > 1 and n_out > 0:
+            # a sped-up / slowed nested clip: resampled (pitch follows the speed)
+            x = np.linspace(0, n_in - 1, n_out)
+            pcm = np.stack([np.interp(x, np.arange(n_in), pcm[:, k]) for k in (0, 1)], axis=1).astype(np.float32)
+        return filter_pcm(pcm, rate, pre)
+    media = doc["media"].get(c["media_id"] or "")
+    if not media or not media.get("audio"):
+        return None
+    path = media_path(media)
+    if path is None:
+        warn(f"media offline, audio silent: {media['name']}")
+        return None
+    return decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate, pre, (media["audio"] or {}).get("channels", 2))
+
+
+def _mix_into(doc: dict, seq: dict, a: int, b: int, buf: np.ndarray, rate: int, cancelled: Callable[[], bool] = lambda: False,
+              warn: Callable[[str], None] = lambda m: None, progress: Callable[[float], None] = lambda f: None, depth: int = 0) -> bool:
+    """Add the mix of [a, b) of ``seq`` into ``buf`` (stereo float, ``rate``). False when cancelled."""
+    total = len(buf)
     # clips with their audio transitions: (clip, shown start, shown end, [(fade start, fade end, "in"|"out")])
     jobs = []
     for track in _audible_tracks(seq):
@@ -179,25 +220,17 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
     master = 10 ** (seq.get("master_volume_db", 0.0) / 20)
     for i, (c, s0, e0, fades, track) in enumerate(jobs):
         if cancelled():
-            return
+            return False
         progress(i / max(1, len(jobs)))
-        media = doc["media"].get(c["media_id"] or "")
-        if not media or not media.get("audio"):
-            continue
-        path = media_path(media)
-        if path is None:
-            warn(f"media offline, audio silent: {media['name']}")
-            continue
         s, e = max(s0, a), min(e0, b)
         src = c["source_in"] + round((s - c["start"]) * c["speed"])
         if src < 0:  # transition reaches before the media starts: silence until it does
             s -= round(src / c["speed"])
-            src = 0
             if s >= e:
                 continue
-        # Audio Gain, then the clip's audio effects (Volume and the mixer follow below)
-        pre = ([f"volume={c['gain_db']}dB"] if c.get("gain_db") else []) + ffmpeg_filters(c.get("effects") or [], rate)
-        pcm = decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate, pre, (media["audio"] or {}).get("channels", 2))
+        pcm = _clip_pcm(doc, c, s, e, rate, warn, depth)
+        if pcm is None:
+            continue
         off = round((s - a) * rate / TPS)
         n = min(len(pcm), round((e - a) * rate / TPS) - off, total - off)
         if n <= 0:
@@ -227,7 +260,18 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
             pcm = pcm * np.float32(g)
         pcm = stereo_pan(pcm, track.get("pan", 0.0))
         buf[off:off + n] += pcm
+    return True
+
+
+def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: Callable[[], bool] = lambda: False,
+              warn: Callable[[str], None] = lambda m: None, progress: Callable[[float], None] = lambda f: None) -> None:
+    """Mix [a, b) of the sequence to interleaved stereo float32 at the sequence rate."""
+    rate = seq["settings"]["sample_rate"]
+    total = round((b - a) * rate / TPS)
+    buf = np.lib.format.open_memmap(out_path.with_suffix(".npy"), mode="w+", dtype=np.float32, shape=(total, 2)) if total > 0 else None
     if buf is not None:
+        if not _mix_into(doc, seq, a, b, buf, rate, cancelled, warn, progress):
+            return
         np.clip(buf, -1.0, 1.0, out=buf)
         buf.flush()
         with open(out_path, "wb") as f:
