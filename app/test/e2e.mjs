@@ -1041,6 +1041,28 @@ try {
       await page.mouse.move(b.x + b.width / 2 + dx, b.y + b.height / 2 + dy, { steps: 6 })
       await page.mouse.up()
     }
+    // with default heights (everything fits) the wheel still scrolls each area on its own
+    {
+      const v1b = '.lm-th.video:has([data-track-resize="V1"])'
+      const a1b = '.lm-th.audio:has([data-track-resize="A1"])'
+      const lz = await box('.lm-tl-lanes')
+      const dv = await box('[data-divider]')
+      const [vy, ay] = [(await box(v1b)).y, (await box(a1b)).y]
+      await page.mouse.move(lz.x + 100, dv.y - 10)
+      await page.mouse.wheel(0, -60)
+      await page.waitForTimeout(150)
+      assert.ok((await box(v1b)).y > vy + 20, 'video area scrolled with the wheel')
+      assert.equal((await box(a1b)).y, ay, 'audio area did not move')
+      await page.mouse.wheel(0, 200)
+      await page.waitForTimeout(150)
+      assert.equal((await box(v1b)).y, vy, 'video area scrolled back to V1 at the divider')
+      await page.mouse.move(lz.x + 100, dv.y + 30)
+      await page.mouse.wheel(0, 40)
+      await page.waitForTimeout(150)
+      assert.ok((await box(a1b)).y < ay - 20, 'audio area scrolled with the wheel')
+      await page.mouse.wheel(0, -400)
+      await page.waitForTimeout(150)
+    }
     const a1 = '.lm-th.audio:has([data-track-resize="A1"])'
     const h0 = (await box(a1)).height
     await dragBy('[data-track-resize="A1"]', 0, 30)

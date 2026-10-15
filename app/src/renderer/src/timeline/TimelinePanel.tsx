@@ -139,8 +139,12 @@ function buildRows(seq: Sequence, heights: Record<string, number>, bodyH: number
   const hOf = (id: string, kind: 'video' | 'audio') => heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)
   const vContent = seq.video_tracks.reduce((a, id) => a + hOf(id, 'video'), 0)
   const aContent = seq.audio_tracks.reduce((a, id) => a + hOf(id, 'audio'), 0)
-  const vMax = Math.max(0, vContent - videoH)
-  const aMax = Math.max(0, aContent - audioH)
+  // like Premiere there is room past the outermost track: video scrolls until its top track sits on the
+  // divider, audio until its last track does, even when every track fits
+  const vTop = seq.video_tracks.length ? hOf(seq.video_tracks[seq.video_tracks.length - 1], 'video') : 0
+  const aLast = seq.audio_tracks.length ? hOf(seq.audio_tracks[seq.audio_tracks.length - 1], 'audio') : 0
+  const vMax = Math.max(0, vContent - videoH, vContent - vTop)
+  const aMax = Math.max(0, aContent - audioH, aContent - aLast)
   const vs = Math.max(0, Math.min(vMax, vScroll))
   const as = Math.max(0, Math.min(aMax, aScroll))
   const vrows: Row[] = []
