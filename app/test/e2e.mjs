@@ -577,6 +577,9 @@ try {
   await page.locator('[data-essential-sound] .results .res').first().waitFor({ timeout: 30000 })
   const matched = await page.locator('[data-essential-sound] .results .res').first().innerText()
   assert.match(matched, /LUFS/, matched)
+  // the clip carries a Hard Limiter: Auto-Match re-measures it through the limiter and says why
+  const why = await page.locator('[data-essential-sound] .results .res').first().getAttribute('data-notes')
+  assert.match(why, /compressed/, why)
   const fin = await audioState()
   log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub; Essential Sound', matched.replace(/\s+/g, ' '))
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')

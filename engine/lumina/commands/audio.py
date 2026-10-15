@@ -164,38 +164,97 @@ class AutoMatch(Params):
     clip_ids: list[str] | None = Field(default=None, description="default: every tagged audio clip of the sequence")
     targets: dict[str, float] = Field(default_factory=dict, description="LUFS per type, e.g. {'dialogue': -16}; defaults: "
                                       "dialogue -23, music -25, sfx -21, ambience -30")
+    music_bed_db: float | None = Field(default=12.0, ge=0, le=40, description="music playing under dialogue is matched this many "
+                                       "LU below the dialogue target (null: match music to its own target everywhere)")
+    peak_ceiling: float = Field(default=-1.0, ge=-20, le=0, description="true-peak ceiling (dBTP) no clip may exceed after its gain")
+    max_boost: float = Field(default=20.0, ge=0, le=60, description="largest gain Auto-Match will apply")
+
+
+NONLINEAR = ("compressor", "hard_limiter")
+
+
+def _fx(clip: dict) -> list[dict]:
+    from ..effects import media_of
+
+    return [e for e in clip.get("effects") or [] if e.get("enabled", True) and media_of(e["type"]) == "audio"]
+
+
+def _overlap(a: dict, spans: list[tuple[int, int]]) -> int:
+    return sum(max(0, min(a["end"], e) - max(a["start"], s)) for s, e in spans)
 
 
 @command("audio.auto_match", AutoMatch)
 def audio_auto_match(ctx: Context, p: AutoMatch):
-    """Essential Sound Loudness Auto-Match: measure each tagged clip's integrated loudness (LUFS) and set
-    its Audio Gain so it lands on its type's target."""
-    from .. import audio_analysis
+    """Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.
+
+    Measured as the clip plays (speed and its audio effects included), on integrated loudness (a clip under
+    a second of sound on its loudest moment). Cuts of one source share one gain
+    so a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;
+    gains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured
+    at the new gain."""
+    import json
+
+    from .. import audio_analysis as aa
+    from ..audio_fx import ffmpeg_filters
 
     seq, found = _audio_clips(ctx, p.sequence_id, p.clip_ids)
-    measure = getattr(ctx.services, "audio_loudness", None)
+    measure = getattr(ctx.services, "audio_measure", None)
     if measure is None:
         raise CommandError("NO_SERVICES", "loudness analysis needs media services")
-    targets = {**audio_analysis.DEFAULT_TARGETS, **p.targets}
-    out: dict[str, dict] = {}
-    cache: dict[tuple, float | None] = {}
+    targets = {**aa.DEFAULT_TARGETS, **p.targets}
+    opts = {"music_bed_db": p.music_bed_db, "peak_ceiling": p.peak_ceiling, "max_boost": p.max_boost}
+    # dialogue anywhere in the mix (audible tracks, enabled clips): music under it is a bed
+    talk = [(c["start"], c["end"]) for tid in seq["audio_tracks"] if not seq["tracks"][tid]["muted"]
+            for c in seq["tracks"][tid]["clips"].values() if c.get("audio_tag") == "dialogue" and c.get("enabled", True)]
+    cache: dict[tuple, dict] = {}
+
+    def run(src, c, gain: float) -> dict:
+        fx = _fx(c)
+        filters = ([f"volume={gain}dB"] if gain else []) + ffmpeg_filters(fx, 48000)
+        key = (src[0], src[1], src[2], c["speed"], tuple(filters))
+        if key not in cache:
+            cache[key] = measure(src[0], src[1], src[2], c["speed"], src[3], filters)
+        return cache[key]
+
+    items, where, out = [], {}, {}
     for tid, c in found:
         tag = c.get("audio_tag")
         src = _source(ctx, c)
-        if not tag or not src:
+        if not tag:
             continue
-        key = src[:3]
-        if key not in cache:
-            cache[key] = measure(src[0], src[1], src[2], src[3])
-        lufs = cache[key]
-        if lufs is None:
-            out[c["id"]] = {"tag": tag, "lufs": None, "gain_db": c.get("gain_db", 0.0)}
+        if not src:
+            out[c["id"]] = {"tag": tag, "lufs": None, "gain_db": c.get("gain_db", 0.0), "notes": ["offline"]}
             continue
-        require_unlocked(seq, tid)
-        gain = round(max(-96.0, min(96.0, targets[tag] - lufs)), 2)
-        if c.get("gain_db", 0.0) != gain:
-            ctx.m.set(clip_path(seq, tid, c["id"]) + ["gain_db"], gain)
-        out[c["id"]] = {"tag": tag, "lufs": round(lufs, 2), "target": targets[tag], "gain_db": gain}
-    if not out:
+        bed = tag == "music" and _overlap(c, talk) >= 0.5 * (c["end"] - c["start"])
+        sig = json.dumps([(e["type"], e["params"]) for e in _fx(c)], sort_keys=True)
+        items.append({"id": c["id"], "tag": tag, "gain_db": c.get("gain_db", 0.0), "bed": bed,
+                      "group": (c.get("media_id"), tag, bed, c["speed"], sig), "m": run(src, c, 0.0)})
+        where[c["id"]] = (tid, c, src)
+    if not items and not out:
         raise CommandError("NOT_TAGGED", "tag the clips first (Essential Sound: Dialogue / Music / SFX / Ambience)")
-    return {"clips": out}
+    plan = aa.plan_match(items, targets, opts)
+    # a compressor or limiter does not pass gain through 1:1: measure at the planned gain and correct
+    for it in items:
+        r = plan[it["id"]]
+        tid, c, src = where[it["id"]]
+        if r["lufs"] is None or "kept" in r["notes"] or not any(e["type"] in NONLINEAR for e in _fx(c)):
+            continue
+        want, g = r["result"], r["gain_db"]
+        for _ in range(3):
+            got, _metric = aa.level_of(r["tag"], run(src, c, g))
+            if got is None or abs(want - got) < 0.3:
+                break
+            g = round(max(-96.0, min(p.max_boost, g + want - got)), 1)
+            if g == p.max_boost and "boost_capped" not in r["notes"]:
+                r["notes"].append("boost_capped")
+        tp = run(src, c, g).get("true_peak")
+        if tp is not None and tp > p.peak_ceiling + 0.1 and "peak_limited" not in r["notes"]:
+            r["notes"].append("peak_limited")
+        r.update(gain_db=g, result=round(got if got is not None else want, 1))
+        r["notes"].append("compressed")
+    for i, r in plan.items():
+        tid, c, _ = where[i]
+        require_unlocked(seq, tid)
+        if c.get("gain_db", 0.0) != r["gain_db"]:
+            ctx.m.set(clip_path(seq, tid, c["id"]) + ["gain_db"], r["gain_db"])
+    return {"clips": {**out, **plan}}

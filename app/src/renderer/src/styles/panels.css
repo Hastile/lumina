@@ -272,5 +272,7 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-es-section .target { display: grid; grid-template-columns: 1fr 64px auto; gap: 6px; align-items: center; }
 .lm-es-section .target input { width: 64px; }
 .lm-es-section .results { font-size: 11px; display: flex; flex-direction: column; gap: 3px; }
-.lm-es-section .res { display: flex; justify-content: space-between; gap: 8px; }
+.lm-es-section .res { display: flex; flex-direction: column; gap: 1px; }
+.lm-es-section .res .line { display: flex; justify-content: space-between; gap: 8px; }
+.lm-es-section .res .why { color: #c9a24a; font-size: 10px; text-align: right; }
 .lm-es-section .res .name { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }

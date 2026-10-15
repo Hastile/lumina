@@ -38,10 +38,12 @@ class MediaServices:
         rate = 16000
         return audio_analysis.features(export_mod.decode_audio(path, src_start, src_dur, 1.0, rate, None, channels), rate)
 
-    def audio_loudness(self, path: str, src_start: int, src_dur: int, channels: int = 2) -> float | None:
+    def audio_measure(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2,
+                      filters: list[str] | tuple = ()) -> dict:
+        """Loudness, loudness range, noise floor and true peak of a clip as it plays (Auto-Match)."""
         from . import audio_analysis
 
-        return audio_analysis.loudness(path, src_start, src_dur, channels)
+        return audio_analysis.measure(path, src_start, src_dur, speed, channels, filters)
 
 
 class Engine:

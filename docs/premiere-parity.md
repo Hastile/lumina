@@ -112,6 +112,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Volume rubber band on audio clips; Audio Gain (G: set, adjust, normalize max / all peaks); audio scrubbing | ✓ |
 | Audio effects: Parametric Equalizer, Single-band Compressor, Hard Limiter (preview = export for EQ; dynamics within ~1 dB) | ✓ |
 | Essential Sound: audio types, Auto-Tag (file name + speech/music/ambience analysis), Loudness Auto-Match (LUFS) | ✓ (heuristic tagger, not Premiere's AI model) |
+| Auto-Match judgement: measured through speed + audio effects (compressor/limiter re-measured), one gain per source so cuts keep their dynamics (outliers pulled halfway), music under dialogue as a bed (-12 LU), true-peak ceiling, +20 dB boost cap, noise warning, sub-0.5 dB changes skipped | ✓ (Lumina extension) |
 | Spatial interpolation menu for Position, keyframes on the rubber band dragged in time, clip pan | ✗ |
 
 ## Export

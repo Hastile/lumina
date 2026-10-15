@@ -1984,7 +1984,7 @@
   },
   {
     "name": "audio.auto_match",
-    "description": "Essential Sound Loudness Auto-Match: measure each tagged clip's integrated loudness (LUFS) and set\nits Audio Gain so it lands on its type's target.",
+    "description": "Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.\n\nMeasured as the clip plays (speed and its audio effects included). Dialogue, music and ambience are\nmatched on integrated loudness, sound effects on their loudest moment. Cuts of one source share one gain\nso a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;\ngains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured\nat the new gain.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -2024,6 +2024,37 @@
           "description": "LUFS per type, e.g. {'dialogue': -16}; defaults: dialogue -23, music -25, sfx -21, ambience -30",
           "title": "Targets",
           "type": "object"
+        },
+        "music_bed_db": {
+          "anyOf": [
+            {
+              "maximum": 40,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 12.0,
+          "description": "music playing under dialogue is matched this many LU below the dialogue target (null: match music to its own target everywhere)",
+          "title": "Music Bed Db"
+        },
+        "peak_ceiling": {
+          "default": -1.0,
+          "description": "true-peak ceiling (dBTP) no clip may exceed after its gain",
+          "maximum": 0,
+          "minimum": -20,
+          "title": "Peak Ceiling",
+          "type": "number"
+        },
+        "max_boost": {
+          "default": 20.0,
+          "description": "largest gain Auto-Match will apply",
+          "maximum": 60,
+          "minimum": 0,
+          "title": "Max Boost",
+          "type": "number"
         }
       },
       "title": "AutoMatch",

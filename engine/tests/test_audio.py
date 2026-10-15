@@ -145,11 +145,113 @@ def test_auto_tag_and_auto_match(monkeypatch):
     assert [r[i]["tag"] for i in ids] == ["dialogue", "music"]
     with pytest.raises(CommandError):
         s.execute("clip.set_audio_tag", {"clip_ids": ids, "tag": "speech"})
-    s.services.audio_loudness = lambda path, start, dur, ch: -30.0 if path.endswith("a.mp4") else -12.0
-    m = s.execute("audio.auto_match", {"targets": {"dialogue": -16}})["result"]["clips"]
+    s.services.audio_measure = lambda path, start, dur, speed, ch, filters: _m(-30.0 if path.endswith("a.mp4") else -12.0)
+    m = s.execute("audio.auto_match", {"targets": {"dialogue": -16}, "music_bed_db": None})["result"]["clips"]
     assert m[ids[0]]["gain_db"] == 14 and m[ids[1]]["gain_db"] == -13
     s.undo()
     assert [c["gain_db"] for c in clips(s, sid, "audio")] == [0, 0]
     s.execute("clip.set_audio_tag", {"clip_ids": ids, "tag": None})
     with pytest.raises(CommandError):
         s.execute("audio.auto_match", {})
+
+
+def _m(lufs, dur=20.0, tp=None, noise=None, active=None):
+    """A measurement as audio_analysis.measure returns it."""
+    return {"duration": dur, "integrated": lufs, "momentary_max": lufs + 4, "short_max": lufs + 2, "lra": 6.0,
+            "noise_floor": noise if noise is not None else lufs - 40, "active": dur * 0.9 if active is None else active,
+            "sample_peak": tp if tp is not None else lufs + 12, "true_peak": tp if tp is not None else lufs + 12}
+
+
+def _plan(items, **opts):
+    from lumina.audio_analysis import DEFAULT_TARGETS, plan_match
+
+    base = [{"gain_db": 0.0, "bed": False, **it} for it in items]
+    return plan_match(base, {**DEFAULT_TARGETS, "dialogue": -16}, opts)
+
+
+def test_match_cuts_of_one_recording_share_a_gain():
+    # a talk recording cut in three: the quiet aside and the loud laugh keep their place in the performance
+    r = _plan([{"id": "a", "tag": "dialogue", "group": "rec", "m": _m(-24)},
+               {"id": "b", "tag": "dialogue", "group": "rec", "m": _m(-26)},
+               {"id": "c", "tag": "dialogue", "group": "rec", "m": _m(-21)}])
+    assert r["a"]["gain_db"] == r["b"]["gain_db"] == r["c"]["gain_db"]
+    assert r["a"]["group"] == 3 and -17 < r["a"]["result"] < -15
+
+
+def test_match_pulls_an_outlier_cut_halfway_back():
+    r = _plan([{"id": "a", "tag": "dialogue", "group": "rec", "m": _m(-24, dur=60)},
+               {"id": "b", "tag": "dialogue", "group": "rec", "m": _m(-40, dur=5)}])
+    assert "outlier" in r["b"]["notes"] and r["b"]["gain_db"] > r["a"]["gain_db"]
+    assert r["b"]["result"] < r["a"]["result"] - 6  # still quieter: it was a whisper
+
+
+def test_match_music_under_dialogue_is_a_bed():
+    r = _plan([{"id": "m", "tag": "music", "group": "bgm", "bed": True, "m": _m(-14)},
+               {"id": "n", "tag": "music", "group": "intro", "m": _m(-14)}])
+    assert r["m"]["target"] == -28 and "bed" in r["m"]["notes"]
+    assert r["n"]["target"] == -25
+
+
+def test_match_respects_true_peak_and_boost_limits():
+    r = _plan([{"id": "a", "tag": "dialogue", "group": "x", "m": _m(-30, tp=-4)},
+               {"id": "b", "tag": "dialogue", "group": "y", "m": _m(-60, tp=-40)}])
+    assert r["a"]["gain_db"] == 3 and "peak_limited" in r["a"]["notes"]
+    assert r["b"]["gain_db"] == 20 and "boost_capped" in r["b"]["notes"]
+
+
+def test_match_sfx_on_integrated_loudness_short_hits_on_their_loudest_moment_and_small_changes_are_kept():
+    r = _plan([{"id": "s", "tag": "sfx", "group": "s", "m": _m(-30, dur=0.8)},
+               {"id": "w", "tag": "sfx", "group": "w", "m": _m(-30, dur=4)},
+               {"id": "k", "tag": "ambience", "group": "k", "gain_db": -2.0, "m": _m(-27.8)}])
+    assert r["s"]["metric"] == "momentary_max" and r["s"]["gain_db"] == 5  # -26 -> -21
+    assert r["w"]["metric"] == "integrated" and r["w"]["gain_db"] == 9  # a 4 s whoosh: -30 -> -21 LUFS
+    assert r["k"]["gain_db"] == -2.0 and "kept" in r["k"]["notes"]
+
+
+def test_match_flags_noisy_boosts_and_silence():
+    r = _plan([{"id": "n", "tag": "dialogue", "group": "n", "m": _m(-32, noise=-42)},
+               {"id": "z", "tag": "dialogue", "group": "z", "m": {**_m(-30), "integrated": None, "momentary_max": None, "short_max": None}}])
+    assert "noisy" in r["n"]["notes"]
+    assert r["z"]["lufs"] is None and r["z"]["notes"] == ["silent"]
+
+
+def test_auto_match_finds_music_beds_and_remeasures_compressed_clips(monkeypatch):
+    s, sid, (a, b, *_) = make()
+    s.execute("clip.place", {"media_id": a, "at": 0})
+    s.execute("clip.place", {"media_id": b, "at": 0, "take_video": False, "audio_track_id": s.doc["sequences"][sid]["audio_tracks"][1]})
+    talk, bgm = clips(s, sid, "audio")[0]["id"], clips(s, sid, "audio", 1)[0]["id"]
+    monkeypatch.setattr(audio_cmd, "media_path", lambda m: m["path"])
+    s.execute("clip.set_audio_tag", {"clip_ids": [talk], "tag": "dialogue"})
+    s.execute("clip.set_audio_tag", {"clip_ids": [bgm], "tag": "music"})
+    s.execute("effect.add", {"clip_ids": [talk], "type": "compressor"})
+    calls = []
+
+    def fake(path, start, dur, speed, ch, filters):
+        calls.append(filters)
+        if path.endswith("b.mp4"):
+            return _m(-14)
+        gain = next((float(f[7:-2]) for f in filters if f.startswith("volume=")), 0.0)
+        return _m(-30 + gain * 0.5, tp=-30 + gain * 0.5 + 10)  # a 2:1 compressor: half the gain comes through
+
+    s.services.audio_measure = fake
+    r = s.execute("audio.auto_match", {"targets": {"dialogue": -16}})["result"]["clips"]
+    assert "bed" in r[bgm]["notes"] and r[bgm]["target"] == -28
+    # linear maths says +14 dB; through the compressor that only reaches -23, so it is re-measured up to the cap
+    assert "compressed" in r[talk]["notes"] and "boost_capped" in r[talk]["notes"]
+    assert r[talk]["gain_db"] == 20 and r[talk]["result"] == -20
+    assert any(any(f.startswith("acompressor") for f in fl) for fl in calls), "effects are part of the measurement"
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg not installed")
+def test_measure_agrees_with_ffmpeg_ebur128(tmp_path):
+    import subprocess
+
+    from lumina.audio_analysis import loudness, measure
+
+    wav = tmp_path / "noise.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "anoisesrc=d=8:c=pink:a=0.2", "-ac", "2", str(wav)], check=True)
+    m = measure(str(wav), 0, 8 * 254016000000)
+    assert abs(m["integrated"] - loudness(str(wav), 0, 8 * 254016000000)) < 0.15
+    assert m["true_peak"] >= m["sample_peak"] and m["lra"] < 1
+    m6 = measure(str(wav), 0, 8 * 254016000000, filters=["volume=6dB"])
+    assert abs(m6["integrated"] - m["integrated"] - 6) < 0.05

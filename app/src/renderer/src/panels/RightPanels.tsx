@@ -152,7 +152,30 @@ type AudioTag = 'dialogue' | 'music' | 'sfx' | 'ambience'
 // Auto-Match targets (engine/lumina/audio_analysis.py DEFAULT_TARGETS)
 const TARGETS: Record<AudioTag, number> = { dialogue: -23, music: -25, sfx: -21, ambience: -30 }
 
-type MatchResult = Record<string, { tag: string; lufs: number | null; target?: number; gain_db: number }>
+type MatchResult = Record<string, {
+  tag: string
+  lufs: number | null
+  metric?: 'integrated' | 'short_max' | 'momentary_max'
+  target?: number
+  result?: number
+  gain_db: number
+  group?: number
+  notes: string[]
+}>
+
+// why Auto-Match chose a gain (engine audio_analysis.plan_match / commands/audio.py)
+const MATCH_NOTES: Record<string, string> = {
+  silent: 'silent',
+  offline: 'Media Offline',
+  bed: 'music bed under dialogue',
+  short: 'too short to gate: loudest moment',
+  outlier: 'far from the rest of its source: pulled halfway',
+  peak_limited: 'held under the true-peak ceiling',
+  boost_capped: 'boost limit reached',
+  noisy: 'noisy: the boost raises the noise too',
+  kept: 'already matched: unchanged',
+  compressed: 're-measured through compressor / limiter'
+}
 
 /** Essential Sound (Edit): tag audio clips by type (or Auto-Tag them), then Loudness Auto-Match. */
 export function EssentialSoundPanel() {
@@ -161,6 +184,8 @@ export function EssentialSoundPanel() {
   const [busy, setBusy] = useState<string | null>(null)
   const [targets, setTargets] = useState<Record<AudioTag, number>>(TARGETS)
   const [result, setResult] = useState<MatchResult | null>(null)
+  const [bed, setBed] = useState<number | null>(12)
+  const [ceiling, setCeiling] = useState(-1)
   if (!seq) return <div className="lm-panel"><div className="lm-empty">{t('(no sequences)')}</div></div>
   // the selected audio clips, plus the audio linked to selected video
   const sel = selected.map((id) => findClip(seq, id)).filter(Boolean).map((f) => f!.clip)
@@ -180,7 +205,7 @@ export function EssentialSoundPanel() {
   const autoTag = () => run(t('Auto-Tag'), () => exec('audio.auto_tag', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, overwrite: ids.length > 0 }, t('Auto-Tag')))
   const autoMatch = () =>
     run(t('Auto-Match'), async () => {
-      const r = await exec<{ clips: MatchResult }>('audio.auto_match', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, targets }, t('Auto-Match'))
+      const r = await exec<{ clips: MatchResult }>('audio.auto_match', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, targets, music_bed_db: bed, peak_ceiling: ceiling }, t('Auto-Match'))
       if (r) setResult(r.clips)
     })
   return (
@@ -225,17 +250,41 @@ export function EssentialSoundPanel() {
               <span className="dim">LUFS</span>
             </label>
           ))}
+          <label className="target" title={t('Music that plays under dialogue is matched this far below the dialogue target')}>
+            <span>
+              <input type="checkbox" data-opt="bed" checked={bed !== null} onChange={(e) => setBed(e.target.checked ? 12 : null)} /> {t('Music under dialogue')}
+            </span>
+            <input type="number" step={1} min={0} max={40} disabled={bed === null} value={bed ?? 12} onChange={(e) => setBed(Number(e.target.value))} />
+            <span className="dim">LU {t('lower')}</span>
+          </label>
+          <label className="target">
+            <span>{t('True peak ceiling')}</span>
+            <input type="number" step={0.5} min={-20} max={0} value={ceiling} onChange={(e) => setCeiling(Number(e.target.value))} />
+            <span className="dim">dBTP</span>
+          </label>
           <button className="lm-btn primary" data-action="auto-match" disabled={!!busy} onClick={() => void autoMatch()}>
             {busy === t('Auto-Match') ? t('Analyzing...') : t('Auto-Match')}
           </button>
           {result && (
-            <div className="results">
-              {Object.entries(result).slice(0, 12).map(([id, r]) => {
+            <div className="results" data-match-results="">
+              {Object.entries(result).slice(0, 40).map(([id, r]) => {
                 const c = findClip(seq, id)?.clip
+                const metric = r.metric === 'integrated' ? 'LUFS' : t('LUFS (loudest)')
                 return (
-                  <div key={id} className="res">
-                    <span className="name">{c?.name ?? id}</span>
-                    <span>{r.lufs === null ? t('silent') : `${r.lufs.toFixed(1)} → ${r.target} LUFS (${r.gain_db > 0 ? '+' : ''}${r.gain_db.toFixed(1)} dB)`}</span>
+                  <div key={id} className="res" data-notes={r.notes.join(' ')}>
+                    <div className="line">
+                      <span className="name">{c?.name ?? id}</span>
+                      <span>
+                        {r.lufs === null
+                          ? t(MATCH_NOTES[r.notes[0]] ?? 'silent')
+                          : `${r.lufs.toFixed(1)} → ${(r.result ?? r.target ?? 0).toFixed(1)} ${metric} (${r.gain_db > 0 ? '+' : ''}${r.gain_db.toFixed(1)} dB)`}
+                      </span>
+                    </div>
+                    {r.lufs !== null && (r.notes.length > 0 || (r.group ?? 1) > 1) && (
+                      <div className="why">
+                        {[...((r.group ?? 1) > 1 ? [`${t('same gain as')} ${r.group} ${t('cuts of this source')}`] : []), ...r.notes.map((n) => t(MATCH_NOTES[n] ?? n))].join(' · ')}
+                      </div>
+                    )}
                   </div>
                 )
               })}
