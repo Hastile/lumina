@@ -2,7 +2,7 @@
 // feature with its switch, Clip Volume and Mute at the bottom). Loudness Auto-Match and Clip Volume work;
 // the sections Lumina has no processing for yet are shown, greyed, so the panel reads like Premiere's.
 // Below Clip Volume, the level path answers "why is it this loud": every gain the clip goes through.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, Download, Leaf, Menu, MessageSquare, Music, Sparkles, Trash2, AudioLines, Tags } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Clip, Sequence } from '../engine/document'
@@ -85,12 +85,6 @@ export function EssentialSoundPanel() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<MatchResult | null>(null)
   const [settings, setSettings] = useState<MatchSettings>(loadSettings)
-  if (!seq) return <div className="lm-panel"><div className="lm-empty">{t('(no sequences)')}</div></div>
-  const audio = selectedAudio(seq, selected)
-  const ids = audio.map((a) => a.clip.id)
-  const tags = new Set(audio.map((a) => a.clip.audio_tag ?? null))
-  const tag = tags.size === 1 ? ([...tags][0] as AudioTag | null) : null
-  const title = !audio.length ? t('No Selection') : audio.length === 1 ? audio[0].clip.name : t('{n} clips selected').replace('{n}', String(audio.length))
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
     try {
@@ -99,6 +93,30 @@ export function EssentialSoundPanel() {
       setBusy(false)
     }
   }
+  // selecting an untagged audio clip Auto-Tags it once; the type buttons are for clips it could not
+  // classify (or whose type was cleared by hand)
+  const tried = useRef(new Set<string>())
+  const [failed, setFailed] = useState<Set<string>>(new Set())
+  const pending = seq
+    ? selectedAudio(seq, selected).filter((a) => !a.clip.audio_tag && !seq.tracks[a.track].locked && !tried.current.has(a.clip.id)).map((a) => a.clip.id)
+    : []
+  const pendingKey = pending.join(',')
+  useEffect(() => {
+    if (!seq || !pending.length) return
+    for (const id of pending) tried.current.add(id)
+    void run(async () => {
+      const r = await exec<{ clips: Record<string, { tag: string | null }> }>('audio.auto_tag', { sequence_id: seq.id, clip_ids: pending, overwrite: false }, t('Auto-Tag'))
+      const bad = pending.filter((id) => !r?.clips[id]?.tag)
+      if (bad.length) setFailed((f) => new Set([...f, ...bad]))
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey])
+  if (!seq) return <div className="lm-panel"><div className="lm-empty">{t('(no sequences)')}</div></div>
+  const audio = selectedAudio(seq, selected)
+  const ids = audio.map((a) => a.clip.id)
+  const tags = new Set(audio.map((a) => a.clip.audio_tag ?? null))
+  const tag = tags.size === 1 ? ([...tags][0] as AudioTag | null) : null
+  const title = !audio.length ? t('No Selection') : audio.length === 1 ? audio[0].clip.name : t('{n} clips selected').replace('{n}', String(audio.length))
   const setTag = (v: AudioTag | null) => void exec('clip.set_audio_tag', { sequence_id: seq.id, clip_ids: ids, tag: v }, v ? t('Audio Type') : t('Clear Audio Type'))
   const autoTag = () => run(() => exec('audio.auto_tag', { sequence_id: seq.id, clip_ids: ids.length ? ids : null, overwrite: ids.length > 0 }, t('Auto-Tag')))
   const autoMatch = () =>
@@ -197,6 +215,9 @@ export function EssentialSoundPanel() {
             <div className="lm-es2-empty">
               <AudioLines size={40} />
               <div className="big">{t('Tag clips to use the Essential Sound panel')}</div>
+              {audio.some((a) => !a.clip.audio_tag && failed.has(a.clip.id)) && (
+                <div className="hint failed" data-autotag-failed="">{t('Auto-Tag could not tell the type of this clip: choose it below.')}</div>
+              )}
               <button className="lm-btn" disabled={busy} onClick={() => void autoTag()} data-action="auto-tag">
                 <Tags size={13} /> {busy ? t('Analyzing...') : t('Auto-Tag')}
               </button>

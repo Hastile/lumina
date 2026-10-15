@@ -389,3 +389,4 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-es2 .lm-chip { border-radius: 4px; }
 .lm-es2 .lm-chip:disabled { opacity: 0.45; }
 .lm-es2-foot input[type=range], .lm-es2 .secbody input[type=range] { accent-color: #e0e0e0; }
+.lm-es2-empty .hint.failed { color: #e0b050; }
