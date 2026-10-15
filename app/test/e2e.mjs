@@ -311,6 +311,67 @@ try {
   log('keyframes: right-click Auto Bezier / Hold (icons auto-auto, linear-hold), marquee selected 2, dragged', ((movedKfs[0].t - kfBefore[0].t) / TPS).toFixed(3), 's, Delete removed them')
   for (let i = 0; i < 6; i++) await page.evaluate(() => window.__lumina.engine.call('undo'))
   assert.equal((await opKfs())?.length ?? 0, 0, 'six undo steps restore the opacity property')
+  // ---- keyframe editing: markers on the timeline clip, Alt-drag stretch, Alt+Arrow nudge, copy/paste,
+  // keyframes hidden by a trim
+  {
+    const clipNow = () => page.evaluate((id) => {
+      const s = window.__lumina.get()
+      const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean)
+    }, v1clip)
+    const c0 = await clipNow()
+    const F = TPS / 30
+    const rel = [3, 9, 15].map((f) => f * F) // the clip is about a second long
+    await page.evaluate(([id, ks]) => window.__lumina.engine.exec('clip.set_keyframes', { clip_id: id, prop: 'scale', keyframes: ks.map((t, i) => ({ t, v: 100 + 20 * i })) }), [v1clip, rel])
+    await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), v1clip)
+    // the timeline clip shows its three keyframes; clicking one jumps the playhead there
+    const marks = page.locator(`[data-clip="${v1clip}"] .lm-clip-kfs .k`)
+    await marks.nth(2).waitFor()
+    assert.equal(await marks.count(), 3)
+    await marks.nth(1).click()
+    assert.equal(await page.evaluate(() => window.__lumina.get().programTime), c0.start + rel[1], 'clicking a timeline keyframe moves the playhead to it')
+    const scaleKfs = async () => { const c = await clipNow(); return c.keyframes.scale.map((k) => k.t - c.source_in) }
+    // select the three in Effect Controls, Alt-drag the last one right: they spread out from the first
+    const icons = page.locator('.lm-ec [data-kf^="p:scale@"]')
+    await icons.nth(2).waitFor()
+    await page.evaluate(([id, ks, si]) => window.__lumina.set({ kfSel: { clipId: id, keys: ks.map((t) => `p:scale@${si + t}`) }, focusedPanel: 'effectControls' }), [v1clip, rel, c0.source_in])
+    const lb = await icons.nth(2).boundingBox()
+    await page.mouse.move(lb.x + lb.width / 2, lb.y + lb.height / 2)
+    await page.keyboard.down('Alt')
+    await page.mouse.down()
+    await page.mouse.move(lb.x + lb.width / 2 + 30, lb.y + lb.height / 2, { steps: 5 })
+    await page.mouse.up()
+    await page.keyboard.up('Alt')
+    let k = await scaleKfs()
+    for (let i = 0; i < 30 && k[2] === rel[2]; i++) { await page.waitForTimeout(100); k = await scaleKfs() }
+    assert.ok(k[0] === rel[0] && k[2] > rel[2] && (k[2] - k[1]) === (k[1] - k[0]) || Math.abs((k[2] - k[1]) - (k[1] - k[0])) <= F, `Alt-drag stretched around the first keyframe ${k}`)
+    // Alt+Right nudges the (still selected) keyframes one frame
+    await page.evaluate(() => window.__lumina.set({ focusedPanel: 'effectControls' }))
+    await page.keyboard.press('Alt+ArrowRight')
+    let k2 = await scaleKfs()
+    for (let i = 0; i < 30 && k2[0] === k[0]; i++) { await page.waitForTimeout(100); k2 = await scaleKfs() }
+    assert.deepEqual(k2, k.map((x) => x + F), 'nudged one frame')
+    // Ctrl+C / Ctrl+V in Effect Controls: the three land again at the playhead
+    await page.keyboard.press('Control+c')
+    await page.evaluate((t) => window.__lumina.set({ programTime: t, focusedPanel: 'effectControls' }), c0.start + 40 * F)
+    await page.keyboard.press('Control+v')
+    let k3 = await scaleKfs()
+    for (let i = 0; i < 30 && k3.length < 6; i++) { await page.waitForTimeout(100); k3 = await scaleKfs() }
+    assert.equal(k3.length, 6, 'pasted three keyframes')
+    assert.equal(k3[3], 40 * F, 'the first pasted keyframe sits at the playhead')
+    // trim the clip's head past the first keyframe: the lane says one is hidden; bring them inside
+    await page.evaluate((id) => window.__lumina.engine.exec('clip.trim', { clip_id: id, edge: 'start', delta: 6 * 254016000000 / 30, include_linked: false }), v1clip)
+    const hidden = page.locator('.lm-ec [data-hidden-kf="left"]').first()
+    await hidden.waitFor()
+    await hidden.click()
+    await page.locator('.lm-ctx .item', { hasText: '키프레임을 클립 안으로 옮기기' }).click()
+    await hidden.waitFor({ state: 'detached', timeout: 10000 })
+    const after = await clipNow()
+    assert.equal(after.keyframes.scale[0].t, after.source_in, 'the first keyframe now sits on the new In point')
+    for (let i = 0; i < 6; i++) await page.evaluate(() => window.__lumina.engine.call('undo'))
+    assert.ok(!(await clipNow()).keyframes.scale, 'six undo steps restore the clip')
+    log('keyframes: 3 shown on the timeline clip; Alt-drag stretched to', k.map((x) => Math.round(x / F)).join('/'), 'frames; Alt+Right nudge; Ctrl+C/V pasted 3; hidden-by-trim moved inside')
+  }
   // Shift+drag on the ruler snaps the playhead to an edit point
   const edge = await page.evaluate(() => {
     const s = window.__lumina.get()

@@ -327,3 +327,11 @@ input.val { color: #ddd; background: #111 !important; }
 
 .lm-dropped { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #3fbf5a; margin: 0 6px; cursor: pointer; vertical-align: middle; box-shadow: 0 0 0 1px #000; }
 .lm-dropped.warn { background: #e8c23a; }
+
+.lm-ec .lane .kf-hidden { position: absolute; top: 50%; transform: translateY(-50%); font-size: 9px; color: #ffb347; background: rgba(0, 0, 0, 0.55); padding: 0 3px; border-radius: 2px; cursor: pointer; pointer-events: all; z-index: 2; }
+.lm-ec .lane .kf-hidden.left { left: 1px; }
+.lm-ec .lane .kf-hidden.right { right: 1px; }
+
+.lm-clip-kfs { position: absolute; left: 0; right: 0; bottom: 1px; height: 7px; pointer-events: none; z-index: 3; }
+.lm-clip-kfs .k { position: absolute; bottom: 0; width: 6px; height: 6px; margin-left: -3px; background: #f0f0f0; transform: rotate(45deg); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); pointer-events: all; cursor: pointer; }
+.lm-clip-kfs .k:hover { background: #2d8ceb; }

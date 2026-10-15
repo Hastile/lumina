@@ -37,6 +37,7 @@ type State = {
   ecView: { clipId: string; start: number; end: number } | null // Effect Controls timeline zoom (sequence ticks)
   audioScrub: boolean // Premiere's "Play audio while scrubbing"
   flashTracks: string[] // tracks an edit just landed on (highlighted briefly)
+  showClipKeyframes: boolean // Timeline Display Settings > Show Keyframes on clips
   kfSel: { clipId: string; keys: string[] } | null // selected keyframes in Effect Controls (`target@sourceTicks`)
 
   pxPerSecond: number
@@ -78,6 +79,7 @@ export const useStore = create<State>(() => ({
   kfSel: null,
   audioScrub: true,
   flashTracks: [],
+  showClipKeyframes: true,
   pxPerSecond: 40,
   scrollX: 0
 }))

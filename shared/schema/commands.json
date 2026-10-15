@@ -6229,5 +6229,248 @@
       "title": "KeyframeSelection",
       "type": "object"
     }
+  },
+  {
+    "name": "keyframes.scale",
+    "description": "Stretch or squeeze the selected keyframes in time around a pivot, frame-snapped; Bezier handle\nspeeds scale with them so the curves keep their shape. A keyframe they land on is replaced.",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "KeyframeTarget": {
+          "properties": {
+            "prop": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "position",
+                    "scale",
+                    "scale_width",
+                    "rotation",
+                    "anchor",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "opacity",
+                    "volume_db"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "a Motion/Opacity/Volume property",
+              "title": "Prop"
+            },
+            "effect_id": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "or an effect's parameter: the effect ...",
+              "title": "Effect Id"
+            },
+            "param": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "... and the parameter name",
+              "title": "Param"
+            },
+            "times": {
+              "description": "the selected keyframes' times (source ticks, as stored)",
+              "items": {
+                "type": "integer"
+              },
+              "minItems": 1,
+              "title": "Times",
+              "type": "array"
+            }
+          },
+          "required": [
+            "times"
+          ],
+          "title": "KeyframeTarget",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "targets": {
+          "items": {
+            "$ref": "#/$defs/KeyframeTarget"
+          },
+          "minItems": 1,
+          "title": "Targets",
+          "type": "array"
+        },
+        "pivot": {
+          "description": "sequence time that stays put",
+          "title": "Pivot",
+          "type": "integer"
+        },
+        "factor": {
+          "description": "new spacing / old spacing (Alt-drag the outer keyframe of a selection)",
+          "exclusiveMinimum": 0,
+          "maximum": 100,
+          "title": "Factor",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip_id",
+        "targets",
+        "pivot",
+        "factor"
+      ],
+      "title": "ScaleKeyframes",
+      "type": "object"
+    }
+  },
+  {
+    "name": "keyframes.paste",
+    "description": "Paste copied keyframes (Ctrl+V in Effect Controls) at the playhead, into the same properties of\nthis clip: Motion / Opacity / Volume, or the first effect of the copied effect's type. Keyframes at\nthe same times are replaced; a property that was static becomes animated.",
+    "undoable": true,
+    "params": {
+      "$defs": {
+        "PastedProperty": {
+          "properties": {
+            "prop": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "position",
+                    "scale",
+                    "scale_width",
+                    "rotation",
+                    "anchor",
+                    "crop_left",
+                    "crop_top",
+                    "crop_right",
+                    "crop_bottom",
+                    "opacity",
+                    "volume_db"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Prop"
+            },
+            "effect_type": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "description": "an effect parameter: the first effect of this type on the clip ...",
+              "title": "Effect Type"
+            },
+            "param": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Param"
+            },
+            "keyframes": {
+              "description": "keyframes with `t` relative to the first copied keyframe (sequence ticks)",
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "minItems": 1,
+              "title": "Keyframes",
+              "type": "array"
+            }
+          },
+          "required": [
+            "keyframes"
+          ],
+          "title": "PastedProperty",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "at": {
+          "description": "sequence time where the first copied keyframe lands (the playhead)",
+          "title": "At",
+          "type": "integer"
+        },
+        "properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PastedProperty"
+          },
+          "minItems": 1,
+          "title": "Properties"
+        }
+      },
+      "required": [
+        "clip_id",
+        "at",
+        "properties"
+      ],
+      "title": "PasteKeyframes",
+      "type": "object"
+    }
   }
 ]

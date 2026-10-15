@@ -253,3 +253,34 @@ def test_match_style_and_replace_text_across_captions():
     assert get(a["clip_id"])["name"] == "첫 자막 hello"
     s.undo()
     assert get(b["clip_id"])["graphic"]["layers"][0]["text"] == "둘째 안녕 안녕"
+
+
+def test_keyframes_scale_keeps_curve_shape_and_snaps_to_frames():
+    s, cid, clip = _kf_setup()
+    kfs = clip()["keyframes"]["opacity"]
+    s.execute("clip.set_keyframe_ease", {"clip_id": cid, "prop": "opacity", "t": kfs[1]["t"], "side": "out", "speed": 30, "influence": 0.4})
+    times = [k["t"] for k in clip()["keyframes"]["opacity"]]
+    # Alt-drag the last keyframe: twice as long, pivot on the first
+    s.execute("keyframes.scale", {"clip_id": cid, "targets": [{"prop": "opacity", "times": times}], "pivot": 0, "factor": 2})
+    new = clip()["keyframes"]["opacity"]
+    assert [k["t"] for k in new] == [0, 2 * SEC, 4 * SEC]
+    assert new[1]["ease_out"] == [15, 0.4], "handle speed halves when the spacing doubles"
+    # 1/3: 2 s -> 0.6667 s lands on a frame
+    s.execute("keyframes.scale", {"clip_id": cid, "targets": [{"prop": "opacity", "times": [k["t"] for k in new]}], "pivot": 0, "factor": 1 / 3})
+    tpf = SEC // 30
+    assert all(k["t"] % tpf == 0 for k in clip()["keyframes"]["opacity"])
+
+
+def test_keyframes_paste_at_the_playhead_onto_another_clip():
+    s, cid, clip = _kf_setup()
+    sid = s.doc["active_sequence_id"]
+    b = s.execute("clip.place", {"media_id": next(iter(s.doc["media"])), "at": "30s"})["result"]["video_clip_id"]
+    s.execute("effect.add", {"clip_ids": [b], "type": "gaussian_blur"})
+    copied = [{"prop": "opacity", "keyframes": [{"t": 0, "v": 0}, {"t": SEC, "v": 100}]},
+              {"effect_type": "gaussian_blur", "param": "blurriness", "keyframes": [{"t": 0, "v": 20}]},
+              {"effect_type": "transform", "param": "scale", "keyframes": [{"t": 0, "v": 50}]}]
+    r = s.execute("keyframes.paste", {"clip_id": b, "at": 32 * SEC, "properties": copied})["result"]
+    assert r["count"] == 3 and r["skipped"] == ["transform.scale"]
+    c = next(c for t in s.doc["sequences"][sid]["tracks"].values() for c in t["clips"].values() if c["id"] == b)
+    assert [k["t"] - c["source_in"] for k in c["keyframes"]["opacity"]] == [2 * SEC, 3 * SEC]
+    assert c["effects"][0]["keyframes"]["blurriness"][0]["v"] == 20

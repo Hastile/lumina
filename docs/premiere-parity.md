@@ -144,4 +144,5 @@ Korean (Premiere's Korean terminology) is the default; View > Language switches 
 | Captions/titles are edited one by one | Text panel: every text layer in time order, edit in place, Find / Replace All, Match Style (optionally position) |
 | Dropped frames are invisible | Dropped Frame Indicator on the Program monitor (counts in the tooltip, click resets) |
 | Panels get dragged by accident, resets lose the layout | Lock Workspace; Save Changes to This Workspace; Reset to Saved Layout returns to the saved one |
+| Keyframes are only visible in Effect Controls and get lost behind trims | keyframe marks on timeline clips (click jumps there; Timeline Display Settings > Show Keyframes); the lane counts keyframes hidden outside the clip and can shift them inside or delete them; Alt-drag stretches a selection in time (handles keep their shape); Alt+Left/Right nudges (clips too); Ctrl+C/V copies keyframes to the playhead, also onto another clip |
 | Speed/Duration ripple is a guess | the dialog previews it: duration change, how many clips move, the gap left, or the collision that blocks it (OK disabled); applies to all selected clips |

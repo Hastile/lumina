@@ -1,4 +1,5 @@
 // Shared controls for keyframable properties (Effect Controls + Properties panels).
+import { openContextMenu } from '../layout/Chrome'
 import { useState } from 'react'
 import { ChevronDown, ChevronLeft, ChevronRight, Diamond, Timer } from 'lucide-react'
 import { AngleDial, KeyframeGraphs, ValueSlider } from './KeyframeGraph'
@@ -255,7 +256,43 @@ function KeyframeLane({ c, kfs, target }: { c: ClipCtx; kfs: Kf[] | undefined; t
         )
       })}
       {c.time >= a && c.time < b && <span className="head" style={{ left: pct(c.time) }} />}
+      <HiddenKeyframes c={c} kfs={kfs} target={target} />
     </span>
+  )
+}
+
+/** Keyframes outside the clip (a trim hid them, Premiere just loses them from view): a count at the
+ * lane's edge; click it to bring them inside or delete them. */
+function HiddenKeyframes({ c, kfs, target }: { c: ClipCtx; kfs: Kf[] | undefined; target?: KfTarget }) {
+  if (!kfs?.length || !target) return null
+  const tpf = ticksPerFrame(c.seq.settings)
+  const at = (k: Kf) => seqTimeOf(c.clip, k.t)
+  const before = kfs.filter((k) => at(k) < c.clip.start - 0.5)
+  const after = kfs.filter((k) => at(k) > c.clip.end - tpf + 0.5)
+  const all = kfs.map((k) => k.t)
+  const side = (list: Kf[], where: 'left' | 'right') => {
+    if (!list.length) return null
+    // shift every keyframe of the property so the outermost hidden one lands on the clip's first / last frame
+    const delta = where === 'left' ? c.clip.start - Math.min(...list.map(at)) : c.clip.end - tpf - Math.max(...list.map(at))
+    const menu = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      e.preventDefault()
+      openContextMenu(e, [
+        { label: t('Shift Keyframes into Clip'), run: () => void exec('keyframes.move', { sequence_id: c.seq.id, clip_id: c.clip.id, targets: [{ ...target, times: all }], delta: Math.round(delta / tpf) * tpf }, t('Move Keyframes')) },
+        { label: t('Delete Hidden Keyframes'), run: () => void exec('keyframes.delete', { sequence_id: c.seq.id, clip_id: c.clip.id, targets: [{ ...target, times: list.map((k) => k.t) }] }, t('Clear')) }
+      ])
+    }
+    return (
+      <span className={`kf-hidden ${where}`} data-hidden-kf={where} title={t('{n} keyframe(s) outside the clip (hidden by a trim). Click for options.').replace('{n}', String(list.length))} onMouseDown={menu} onContextMenu={menu}>
+        {where === 'left' ? `◂${list.length}` : `${list.length}▸`}
+      </span>
+    )
+  }
+  return (
+    <>
+      {side(before, 'left')}
+      {side(after, 'right')}
+    </>
   )
 }
 

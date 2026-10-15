@@ -89,6 +89,25 @@ export function syncOffset(seq: Sequence, clip: Clip): number {
   return 0
 }
 
+/** Every animated property's keyframes on a clip, as sequence times inside it (the rubber band's own
+ * property excluded - the band shows those). */
+function clipKeyframeTimes(clip: Clip, kind: 'video' | 'audio'): { t: number; props: string[] }[] {
+  const at = new Map<number, string[]>()
+  const add = (name: string, ts: number[]) => {
+    for (const x of ts) {
+      const s = Math.round(clip.start + (x - clip.source_in) / clip.speed)
+      if (s < clip.start || s >= clip.end) continue
+      at.set(s, [...(at.get(s) ?? []), name])
+    }
+  }
+  for (const [prop, kfs] of Object.entries(clip.keyframes)) {
+    if (prop === (kind === 'audio' ? 'volume_db' : 'opacity') || !kfs) continue
+    add(prop, (kfs as { t: number }[]).map((k) => k.t))
+  }
+  for (const fx of clip.effects ?? []) for (const [param, kfs] of Object.entries(fx.keyframes ?? {})) add(`${fx.type}.${param}`, (kfs as { t: number }[]).map((k) => k.t))
+  return [...at].map(([t, props]) => ({ t, props })).sort((a, b) => a.t - b.t)
+}
+
 function buildRows(seq: Sequence): { rows: Row[]; height: number; audioTop: number } {
   const rows: Row[] = []
   let y = 0
@@ -148,6 +167,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const selectedTransition = useStore((s) => s.selectedTransition)
   const playing = useStore((s) => s.playing === 'program')
   const flash = useStore((s) => s.flashTracks)
+  const showKfs = useStore((s) => s.showClipKeyframes)
 
   const lanesRef = useRef<HTMLDivElement>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -574,6 +594,25 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
         )}
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} />}
+        {showKfs && !pv && !ghost && x1 - x0 > 10 && (
+          <span className="lm-clip-kfs">
+            {clipKeyframeTimes(clip, row.kind).map((k) => (
+              <span
+                key={k.t}
+                className="k"
+                data-clip-kf={k.t}
+                style={{ left: ((k.t - clip.start) / Math.max(1, clip.end - clip.start)) * (x1 - x0) }}
+                title={`${timecode(k.t, st)} · ${k.props.map((p) => tx(p.split('.').pop()!.replace(/_/g, ' ').replace(/^./, (ch) => ch.toUpperCase()))).join(', ')}`}
+                onMouseDown={(e) => {
+                  // jump to the keyframe and show its clip in Effect Controls
+                  e.stopPropagation()
+                  set({ selectedClips: [clip.id] })
+                  goTo('program', k.t)
+                }}
+              />
+            ))}
+          </span>
+        )}
         {x1 - x0 > 6 && (tool === 'select' || tool === 'pen') && !pv && (
           <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} prop={row.kind === 'audio' ? 'volume_db' : 'opacity'} />
         )}
@@ -674,7 +713,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             <button className="lm-iconbtn" title="Add Marker (M)" onClick={() => runAction('markers.add')}>
               <Bookmark size={14} />
             </button>
-            <button className="lm-iconbtn" title={tx('Timeline Display Settings')} onClick={(e) => openContextMenu(e, [{ label: tx('Add Tracks...'), action: 'sequence.addTracks' }, { label: tx('Zoom to Sequence'), action: 'view.zoomFit' }])}>
+            <button className="lm-iconbtn" title={tx('Timeline Display Settings')} onClick={(e) => openContextMenu(e, [{ label: tx('Add Tracks...'), action: 'sequence.addTracks' }, { label: tx('Zoom to Sequence'), action: 'view.zoomFit' }, 'sep', { label: `${get().showClipKeyframes ? '✓ ' : ''}${tx('Show Keyframes')}`, run: () => set({ showClipKeyframes: !get().showClipKeyframes }) }])}>
               <Wrench size={14} />
             </button>
           </div>

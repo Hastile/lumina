@@ -3,7 +3,7 @@
 // only talk to the engine through commands - never by editing state locally.
 
 import type { Clip, Sequence } from '../engine/document'
-import { deleteSelectedKeyframes } from '../panels/KeyframeSelect'
+import { copySelectedKeyframes, deleteSelectedKeyframes, nudgeSelectedKeyframes, pasteKeyframes } from '../panels/KeyframeSelect'
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { factoryLayout, focusPanel, isLayoutLocked, resetToSaved, saveLayout, setLayoutLocked, toggleMaximize } from '../layout/dock'
@@ -386,7 +386,7 @@ def('edit.cut', t('Cut'), async () => {
   const seq = activeSequence()
   if (seq && copySelection()) await exec('clip.remove', { sequence_id: seq.id, clip_ids: clipboard.map((x) => x.clip.id), include_linked: false }, t('Cut'))
 })
-def('edit.copy', t('Copy'), () => void copySelection())
+def('edit.copy', t('Copy'), () => void (copySelectedKeyframes() || copySelection()))
 const paste = async (mode: 'overwrite' | 'insert') => {
   const seq = activeSequence()
   if (!seq || !clipboard.length) return
@@ -399,7 +399,19 @@ const paste = async (mode: 'overwrite' | 'insert') => {
     goTo('program', r.end)
   }
 }
-def('edit.paste', t('Paste'), () => paste('overwrite'))
+def('edit.paste', t('Paste'), () => (pasteKeyframes() ? undefined : paste('overwrite')))
+const nudge = (frames: number) => async () => {
+  if (nudgeSelectedKeyframes(frames)) return
+  // the timeline: Premiere's Nudge Clip Selection Left / Right
+  const seq = activeSequence()
+  const ids = get().selectedClips
+  if (!seq || !ids.length) return
+  await exec('clip.move', { sequence_id: seq.id, clip_ids: ids, delta: frames * ticksPerFrame(seq.settings), include_linked: false }, t('Nudge'))
+}
+def('edit.nudgeLeft', t('Nudge Left'), nudge(-1))
+def('edit.nudgeRight', t('Nudge Right'), nudge(1))
+def('edit.nudgeLeft5', t('Nudge Left 5 Frames'), nudge(-5))
+def('edit.nudgeRight5', t('Nudge Right 5 Frames'), nudge(5))
 def('edit.pasteInsert', t('Paste Insert'), () => paste('insert'))
 def('edit.pasteAttributes', t('Paste Attributes...'), () => {
   const seq = activeSequence()

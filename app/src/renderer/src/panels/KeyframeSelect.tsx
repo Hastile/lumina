@@ -110,6 +110,8 @@ export function keyframeMouseDown(e: React.MouseEvent, c: ClipCtx, key: string, 
   const grabbed = seqTimeOf(c.clip, Number(key.slice(key.lastIndexOf('@') + 1)))
   const els = [...panel.querySelectorAll<HTMLElement>('[data-kf]')].filter((el) => keys.includes(el.dataset.kf!))
   const x0 = e.clientX
+  const timeOf = (k: string) => seqTimeOf(c.clip, Number(k.slice(k.lastIndexOf('@') + 1)))
+  if (e.altKey && keys.length >= 2) return scaleDrag(c, keys, grabbed, els, panel, perPx, tpf, x0, timeOf)
   let d = 0
   const move = (ev: MouseEvent) => {
     d = Math.round(((ev.clientX - x0) * perPx) / tpf) * tpf
@@ -134,6 +136,103 @@ export function keyframeMouseDown(e: React.MouseEvent, c: ClipCtx, key: string, 
   }
   window.addEventListener('mousemove', move)
   window.addEventListener('mouseup', up)
+}
+
+/** Alt-drag a selected keyframe (After Effects): the selection stretches or squeezes in time around
+ * the selected keyframe farthest from the one grabbed. */
+function scaleDrag(c: ClipCtx, keys: string[], grabbed: number, els: HTMLElement[], panel: HTMLElement, perPx: number, tpf: number, x0: number, timeOf: (k: string) => number): void {
+  const times = keys.map(timeOf)
+  const lo = Math.min(...times)
+  const hi = Math.max(...times)
+  const pivot = Math.abs(grabbed - lo) > Math.abs(grabbed - hi) ? lo : hi
+  const span = grabbed - pivot
+  if (!span) return
+  let factor = 1
+  const move = (ev: MouseEvent) => {
+    const d = Math.round(((ev.clientX - x0) * perPx) / tpf) * tpf
+    factor = Math.max(0.01, (span + d) / span)
+    for (const el of els) el.style.translate = `${((timeOf(el.dataset.kf!) - pivot) * (factor - 1)) / perPx}px 0`
+    panel.dataset.kfscale = factor.toFixed(2)
+  }
+  const up = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+    for (const el of els) el.style.translate = ''
+    delete panel.dataset.kfscale
+    if (Math.abs(factor - 1) < 1e-6) return
+    // the selection follows its keyframes (the engine's frame snapping, in source ticks)
+    const step = tpf * c.clip.speed
+    const pivotSrc = c.clip.source_in + (pivot - c.clip.start) * c.clip.speed
+    const moved = keys.map((k) => {
+      const t0 = Number(k.slice(k.lastIndexOf('@') + 1))
+      const nt = pivotSrc + (t0 - pivotSrc) * factor
+      return `${k.slice(0, k.lastIndexOf('@'))}@${Math.round(c.clip.source_in + Math.round((nt - c.clip.source_in) / step) * step)}`
+    })
+    void exec('keyframes.scale', { sequence_id: c.seq.id, clip_id: c.clip.id, targets: selectionTargets(keys), pivot: Math.round(pivot), factor }, t('Scale Keyframes')).then((r) => {
+      if (r) set({ kfSel: { clipId: c.clip.id, keys: moved } })
+    })
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
+}
+
+// ---------------------------------------------------------------- copy / paste / nudge
+
+type CopiedProperty = { prop?: KeyframeProp; effect_type?: string; param?: string; keyframes: Record<string, unknown>[] }
+let kfClipboard: CopiedProperty[] = []
+
+/** Ctrl+C in Effect Controls with keyframes selected: copy them (times relative to the earliest). */
+export function copySelectedKeyframes(): boolean {
+  const s = get()
+  const sel = s.kfSel
+  if (!sel?.keys.length || s.focusedPanel !== 'effectControls') return false
+  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const clip = seq && Object.values(seq.tracks).map((tr) => tr.clips[sel.clipId]).find(Boolean)
+  if (!clip) return false
+  const targets = selectionTargets(sel.keys)
+  const all = targets.flatMap((tg) => tg.times.map((x) => seqTimeOf(clip, x)))
+  const first = Math.min(...all)
+  kfClipboard = targets.map((tg) => {
+    const kfs = ('prop' in tg ? clip.keyframes[tg.prop] : clip.effects?.find((e) => e.id === tg.effect_id)?.keyframes?.[tg.param]) as Kf[] | undefined
+    const keyframes = (kfs ?? []).filter((k) => tg.times.includes(k.t)).map((k) => ({
+      ...k,
+      t: Math.round(seqTimeOf(clip, k.t) - first),
+      // handle speeds are per source second: carry them per sequence second
+      ...(k.ease_in ? { ease_in: [k.ease_in[0] * clip.speed, k.ease_in[1]] } : {}),
+      ...(k.ease_out ? { ease_out: [k.ease_out[0] * clip.speed, k.ease_out[1]] } : {})
+    }))
+    if ('prop' in tg) return { prop: tg.prop, keyframes }
+    const fx = clip.effects?.find((e) => e.id === tg.effect_id)
+    return { effect_type: fx?.type, param: tg.param, keyframes }
+  }).filter((x) => x.keyframes.length)
+  return kfClipboard.length > 0
+}
+
+/** Ctrl+V in Effect Controls: paste copied keyframes at the playhead into the same properties. */
+export function pasteKeyframes(): boolean {
+  const s = get()
+  if (s.focusedPanel !== 'effectControls' || !kfClipboard.length) return false
+  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const clipId = s.selectedClips[0]
+  if (!seq || !clipId) return false
+  void exec('keyframes.paste', { sequence_id: seq.id, clip_id: clipId, at: s.programTime, properties: kfClipboard }, t('Paste Keyframes'))
+  return true
+}
+
+/** Alt+Left / Alt+Right in Effect Controls: nudge the selected keyframes by frames. */
+export function nudgeSelectedKeyframes(frames: number): boolean {
+  const s = get()
+  const sel = s.kfSel
+  if (!sel?.keys.length || s.focusedPanel !== 'effectControls') return false
+  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const clip = seq && Object.values(seq.tracks).map((tr) => tr.clips[sel.clipId]).find(Boolean)
+  if (!seq || !clip) return false
+  const d = frames * ticksPerFrame(seq.settings)
+  const ds = Math.round(d * clip.speed)
+  void exec('keyframes.move', { sequence_id: seq.id, clip_id: clip.id, targets: selectionTargets(sel.keys), delta: d }, t('Move Keyframes')).then((r) => {
+    if (r) set({ kfSel: { clipId: clip.id, keys: sel.keys.map((k) => `${k.slice(0, k.lastIndexOf('@'))}@${Number(k.slice(k.lastIndexOf('@') + 1)) + ds}`) } })
+  })
+  return true
 }
 
 /** Mouse down on an empty lane: rubber-band selection over every visible keyframe. */
