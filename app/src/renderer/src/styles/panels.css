@@ -393,9 +393,12 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-tl-pane { position: absolute; inset: 0; pointer-events: none; }
 .lm-tl-pane > * { pointer-events: auto; }
 .lm-tl-vbars { flex: none; position: relative; background: var(--bg-panel); }
-.lm-tl-vbar { position: absolute; left: 0; right: 0; overflow-y: auto; overflow-x: hidden; }
-.lm-tl-vbar::-webkit-scrollbar { width: 8px; }
-.lm-tl-vbar::-webkit-scrollbar-thumb { background: #555; border-radius: 4px; }
+.lm-tl-vbar { position: absolute; left: 0; right: 0; background: #1b1b1b; }
+.lm-tl-vbar .thumb { position: absolute; left: 1px; right: 1px; background: #4a4a4a; border-radius: 5px; cursor: grab; }
+.lm-tl-vbar .thumb:hover { background: #5a5a5a; }
+.lm-tl-vbar .knob { position: absolute; left: 0; width: 8px; height: 8px; border-radius: 50%; background: #9a9a9a; cursor: ns-resize; }
+.lm-tl-vbar .knob.t { top: 0; }
+.lm-tl-vbar .knob.b { bottom: 0; }
 .lm-tl-divider { position: absolute; left: 0; right: 0; background: #151515; border-top: 1px solid #333; border-bottom: 1px solid #333; cursor: row-resize; z-index: 6; box-sizing: border-box; }
 .lm-tl-divider:hover { background: #2a3c50; }
 .lm-tl-zoombar { position: relative; height: 14px; flex: none; background: #1b1b1b; }

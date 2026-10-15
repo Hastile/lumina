@@ -1091,7 +1091,12 @@ try {
     await dragBy('[data-knob="end"]', -60, 0)
     const pps1 = await page.evaluate(() => window.__lumina.get().pxPerSecond)
     assert.ok(pps1 > pps0 * 1.05, `zoom knob zoomed in (${pps0} -> ${pps1})`)
-    await page.evaluate(() => { localStorage.removeItem('lumina.trackHeights'); localStorage.removeItem('lumina.tlSplit') })
+    // the audio area's vertical zoom bar: dragging its bottom knob up makes every audio track taller
+    const a2 = '.lm-th.audio:has([data-track-resize="A2"])'
+    const a2h = (await box(a2)).height
+    await dragBy('[data-vknob="audio-end"]', 0, -20)
+    assert.ok((await box(a2)).height > a2h * 1.1, `audio zoom knob made A2 taller (${a2h} -> ${(await box(a2)).height})`)
+    await page.evaluate(() => { localStorage.removeItem('lumina.trackHeights'); localStorage.removeItem('lumina.tlSplit'); localStorage.removeItem('lumina.tlVZoom') })
     log('track areas: A1', h0, '->', h1, 'px; divider', Math.round(d0 - d1), 'px up; audio area scrolls alone; zoom knob', pps0.toFixed(1), '->', pps1.toFixed(1), 'px/s')
   }
   // ---- File > Save As remembers the project; File > Open starts in that folder; Open Recent reopens it

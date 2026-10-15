@@ -132,11 +132,15 @@ type Layout = { rows: Row[]; videoH: number; audioTop: number; audioH: number; v
 /** Premiere's two track areas: video above the divider with V1 against it (scrolling up reveals the
  * higher tracks), audio below it with A1 against it; each scrolls on its own. Row tops are in the
  * body's coordinates. */
-function buildRows(seq: Sequence, heights: Record<string, number>, bodyH: number, split: number, vScroll: number, aScroll: number): Layout {
+type Kind = 'video' | 'audio'
+const clampH = (h: number) => Math.round(Math.max(MIN_TRACK_H, Math.min(MAX_TRACK_H, h)))
+
+function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<Kind, number>, bodyH: number, split: number, vScroll: number, aScroll: number): Layout {
   const videoH = Math.max(0, Math.min(bodyH - SECTION_GAP, Math.round(bodyH * split)))
   const audioTop = videoH + SECTION_GAP
   const audioH = Math.max(0, bodyH - audioTop)
-  const hOf = (id: string, kind: 'video' | 'audio') => heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)
+  // a track's own height times its area's zoom (the vertical zoom bar's knobs)
+  const hOf = (id: string, kind: Kind) => clampH((heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)) * zoom[kind])
   const vContent = seq.video_tracks.reduce((a, id) => a + hOf(id, 'video'), 0)
   const aContent = seq.audio_tracks.reduce((a, id) => a + hOf(id, 'audio'), 0)
   // like Premiere there is room past the outermost track: video scrolls until its top track sits on the
@@ -209,12 +213,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   const lanesRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
-  const vbarRef = useRef<HTMLDivElement>(null)
-  const abarRef = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(800)
   const [bodyH, setBodyH] = useState(300)
   const [heights, setHeights] = useState<Record<string, number>>(() => loadJson('lumina.trackHeights', {}))
   const [split, setSplit] = useState<number>(() => loadJson('lumina.tlSplit', 0.5))
+  const [zoom, setZoom] = useState<Record<Kind, number>>(() => loadJson('lumina.tlVZoom', { video: 1, audio: 1 }))
   const [vScroll, setVScroll] = useState(0)
   const [aScroll, setAScroll] = useState(0)
   const [drag, setDrag] = useState<Drag | null>(null)
@@ -232,7 +235,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return () => ro.disconnect()
   }, [seq.id])
 
-  const layout = useMemo(() => buildRows(seq, heights, bodyH, split, vScroll, aScroll), [seq, heights, bodyH, split, vScroll, aScroll])
+  const layout = useMemo(() => buildRows(seq, heights, zoom, bodyH, split, vScroll, aScroll), [seq, heights, zoom, bodyH, split, vScroll, aScroll])
   const end = sequenceEnd(seq)
   const contentW = Math.max(width, ((end / TICKS_PER_SECOND) + 30) * pps)
   const toX = useCallback((t: number) => (t / TICKS_PER_SECOND) * pps - scrollX, [pps, scrollX])
@@ -256,18 +259,16 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return () => window.removeEventListener('timeline:zoomFit', fit)
   }, [width])
 
-  // the native scrollbars of the two track areas follow the scroll offsets (video's is measured from V1)
-  useEffect(() => {
-    const v = vbarRef.current
-    if (v && Math.abs(v.scrollTop - (layout.vMax - layout.vScroll)) > 1) v.scrollTop = layout.vMax - layout.vScroll
-    const a = abarRef.current
-    if (a && Math.abs(a.scrollTop - layout.aScroll) > 1) a.scrollTop = layout.aScroll
-  }, [layout.vMax, layout.vScroll, layout.aScroll])
-
-  const resizeTrack = (id: string, h: number, commit: boolean) => {
-    const next = { ...heights, [id]: Math.round(Math.max(MIN_TRACK_H, Math.min(MAX_TRACK_H, h))) }
+  // h is the height on screen; the stored height is before the area's zoom
+  const resizeTrack = (id: string, kind: Kind, h: number, commit: boolean) => {
+    const next = { ...heights, [id]: Math.round(clampH(h) / zoom[kind]) }
     setHeights(next)
     if (commit) saveJson('lumina.trackHeights', next)
+  }
+  const zoomArea = (kind: Kind, z: number, commit: boolean) => {
+    const next = { ...zoom, [kind]: Math.max(0.3, Math.min(6, z)) }
+    setZoom(next)
+    if (commit) saveJson('lumina.tlVZoom', next)
   }
   const dragDivider = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -525,7 +526,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     if (e.altKey && overHeaders) {
       // Alt+wheel over a track header: that track's height (Premiere)
       const r = rows[rowAt(y)]
-      if (r) resizeTrack(r.track.id, r.height + (e.deltaY < 0 ? 6 : -6), true)
+      if (r) resizeTrack(r.track.id, r.kind, r.height + (e.deltaY < 0 ? 6 : -6), true)
     } else if (e.altKey || e.ctrlKey) {
       const { x } = laneXY(e)
       const tSec = (x + scrollX) / pps
@@ -829,7 +830,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {(['video', 'audio'] as const).map((k) => (
             <div key={k} className="lm-tl-pane" style={{ clipPath: k === 'video' ? vClip : aClip }}>
               {rows.filter((r) => r.kind === k).map((r) => (
-                <TrackHeader key={r.track.id} row={r} seq={seq} onResize={(h, commit) => resizeTrack(r.track.id, h, commit)} />
+                <TrackHeader key={r.track.id} row={r} seq={seq} onResize={(h, commit) => resizeTrack(r.track.id, r.kind, h, commit)} />
               ))}
             </div>
           ))}
@@ -865,16 +866,52 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
         </div>
         <div className="lm-tl-vbars" style={{ width: VBAR_W }}>
-          <div className="lm-tl-vbar" data-vbar="video" ref={vbarRef} style={{ top: 0, height: layout.videoH }} onScroll={(e) => setVScroll(layout.vMax - (e.target as HTMLDivElement).scrollTop)}>
-            <div style={{ height: layout.videoH + layout.vMax }} />
-          </div>
-          <div className="lm-tl-vbar" data-vbar="audio" ref={abarRef} style={{ top: layout.audioTop, height: layout.audioH }} onScroll={(e) => setAScroll((e.target as HTMLDivElement).scrollTop)}>
-            <div style={{ height: layout.audioH + layout.aMax }} />
-          </div>
+          <VZoomBar kind="video" top={0} pane={layout.videoH} max={layout.vMax} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
+          <VZoomBar kind="audio" top={layout.audioTop} pane={layout.audioH} max={layout.aMax} pos={layout.aScroll} onPos={setAScroll} zoom={zoom.audio} onZoom={(z, c) => zoomArea('audio', z, c)} />
         </div>
         <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
       </div>
       <ZoomBar width={width} contentW={contentW} pps={pps} scrollX={scrollX} end={end} />
+    </div>
+  )
+}
+
+/** A track area's vertical zoom scroll bar (Premiere): drag the thumb to scroll, its round ends to make
+ * every track of the area taller or shorter. pos is the scroll offset from the top of the bar. */
+function VZoomBar(p: { kind: Kind; top: number; pane: number; max: number; pos: number; onPos: (v: number) => void; zoom: number; onZoom: (z: number, commit: boolean) => void }) {
+  const total = Math.max(1, p.pane + p.max)
+  const H = Math.max(1, p.pane)
+  const len = Math.max(24, Math.min(H, (p.pane / total) * H))
+  const top = Math.min(H - len, (p.pos / total) * H)
+  const grab = (e: React.MouseEvent, part: 'thumb' | 'start' | 'end') => {
+    e.preventDefault()
+    e.stopPropagation()
+    const [y0, pos0, z0, l0] = [e.clientY, p.pos, p.zoom, len]
+    const at = (ev: MouseEvent) => {
+      const dy = ev.clientY - y0
+      if (part === 'thumb') return p.onPos(Math.max(0, Math.min(p.max, pos0 + (dy * total) / H)))
+      const l = Math.max(8, part === 'start' ? l0 - dy : l0 + dy)
+      return z0 * (l0 / l)
+    }
+    const move = (ev: MouseEvent) => {
+      const z = at(ev)
+      if (typeof z === 'number') p.onZoom(z, false)
+    }
+    const up = (ev: MouseEvent) => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+      const z = at(ev)
+      if (typeof z === 'number') p.onZoom(z, true)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+  }
+  return (
+    <div className="lm-tl-vbar" data-vbar={p.kind} style={{ top: p.top, height: p.pane }}>
+      <div className="thumb" style={{ top, height: len }} onMouseDown={(e) => grab(e, 'thumb')} onDoubleClick={() => p.onZoom(1, true)}>
+        <span className="knob t" data-vknob={`${p.kind}-start`} onMouseDown={(e) => grab(e, 'start')} />
+        <span className="knob b" data-vknob={`${p.kind}-end`} onMouseDown={(e) => grab(e, 'end')} />
+      </div>
     </div>
   )
 }
