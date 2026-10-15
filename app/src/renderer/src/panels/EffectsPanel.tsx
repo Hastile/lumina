@@ -1,15 +1,44 @@
 // Effects panel: Premiere's folder tree of presets, effects and transitions.
 // Drag an effect onto a clip (timeline or Effect Controls) or a transition onto
 // an edit point; double-click applies to the selection / the playhead.
-import { useState } from 'react'
-import { ChevronDown, ChevronRight, Folder, Search, Sparkles, SquareSplitHorizontal } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import { ChevronDown, ChevronRight, Download, Folder, Search, Sparkles, SquareSplitHorizontal, Wand2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { activeSequence, get, toast, useStore } from '../state/store'
 import { EFFECTS, TRANSITIONS } from '../util/effects'
 
 export const EFFECT_MIME = 'application/x-lumina-effect'
-export type EffectDrag = { kind: 'effect' | 'transition'; type: string }
+export type EffectDrag = { kind: 'effect' | 'transition' | 'preset'; type: string }
+type Preset = { id: string; name: string; folder: string[] }
+
+/** Presets folder tree from the library (engine presets.list). */
+function presetNodes(presets: Preset[]): (Node | Leaf)[] {
+  const root: Node = { label: 'Presets', children: [] }
+  for (const p of [...presets].sort((a, b) => [...a.folder, a.name].join('/').localeCompare([...b.folder, b.name].join('/')))) {
+    let node = root
+    for (const f of p.folder) {
+      let next = node.children.find((c): c is Node => !isLeaf(c) && c.label === f)
+      if (!next) {
+        next = { label: f, children: [] }
+        node.children.push(next)
+      }
+      node = next
+    }
+    node.children.push({ id: `preset:${p.id}`, label: p.name, drag: { kind: 'preset', type: p.id } })
+  }
+  return root.children
+}
+
+export async function importPremierePresets(): Promise<void> {
+  try {
+    const r = await engine.call<{ imported: number; skipped: string[]; path: string }>('presets.import_premiere', {})
+    toast(`${t('Imported Premiere presets')}: ${r.imported}${r.skipped.length ? ` (${t('skipped')} ${r.skipped.length})` : ''}`, 'info')
+    window.dispatchEvent(new Event('lumina:presets'))
+  } catch (err) {
+    toast(err instanceof Error ? err.message : String(err))
+  }
+}
 
 type Leaf = { id: string; label: string; drag: EffectDrag }
 type Node = { label: string; children: (Node | Leaf)[] }
@@ -23,8 +52,7 @@ const group = (kind: 'effect' | 'transition', entries: [string, { label: string;
   return [...cats].map(([label, children]) => ({ label, children }))
 }
 
-const TREE: Node[] = [
-  { label: 'Presets', children: [] },
+const BUILTIN: Node[] = [
   { label: 'Lumetri Presets', children: [] },
   { label: 'Audio Effects', children: [] },
   { label: 'Audio Transitions', children: group('transition', Object.entries(TRANSITIONS).filter(([, d]) => d.kind === 'audio')) },
@@ -32,7 +60,9 @@ const TREE: Node[] = [
   { label: 'Video Transitions', children: group('transition', Object.entries(TRANSITIONS).filter(([, d]) => d.kind === 'video')) }
 ]
 
-const isLeaf = (n: Node | Leaf): n is Leaf => 'drag' in n
+function isLeaf(n: Node | Leaf): n is Leaf {
+  return 'drag' in n
+}
 
 /** Double-click: effects go on the selected video clips, transitions on the edit point nearest the playhead. */
 export async function applyFromPanel(drag: EffectDrag): Promise<void> {
@@ -40,6 +70,12 @@ export async function applyFromPanel(drag: EffectDrag): Promise<void> {
   const seq = activeSequence(s)
   if (!seq) return toast(t('No sequence is open'), 'info')
   try {
+    if (drag.kind === 'preset') {
+      const ids = s.selectedClips.filter((id) => seq.video_tracks.some((tid) => seq.tracks[tid].clips[id]))
+      if (!ids.length) return toast(t('Select a clip first'), 'info')
+      await engine.exec('effect.apply_preset', { sequence_id: seq.id, clip_ids: ids, preset_id: drag.type }, t('Apply Preset'))
+      return
+    }
     if (drag.kind === 'effect') {
       const ids = s.selectedClips.filter((id) => seq.video_tracks.some((tid) => seq.tracks[tid].clips[id]))
       if (!ids.length) return toast(t('Select a clip first'), 'info')
@@ -64,7 +100,16 @@ export async function applyFromPanel(drag: EffectDrag): Promise<void> {
 
 export function EffectsPanel() {
   const [q, setQ] = useState('')
-  const [open, setOpen] = useState<Set<string>>(new Set(['Video Effects', 'Video Transitions']))
+  const [open, setOpen] = useState<Set<string>>(new Set(['Presets', 'Video Effects', 'Video Transitions']))
+  const [presets, setPresets] = useState<Preset[]>([])
+  const refresh = useCallback(() => void engine.call<Preset[]>('presets.list', {}).then(setPresets).catch(() => undefined), [])
+  const connected = useStore((s) => s.connected)
+  useEffect(() => {
+    if (connected) refresh()
+    window.addEventListener('lumina:presets', refresh)
+    return () => window.removeEventListener('lumina:presets', refresh)
+  }, [refresh, connected])
+  const TREE: Node[] = [{ label: 'Presets', children: presetNodes(presets) }, ...BUILTIN]
   useStore((s) => s.selectedClips) // re-render for selection-dependent hints
   const query = q.trim().toLowerCase()
   const matches = (l: Leaf) => !query || t(l.label).toLowerCase().includes(query) || l.label.toLowerCase().includes(query)
@@ -72,7 +117,7 @@ export function EffectsPanel() {
   const render = (n: Node | Leaf, depth: number, path: string): React.ReactNode => {
     if (isLeaf(n)) {
       if (!matches(n)) return null
-      const Icon = n.drag.kind === 'effect' ? Sparkles : SquareSplitHorizontal
+      const Icon = n.drag.kind === 'effect' ? Sparkles : n.drag.kind === 'preset' ? Wand2 : SquareSplitHorizontal
       return (
         <div
           key={n.id}
@@ -123,6 +168,9 @@ export function EffectsPanel() {
           <Search size={13} />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="" />
         </div>
+        <button className="lm-iconbtn" title={t('Import Premiere Presets')} data-import-presets onClick={() => void importPremierePresets()}>
+          <Download size={13} />
+        </button>
       </div>
       <div className="lm-tree lm-fxtree">{TREE.map((n) => render(n, 0, ''))}</div>
     </div>

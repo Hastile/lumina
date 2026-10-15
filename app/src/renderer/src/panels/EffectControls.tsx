@@ -115,6 +115,7 @@ export function EffectControlsPanel() {
         if (!raw) return
         const item = JSON.parse(raw) as { kind: string; type: string }
         if (item.kind === 'effect' && c.kind === 'video') void exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, t('Apply Effect'))
+        if (item.kind === 'preset' && c.kind === 'video') void exec('effect.apply_preset', { sequence_id: seq.id, clip_ids: [clip.id], preset_id: item.type }, t('Apply Preset'))
       }}
     >
       <div className="lm-ec-title">

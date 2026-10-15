@@ -335,9 +335,10 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       const at = toT(x)
       const clip = r && Object.values(r.track.clips).find((c) => c.start <= at && at < c.end)
       if (!r || !clip) return toast(tx('Drop onto a clip'), 'info')
-      if (item.kind === 'effect') {
+      if (item.kind === 'effect' || item.kind === 'preset') {
         if (r.kind !== 'video') return toast(tx('Video effects go on video clips'), 'info')
-        await exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, tx('Apply Effect'))
+        if (item.kind === 'preset') await exec('effect.apply_preset', { sequence_id: seq.id, clip_ids: [clip.id], preset_id: item.type }, tx('Apply Preset'))
+        else await exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, tx('Apply Effect'))
       } else {
         const edge = at - clip.start < clip.end - at ? 'start' : 'end'
         await exec('transition.add', { sequence_id: seq.id, clip_id: clip.id, edge, type: item.type }, tx('Apply Transition'))

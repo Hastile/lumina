@@ -15,6 +15,7 @@ from . import timebase
 from .commands.registry import REGISTRY, CommandError
 from .media import probe as probe_mod
 from .media.jobs import JobRunner
+from . import presets as presets_mod
 from .render import export as export_mod
 from .session import Session
 
@@ -48,6 +49,9 @@ class Engine:
             "timeline.state": lambda p: views.timeline_state(self.session.doc, p.get("sequence_id")),
             "jobs.list": lambda p: self.jobs.list() + self.exports.list(),
             "export.presets": lambda p: export_mod.presets(),
+            "presets.list": lambda p: presets_mod.load(),
+            "presets.import_premiere": lambda p: presets_mod.import_premiere(p.get("path")),
+            "presets.remove": lambda p: {"removed": presets_mod.remove(p["preset_id"])},
             "export.start": self._export_start,
             "export.cancel": lambda p: self.exports.cancel(p["job_id"]),
             "export.frame": self._export_frame,

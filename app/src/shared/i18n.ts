@@ -313,7 +313,12 @@ const ko: Record<string, string> = {
   'Bring Forward': '앞으로 가져오기',
   'Send Backward': '뒤로 보내기',
   'Arrange': '정렬',
-  'Size': '크기'
+  'Size': '크기',
+  // presets
+  'Import Premiere Presets': '프리미어 사전 설정 가져오기',
+  'Imported Premiere presets': '프리미어 사전 설정을 가져왔습니다',
+  'skipped': '건너뜀',
+  'Apply Preset': '사전 설정 적용'
 }
 
 let locale: Locale = 'ko'

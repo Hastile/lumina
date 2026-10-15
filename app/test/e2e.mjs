@@ -3,7 +3,7 @@
 //   npm run build && node test/e2e.mjs [screenshot.png]
 import { _electron as electron } from 'playwright'
 import { join, resolve } from 'node:path'
-import { existsSync, mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import assert from 'node:assert/strict'
 
@@ -11,7 +11,14 @@ const SAMPLE = resolve('../samples/test30.mp4')
 const shot = process.argv[2]
 const TPS = 254016000000
 
-const app = await electron.launch({ args: ['.'], env: { ...process.env } })
+// an isolated preset library holding one Transform preset (scale 70 -> 100 over 0.2 s, anchored to the in point)
+const PRESETS = join(mkdtempSync(join(tmpdir(), 'lumina-presets-')), 'presets.json')
+writeFileSync(PRESETS, JSON.stringify({ version: 1, presets: [{
+  id: 'e2e-pop', name: '팝인', folder: ['쇼츠'], type: 'anchor_in', anchor_in: 0, anchor_out: TPS, speed: 1,
+  effects: [{ type: 'transform', enabled: true, params: { position: [0.5, 0.5], anchor: [0.5, 0.5], scale: 70 },
+    keyframes: { scale: [{ t: 0, v: 70, interp: 'bezier', ease_out: [0, 1 / 3] }, { t: TPS / 5, v: 100, interp: 'bezier', ease_in: [0, 1 / 3] }] } }]
+}] }))
+const app = await electron.launch({ args: ['.'], env: { ...process.env, LUMINA_PRESETS: PRESETS } })
 const page = await app.firstWindow()
 const log = (...a) => console.log('·', ...a)
 const state = () => page.evaluate(() => {
@@ -96,7 +103,8 @@ try {
   log('In/Out set:', (s.inPoint / TPS).toFixed(3), '-', (s.outPoint / TPS).toFixed(3))
   const before = s.video.at(-1)[1]
   await page.keyboard.press("'")
-  s = await until((s) => s.video.at(-1)[1] < before, 'extract')
+  // the document patch and the history label arrive as separate events
+  s = await until((s) => s.video.at(-1)[1] < before && s.undo === 'Extract', 'extract')
   log('Extract removed', ((before - s.video.at(-1)[1]) / TPS).toFixed(3), 's; undo label:', s.undo)
   assert.equal(s.undo, 'Extract', 'extract + clear marks is one undo step')
 
@@ -249,7 +257,14 @@ try {
   // ---- shapes: Rectangle tool drag in the Program monitor, Ctrl+Alt+R adds to the selected graphic, eye toggle
   await page.keyboard.press('Home')
   await page.evaluate(() => window.__lumina.set({ selectedClips: [], tool: 'rectangle' }))
-  const sbox = await page.locator('.lm-stage').boundingBox()
+  // panel switches above relayout the monitor: wait until the stage stops moving
+  let sbox = await page.locator('.lm-stage').boundingBox()
+  for (let i = 0; i < 20; i++) {
+    await page.waitForTimeout(100)
+    const nb = await page.locator('.lm-stage').boundingBox()
+    if (JSON.stringify(nb) === JSON.stringify(sbox)) break
+    sbox = nb
+  }
   await page.mouse.move(sbox.x + sbox.width * 0.1, sbox.y + sbox.height * 0.6)
   await page.mouse.down()
   await page.mouse.move(sbox.x + sbox.width * 0.3, sbox.y + sbox.height * 0.9, { steps: 6 })
@@ -321,6 +336,26 @@ try {
   assert.equal(cutProbe.notReady, 0, `frames waiting on video at cuts: ${JSON.stringify(cutProbe)}`)
   assert.equal(cutProbe.seeks, 0, `seeks while playing: ${JSON.stringify(cutProbe)}`)
   log('playback across 3 cuts: no frame waited on a load or seek', cutProbe.frames, 'frames')
+
+  // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip
+  const pclip = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    return Object.values(seq.tracks[seq.video_tracks[0]].clips).sort((a, b) => a.start - b.start)[0]
+  })
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), pclip.id)
+  await page.keyboard.press('Shift+7')
+  await page.locator('.lm-panel .lm-search input').last().fill('팝인')
+  await page.locator('[data-effect-item="preset:e2e-pop"]').dblclick()
+  const pfx = await page.waitForFunction((id) => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean)
+    return c.effects.find((f) => f.keyframes?.scale) ?? null
+  }, pclip.id, { timeout: 10000 }).then((h) => h.jsonValue())
+  assert.equal(pfx.keyframes.scale[0].t, pclip.source_in, 'anchored to the clip in point')
+  assert.equal(pfx.keyframes.scale[0].interp, 'bezier')
+  log('preset from the Presets folder applied with Bezier keyframes at the clip start')
 
   if (shot) await page.screenshot({ path: shot })
   log('PASS')

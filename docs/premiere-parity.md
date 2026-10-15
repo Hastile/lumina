@@ -80,6 +80,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Item | Status |
 |---|---|
 | Effects panel tree (Video Effects > Distort > Transform, Blur & Sharpen > Gaussian Blur; Video/Audio Transitions), search, drag onto a clip or edit point, double-click to apply | ✓ |
+| Presets folder: user effect presets imported from Premiere's profile (.prfpset), keyframes anchored to in/out point or scaled as saved; drag or double-click to apply | ✓ (presets of effects Lumina doesn't render are skipped) |
 | Effect Controls: effect groups with fx on/off, delete, keyframes (stopwatch / navigator / lane) per parameter | ✓ |
 | Ctrl+D / Ctrl+Shift+D / Shift+D default transitions; transitions drawn on the timeline, select + Delete, Set Transition Duration... | ✓ |
 | Transitions follow trims; removed when their edit point disappears (same undo step) | ✓ |

@@ -93,6 +93,36 @@ def effect_add(ctx: Context, p: AddEffect):
     return {"effect_ids": ids}
 
 
+class ApplyPreset(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] = Field(min_length=1)
+    preset_id: str = Field(description="an id from presets.list (the Effects panel's Presets folder)")
+
+
+@command("effect.apply_preset", ApplyPreset)
+def effect_apply_preset(ctx: Context, p: ApplyPreset):
+    """Apply an effect preset: its effects are appended with keyframes fitted to each clip
+    (anchored to the clip's in or out point, or scaled to its length, as saved)."""
+    from .. import presets
+
+    preset = presets.get(p.preset_id)
+    if preset is None:
+        raise CommandError("NO_PRESET", f"preset not found: {p.preset_id}")
+    ids = []
+    for cid in p.clip_ids:
+        seq, tid, clip, media = _ctx(ctx, p.sequence_id, cid)
+        if seq["tracks"][tid]["kind"] != "video":
+            raise CommandError("NOT_VIDEO", "effect presets go on video clips")
+        w, h = source_size(clip, seq, media)
+        added = []
+        for fx in presets.fit(preset, clip, w, h):
+            fx["params"] = {**default_params(fx["type"], w, h), **fx["params"]}
+            added.append(fx)
+        ctx.m.set(_effects_path(seq, tid, clip), list(clip.get("effects") or []) + added)
+        ids += [fx["id"] for fx in added]
+    return {"effect_ids": ids}
+
+
 class EffectRef(Params):
     sequence_id: str | None = None
     clip_id: str
