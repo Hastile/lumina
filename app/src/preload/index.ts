@@ -4,8 +4,14 @@ export type EngineInfo = { host: string; port: number; token: string; pid: numbe
 
 const api = {
   engineInfo: (): Promise<{ ok: true; info: EngineInfo } | { ok: false; error: string }> => ipcRenderer.invoke('engine:info'),
-  openDialog: (opts: Electron.OpenDialogOptions): Promise<string[]> => ipcRenderer.invoke('dialog:open', opts),
-  saveDialog: (opts: Electron.SaveDialogOptions): Promise<string | null> => ipcRenderer.invoke('dialog:save', opts),
+  // purpose: 'project' | 'import' | 'export' - the dialog starts in that purpose's last folder
+  openDialog: (opts: Electron.OpenDialogOptions, purpose = 'any'): Promise<string[]> => ipcRenderer.invoke('dialog:open', opts, purpose),
+  saveDialog: (opts: Electron.SaveDialogOptions, purpose = 'any'): Promise<string | null> => ipcRenderer.invoke('dialog:save', opts, purpose),
+  addRecent: (path: string): Promise<void> => ipcRenderer.invoke('recent:add', path),
+  removeRecent: (path: string): Promise<void> => ipcRenderer.invoke('recent:remove', path),
+  recentProjects: (): Promise<string[]> => ipcRenderer.invoke('recent:list'),
+  lastDir: (purpose: string): Promise<string | null> => ipcRenderer.invoke('recent:lastDir', purpose),
+  setLastDir: (purpose: string, dir: string): Promise<void> => ipcRenderer.invoke('recent:setDir', purpose, dir),
   setTitle: (title: string): Promise<void> => ipcRenderer.invoke('window:setTitle', title),
   setLocale: (locale: 'ko' | 'en'): Promise<void> => ipcRenderer.invoke('app:setLocale', locale),
   onMenuAction: (fn: (action: string) => void): (() => void) => {

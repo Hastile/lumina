@@ -1,7 +1,7 @@
 // Premiere Pro default keyboard shortcuts (Windows), mapped to action ids.
 // docs/premiere-parity.md tracks coverage.
 
-import { runAction } from './actions'
+import { openProjectPath, runAction } from './actions'
 
 export const DEFAULT_KEYMAP: Record<string, string> = {
   // File
@@ -123,7 +123,10 @@ export function installKeymap(keymap: Record<string, string> = DEFAULT_KEYMAP): 
     runAction(action)
   }
   window.addEventListener('keydown', onKey, true)
-  const off = window.lumina.onMenuAction((id) => runAction(id))
+  const off = window.lumina.onMenuAction((id) => {
+    if (id.startsWith('file.openRecent:')) return void openProjectPath(id.slice('file.openRecent:'.length), true)
+    runAction(id)
+  })
   return () => {
     window.removeEventListener('keydown', onKey, true)
     off()

@@ -38,7 +38,7 @@ export function ExportDialog() {
     setRange(seq.in_point != null && seq.out_point != null ? 'in_out' : 'entire')
     void (async () => {
       setPresets((await call<Preset[]>('export.presets')) ?? [])
-      setDir(lastDir ?? (projectPath ? dirOf(projectPath) : await window.lumina.videosDir()))
+      setDir(lastDir ?? (await window.lumina.lastDir('export')) ?? (projectPath ? dirOf(projectPath) : await window.lumina.videosDir()))
       const f = await call<{ path: string }>('export.frame', { sequence_id: seq.id, time: get().programTime, max_size: 640 })
       setPreview(f ? `${mediaUrl(f.path)}?v=${Date.now()}` : null)
     })()
@@ -72,6 +72,7 @@ export function ExportDialog() {
   }
   const start = async () => {
     lastDir = dir
+    void window.lumina.setLastDir('export', dir)
     close()
     try {
       await engine.call('export.start', { sequence_id: seq.id, path, preset, range, hardware: hardware ? 'auto' : 'off' })
@@ -219,9 +220,10 @@ export async function exportFrame(): Promise<void> {
   const seq = activeSequence(get())
   if (!seq) return toast(t('No sequence is open'), 'info')
   const tc = timecode(get().programTime, seq.settings).replace(/[:;]/g, '')
+  const dir = lastDir ?? (await window.lumina.lastDir('export')) ?? (await window.lumina.videosDir())
   const target = await window.lumina.saveDialog({
     title: t('Export Frame...'),
-    defaultPath: `${lastDir ?? (await window.lumina.videosDir())}${sep(lastDir ?? '\\')}${safeName(seq.name)}_${tc}.png`,
+    defaultPath: `${dir}${sep(dir)}${safeName(seq.name)}_${tc}.png`,
     filters: [
       { name: 'PNG', extensions: ['png'] },
       { name: 'JPEG', extensions: ['jpg'] }

@@ -67,8 +67,8 @@ async function saveAs(): Promise<void> {
     title: 'Save Project',
     defaultPath: `${doc?.name ?? 'Untitled'}.lumina`,
     filters: [{ name: 'Lumina Project', extensions: ['lumina'] }]
-  })
-  if (path) await call('project.save', { path })
+  }, 'project')
+  if (path && (await call('project.save', { path })) !== null) void window.lumina.addRecent(path)
 }
 
 const isPremiere = (p: string) => /\.prproj$/i.test(p)
@@ -76,10 +76,10 @@ const isPremiere = (p: string) => /\.prproj$/i.test(p)
 type PremiereImport = { media: number; sequences: string[]; bins: number; warnings: string[] }
 
 /** Import a Premiere project (read-only) into the open project, like Premiere's Import of a .prproj. */
-async function importPremiere(path: string, intoRoot = false): Promise<void> {
+async function importPremiere(path: string, intoRoot = false): Promise<boolean> {
   toast(`Importing ${path.split(/[\\/]/).pop()}…`, 'info')
   const res = await exec<PremiereImport>('project.import_premiere', { path, into_root: intoRoot, bin_id: intoRoot ? null : get().currentBin }, 'Import Premiere Project')
-  if (!res) return
+  if (!res) return false
   toast(`Imported ${res.sequences.length} sequence(s), ${res.media} media, ${res.bins} bin(s)`, 'info')
   if (res.warnings.length) {
     openDialog({
@@ -89,6 +89,7 @@ async function importPremiere(path: string, intoRoot = false): Promise<void> {
       onSubmit: () => undefined
     })
   }
+  return true
 }
 
 async function importFiles(paths?: string[]): Promise<void> {
@@ -102,7 +103,7 @@ async function importFiles(paths?: string[]): Promise<void> {
         { name: 'Adobe Premiere Pro Projects', extensions: ['prproj'] },
         { name: 'All Files', extensions: ['*'] }
       ]
-    }))
+    }, 'import'))
   if (!files.length) return
   for (const p of files.filter(isPremiere)) await importPremiere(p)
   const media = files.filter((p) => !isPremiere(p))
@@ -299,18 +300,25 @@ def('file.open', 'Open Project', async () => {
       { name: 'Lumina Project', extensions: ['lumina'] },
       { name: 'Adobe Premiere Pro Project (import)', extensions: ['prproj'] }
     ]
-  })
-  if (!path) return
+  }, 'project')
+  if (path) await openProjectPath(path)
+})
+
+/** Open a .lumina project, or hand off a .prproj (read-only) into a new project; remembered in File > Open Recent. */
+export async function openProjectPath(path: string, fromRecent = false): Promise<void> {
+  let ok = false
   if (isPremiere(path)) {
     // hand-off: the .prproj is only read; the result is a new, unsaved Lumina project
     const name = path.split(/[\\/]/).pop()!.replace(/\.prproj$/i, '')
-    if (!(await call('project.new', { name }))) return
-    await importPremiere(path, true)
-    return
+    if (await call('project.new', { name })) ok = await importPremiere(path, true)
+  } else {
+    const r = await call<{ recovered_patches?: number }>('project.open', { path })
+    ok = r !== null
+    if (r?.recovered_patches) toast(`Recovered ${r.recovered_patches} unsaved change(s) from the op-log`, 'info')
   }
-  const r = await call<{ recovered_patches?: number }>('project.open', { path })
-  if (r?.recovered_patches) toast(`Recovered ${r.recovered_patches} unsaved change(s) from the op-log`, 'info')
-})
+  if (ok) void window.lumina.addRecent(path)
+  else if (fromRecent) void window.lumina.removeRecent(path) // moved or deleted: drop it from the list (the error was shown)
+}
 def('file.save', t('Save'), async () => (get().path ? void (await call('project.save', {})) : saveAs()))
 def('file.saveAs', 'Save As', saveAs)
 def('file.import', 'Import', () => importFiles())

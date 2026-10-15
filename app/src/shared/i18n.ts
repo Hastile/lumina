@@ -318,7 +318,10 @@ const ko: Record<string, string> = {
   'Import Premiere Presets': '프리미어 사전 설정 가져오기',
   'Imported Premiere presets': '프리미어 사전 설정을 가져왔습니다',
   'skipped': '건너뜀',
-  'Apply Preset': '사전 설정 적용'
+  'Apply Preset': '사전 설정 적용',
+  // recent projects
+  'Open Recent': '최근 항목 열기',
+  '(none)': '(없음)'
 }
 
 let locale: Locale = 'ko'

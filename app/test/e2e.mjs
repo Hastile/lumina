@@ -18,7 +18,8 @@ writeFileSync(PRESETS, JSON.stringify({ version: 1, presets: [{
   effects: [{ type: 'transform', enabled: true, params: { position: [0.5, 0.5], anchor: [0.5, 0.5], scale: 70 },
     keyframes: { scale: [{ t: 0, v: 70, interp: 'bezier', ease_out: [0, 1 / 3] }, { t: TPS / 5, v: 100, interp: 'bezier', ease_in: [0, 1 / 3] }] } }]
 }] }))
-const app = await electron.launch({ args: ['.'], env: { ...process.env, LUMINA_PRESETS: PRESETS } })
+const WORK = mkdtempSync(join(tmpdir(), 'lumina-recent-'))
+const app = await electron.launch({ args: ['.'], env: { ...process.env, LUMINA_PRESETS: PRESETS, LUMINA_RECENT: join(WORK, 'recent.json') } })
 const page = await app.firstWindow()
 const log = (...a) => console.log('·', ...a)
 const state = () => page.evaluate(() => {
@@ -356,6 +357,39 @@ try {
   assert.equal(pfx.keyframes.scale[0].t, pclip.source_in, 'anchored to the clip in point')
   assert.equal(pfx.keyframes.scale[0].interp, 'bezier')
   log('preset from the Presets folder applied with Bezier keyframes at the clip start')
+
+  // ---- File > Save As remembers the project; File > Open starts in that folder; Open Recent reopens it
+  const saved = join(WORK, 'e2e project.lumina')
+  await app.evaluate(({ dialog }, target) => {
+    globalThis.__dialogs = []
+    dialog.showSaveDialog = async (_w, o) => { globalThis.__dialogs.push(o); return { canceled: false, filePath: target } }
+    dialog.showOpenDialog = async (_w, o) => { globalThis.__dialogs.push(o); return { canceled: true, filePaths: [] } }
+  }, saved)
+  const menuAction = (id) => app.evaluate(({ BrowserWindow }, a) => BrowserWindow.getAllWindows()[0].webContents.send('menu:action', a), id)
+  await menuAction('file.saveAs')
+  await page.waitForFunction((p) => window.__lumina.get().path === p, saved, { timeout: 10000 })
+  const recentLabels = async () => app.evaluate(({ Menu }) => {
+    const file = Menu.getApplicationMenu().items[0].submenu
+    const recent = file.items.find((i) => i.submenu && i.submenu.items.some((x) => x.label.includes('.lumina') || x.label.startsWith('(')))
+    return recent ? recent.submenu.items.map((x) => x.label) : null
+  })
+  await page.waitForFunction(() => true)
+  let labels = await recentLabels()
+  for (let i = 0; i < 20 && !(labels ?? []).includes(saved); i++) { await page.waitForTimeout(100); labels = await recentLabels() }
+  assert.ok(labels?.includes(saved), `Open Recent lists the saved project: ${JSON.stringify(labels)}`)
+  await menuAction('file.open')
+  await page.waitForTimeout(300)
+  const opened = await app.evaluate(() => globalThis.__dialogs.at(-1))
+  assert.equal(opened.defaultPath, WORK, 'File > Open starts in the last project folder')
+  await page.evaluate(() => window.__lumina.engine.call('project.new', { name: 'Other' }))
+  await page.waitForFunction(() => window.__lumina.get().path == null, null, { timeout: 10000 })
+  await app.evaluate(({ Menu }, p) => {
+    const file = Menu.getApplicationMenu().items[0].submenu
+    const item = file.items.flatMap((i) => i.submenu ? i.submenu.items : []).find((x) => x.label === p)
+    item.click()
+  }, saved)
+  await page.waitForFunction((p) => window.__lumina.get().path === p, saved, { timeout: 10000 })
+  log('Save As -> Open Recent lists it, File > Open starts in its folder, Open Recent reopens it')
 
   if (shot) await page.screenshot({ path: shot })
   log('PASS')

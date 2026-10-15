@@ -5,6 +5,7 @@ import { join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { createInterface } from 'node:readline'
 import { setLocale, t, type Locale } from '../shared/i18n'
+import { addRecent, clearRecent, lastDir, recentProjects, rememberPick, removeRecent, setDir, withDefaultDir, type Purpose } from './recent'
 
 // ---------------------------------------------------------------- media protocol
 // Renderer loads media as lumina-media://file/<encodeURIComponent(path)>, with
@@ -122,7 +123,7 @@ function stopEngine(): void {
 // (registerAccelerator: false): the renderer's keymap owns every shortcut so
 // panels can scope them, exactly like Premiere's keyboard shortcut contexts.
 
-type Item = { label: string; action?: string; accel?: string; enabled?: boolean; submenu?: { label: string; action: string }[] } | 'sep'
+type Item = { label: string; action?: string; accel?: string; enabled?: boolean; submenu?: { label: string; action: string }[]; recent?: true } | 'sep'
 
 const MENU: Record<string, Item[]> = {
   File: [
@@ -132,6 +133,7 @@ const MENU: Record<string, Item[]> = {
     'sep',
     { label: 'Open Project...', action: 'file.open', accel: 'Ctrl+O' },
     { label: 'Open Premiere Pro Project (.prproj)...', action: 'file.open' },
+    { label: 'Open Recent', recent: true },
     'sep',
     { label: 'Save', action: 'file.save', accel: 'Ctrl+S' },
     { label: 'Save As...', action: 'file.saveAs', accel: 'Ctrl+Shift+S' },
@@ -235,6 +237,25 @@ const MENU: Record<string, Item[]> = {
   Help: [{ label: 'Lumina Help', action: 'help.docs' }]
 }
 
+/** File > Open Recent: full paths like Premiere, newest first, then Clear. */
+function recentMenu(send: (action: string) => () => void): MenuItemConstructorOptions[] {
+  const paths = recentProjects()
+  if (!paths.length) return [{ label: t('(none)'), enabled: false }]
+  return [
+    ...paths.map((p) => ({ label: p.replace(/&/g, '&&'), click: send(`file.openRecent:${p}`) })),
+    { type: 'separator' as const },
+    { label: t('Clear'), click: () => {
+      clearRecent()
+      rebuildMenus()
+    } }
+  ]
+}
+
+function rebuildMenus(): void {
+  const win = BrowserWindow.getAllWindows()[0]
+  if (win) buildMenu(win)
+}
+
 function buildMenu(win: BrowserWindow): void {
   const send = (action: string) => () => {
     if (action === 'app.quit') return app.quit()
@@ -247,7 +268,9 @@ function buildMenu(win: BrowserWindow): void {
     submenu: items.map((it): MenuItemConstructorOptions =>
       it === 'sep'
         ? { type: 'separator' }
-        : it.submenu
+        : it.recent
+          ? { label: t(it.label), submenu: recentMenu(send) }
+          : it.submenu
           ? { label: t(it.label), submenu: it.submenu.map((sub) => ({ label: sub.label, click: send(sub.action) })) }
           : {
             label: t(it.label),
@@ -311,17 +334,34 @@ ipcMain.handle('engine:info', async () => {
   return { ok: false, error: engineError ?? 'engine starting' }
 })
 
-ipcMain.handle('dialog:open', async (e, opts: Electron.OpenDialogOptions) => {
+// file dialogs start in the last folder used for the same purpose (project, import, export)
+ipcMain.handle('dialog:open', async (e, opts: Electron.OpenDialogOptions, purpose: Purpose = 'any') => {
   const win = BrowserWindow.fromWebContents(e.sender)!
-  const res = await dialog.showOpenDialog(win, opts)
-  return res.canceled ? [] : res.filePaths
+  const res = await dialog.showOpenDialog(win, withDefaultDir(opts, purpose))
+  if (res.canceled || !res.filePaths.length) return []
+  rememberPick(purpose, res.filePaths[0])
+  return res.filePaths
 })
 
-ipcMain.handle('dialog:save', async (e, opts: Electron.SaveDialogOptions) => {
+ipcMain.handle('dialog:save', async (e, opts: Electron.SaveDialogOptions, purpose: Purpose = 'any') => {
   const win = BrowserWindow.fromWebContents(e.sender)!
-  const res = await dialog.showSaveDialog(win, opts)
-  return res.canceled ? null : res.filePath
+  const res = await dialog.showSaveDialog(win, withDefaultDir(opts, purpose))
+  if (res.canceled || !res.filePath) return null
+  rememberPick(purpose, res.filePath)
+  return res.filePath
 })
+
+ipcMain.handle('recent:add', (_e, path: string) => {
+  addRecent(path)
+  rebuildMenus()
+})
+ipcMain.handle('recent:remove', (_e, path: string) => {
+  removeRecent(path)
+  rebuildMenus()
+})
+ipcMain.handle('recent:list', () => recentProjects())
+ipcMain.handle('recent:lastDir', (_e, purpose: Purpose) => lastDir(purpose))
+ipcMain.handle('recent:setDir', (_e, purpose: Purpose, dir: string) => setDir(purpose, dir))
 
 ipcMain.handle('app:setLocale', (e, locale: Locale) => {
   setLocale(locale)
