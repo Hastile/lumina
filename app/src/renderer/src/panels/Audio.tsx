@@ -37,6 +37,11 @@ function step(l: Level, peak: number, dt: number, now: number): Level {
   return { now: cur, hold, holdAt, clip: l.clip || peak >= 1 }
 }
 
+function clearClip(s: { master: [Level, Level]; tracks: Record<string, [Level, Level]> }) {
+  s.master = [{ ...s.master[0], clip: false }, { ...s.master[1], clip: false }]
+  for (const k of Object.keys(s.tracks)) s.tracks[k] = [{ ...s.tracks[k][0], clip: false }, { ...s.tracks[k][1], clip: false }]
+}
+
 /** Live levels of the Mix and every track (L, R), updated on animation frames. */
 function useLevels(): { master: [Level, Level]; tracks: Record<string, [Level, Level]>; reset: () => void } {
   const [, force] = useState(0)
@@ -44,11 +49,16 @@ function useLevels(): { master: [Level, Level]; tracks: Record<string, [Level, L
   useEffect(() => {
     let raf = 0
     let last = performance.now()
+    let wasPlaying = useStore.getState().playing !== null
     const tick = (now: number) => {
       const dt = Math.max(0, (now - last) / 1000)
       last = now
       const lv = audioEngine.levels()
       const s = state.current
+      // the clip LEDs stay red after playback stops and clear when it starts again
+      const playing = useStore.getState().playing !== null
+      if (playing && !wasPlaying) clearClip(s)
+      wasPlaying = playing
       s.master = [step(s.master[0], lv.master[0], dt, now), step(s.master[1], lv.master[1], dt, now)]
       for (const [id, [l, r]] of Object.entries(lv.tracks)) {
         const prev = s.tracks[id] ?? [fresh(), fresh()]
@@ -60,12 +70,7 @@ function useLevels(): { master: [Level, Level]; tracks: Record<string, [Level, L
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
   }, [])
-  const reset = () => {
-    const s = state.current
-    s.master = [{ ...s.master[0], clip: false }, { ...s.master[1], clip: false }]
-    for (const k of Object.keys(s.tracks)) s.tracks[k] = [{ ...s.tracks[k][0], clip: false }, { ...s.tracks[k][1], clip: false }]
-  }
-  return { ...state.current, reset }
+  return { ...state.current, reset: () => clearClip(state.current) }
 }
 
 const FLOOR = -60
