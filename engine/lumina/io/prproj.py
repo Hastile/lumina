@@ -327,11 +327,10 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                 sub = g.at(cti, "SubClip")
                 clip_el = g.at(sub, "Clip")
                 src_kind, target = _clip_source(g, clip_el)
+                graphic = None
                 if src_kind == "sequence":
                     stats["nested"] += 1
-                    continue
-                graphic = None
-                if src_kind != "media" or target.get("ObjectUID") not in out.media:
+                elif src_kind != "media" or target.get("ObjectUID") not in out.media:
                     if src_kind == "media" and (info := _media_info(g, target)) is not None:
                         out.media[target.get("ObjectUID")] = {**info, "name": _text(sub, "Name") or info["title"], "label": "iris", "bin": None}
                     elif kind == "video":
@@ -348,11 +347,13 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                     speed = -speed
                 transitions = [t for t in (_transition(g, g.ref(cti.find("HeadTransition")), "head", kind, stats),
                                            _transition(g, g.ref(cti.find("TailTransition")), "tail", kind, stats)) if t]
-                media = None if graphic else out.media[target.get("ObjectUID")]
+                nested = target.get("ObjectUID") if src_kind == "sequence" else None
+                media = None if graphic or nested else out.media[target.get("ObjectUID")]
                 fx = _motion(g, cti, seq_w, seq_h, media, stats) if kind == "video" else {}
                 items.append({
-                    "media_uid": None if graphic else target.get("ObjectUID"),
-                    "name": _text(sub, "Name") or (graphic["name"] if graphic else media["name"]),
+                    "media_uid": None if graphic or nested else target.get("ObjectUID"),
+                    "sequence_uid": nested,
+                    "name": _text(sub, "Name") or (graphic["name"] if graphic else media["name"] if media else "Nested Sequence"),
                     "start": start,
                     "end": end,
                     "source_in": max(0, _int(clip_el, "Clip/InPoint", 0)),
@@ -376,9 +377,8 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
         "playhead": _int(props, "MZ.EditLine", 0),
         "markers": _sequence_markers(g, seq_el),
     }
+    seq["uid"] = seq_el.get("ObjectUID")
     parts = []
-    if stats["nested"]:
-        parts.append(f"{stats['nested']} nested-sequence clip(s)")
     if stats["graphics"]:
         parts.append(f"{stats['graphics']} graphics/synthetic clip(s)")
     if stats["reversed"]:

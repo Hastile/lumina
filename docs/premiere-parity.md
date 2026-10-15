@@ -64,7 +64,7 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Other effects (blur, Transform effect, …) | ✗ (reported) |
 | Transitions | ✗ (reported) |
 | Captions (.srt items) | ✗ (reported) |
-| Nested sequences | ✗ (M2, reported) |
+| Nested sequences | ✓ (imported as nested clips; the sequences they show come along) |
 
 ## Motion & graphics
 | Item | Status |

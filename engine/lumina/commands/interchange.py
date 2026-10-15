@@ -77,11 +77,25 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
 
     created = []
     clamped = 0
+    # nested sequences: every sequence a chosen one shows comes along, with ids known up front
+    by_uid = {s.get("uid"): s for s in ex.sequences}
+    wanted = [s for s in ex.sequences if not p.sequences or s["name"] in p.sequences]
+    todo = list(wanted)
+    while todo:
+        s = todo.pop()
+        for tr in s["video_tracks"] + s["audio_tracks"]:
+            for it in tr["items"]:
+                inner = by_uid.get(it.get("sequence_uid"))
+                if inner is not None and inner not in wanted:
+                    wanted.append(inner)
+                    todo.append(inner)
+    seq_ids = {s.get("uid"): new_id() for s in wanted}
     for s in ex.sequences:
-        if p.sequences and s["name"] not in p.sequences:
+        if s not in wanted:
             continue
         seq = build_sequence(s["name"], bin_map.get(s["bin"], top), s["settings"],
                              max(1, len(s["video_tracks"])), max(1, len(s["audio_tracks"])))
+        seq["id"] = seq_ids[s.get("uid")]
         links: dict[str, str] = {}
         for kind in ("video", "audio"):
             for track_id, tr in zip(seq[f"{kind}_tracks"], s[f"{kind}_tracks"]):
@@ -93,8 +107,11 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                 pending: dict = {}
                 for it in sorted(tr["items"], key=lambda i: i["start"]):
                     graphic = it.get("graphic")
-                    if graphic:
-                        if kind != "video":
+                    nested = seq_ids.get(it.get("sequence_uid")) if it.get("sequence_uid") else None
+                    if it.get("sequence_uid") and nested is None:
+                        continue
+                    if graphic or nested:
+                        if graphic and kind != "video":
                             continue
                         mid, item = None, None
                     else:
@@ -112,7 +129,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "source_in": it["source_in"], "speed": it["speed"], "enabled": True,
                         "link_id": links.setdefault(it["link"], new_id()) if it["link"] else None,
                         "label": it["label"] if kind == "video" else "caribbean",
-                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": None,
+                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": nested,
                         "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
                         "keyframes": it.get("keyframes", {}),
                         "graphic": graphic,
@@ -147,6 +164,23 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         seq["playhead"] = s["playhead"]
         ctx.m.set(["sequences", seq["id"]], seq)
         created.append(seq["id"])
+    # a nested clip may run past the end of its sequence in Premiere (black); here it ends with it
+    from .timeline import sequence_end
+
+    for sid in created:
+        seq = doc["sequences"][sid]
+        for tid, track in seq["tracks"].items():
+            for c in list(track["clips"].values()):
+                if not c.get("sequence_id") or c["sequence_id"] not in doc["sequences"]:
+                    continue
+                limit = sequence_end(doc["sequences"][c["sequence_id"]])
+                if source_at(c, c["end"]) > limit:
+                    end = c["start"] + int((limit - c["source_in"]) / c["speed"])
+                    if end <= c["start"]:
+                        ctx.m.delete(["sequences", sid, "tracks", tid, "clips", c["id"]])
+                    else:
+                        ctx.m.set(["sequences", sid, "tracks", tid, "clips", c["id"], "end"], end)
+                        clamped += 1
     if clamped:
         warnings.append(f"{clamped} clip(s) were shortened by a few frames to fit the actual media length")
     if created and not doc.get("active_sequence_id"):
