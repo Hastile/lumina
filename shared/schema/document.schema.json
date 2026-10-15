@@ -236,7 +236,10 @@
         "type": {
           "enum": [
             "transform",
-            "gaussian_blur"
+            "gaussian_blur",
+            "parametric_eq",
+            "compressor",
+            "hard_limiter"
           ],
           "title": "Type",
           "type": "string"

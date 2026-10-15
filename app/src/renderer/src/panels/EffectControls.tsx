@@ -4,7 +4,7 @@ import { t } from '@shared/i18n'
 import { exec, get, set } from '../state/store'
 import { ticksPerFrame, timecode } from '../util/time'
 import { clipTime, current, KeyframeRow, KfRow, laneSpan, NumberScrub, setProp, useSelectedClip, type ClipCtx } from './PropertyControls'
-import { EFFECTS, effectParam } from '../util/effects'
+import { EFFECTS, effectMedia, effectParam } from '../util/effects'
 import type { Effect } from '../engine/document'
 import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
@@ -150,7 +150,7 @@ export function EffectControlsPanel() {
         const raw = e.dataTransfer.getData(EFFECT_MIME)
         if (!raw) return
         const item = JSON.parse(raw) as { kind: string; type: string }
-        if (item.kind === 'effect' && c.kind === 'video') void exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, t('Apply Effect'))
+        if (item.kind === 'effect' && effectMedia(item.type as Effect['type']) === c.kind) void exec('effect.add', { sequence_id: seq.id, clip_ids: [clip.id], type: item.type }, t('Apply Effect'))
         if (item.kind === 'preset' && c.kind === 'video') void exec('effect.apply_preset', { sequence_id: seq.id, clip_ids: [clip.id], preset_id: item.type }, t('Apply Preset'))
       }}
     >
@@ -198,6 +198,9 @@ export function EffectControlsPanel() {
                 <NumberScrub value={current(c, 'volume_db') as number} min={-96} max={15} step={0.1} suffix=" dB" onChange={(v) => setProp(c, 'volume_db', v)} />
               </KeyframeRow>
             </Group>
+            {(clip.effects ?? []).map((fx) => (
+              <EffectGroup key={fx.id} c={c} fx={fx} />
+            ))}
           </>
         )}
       </div>
@@ -244,6 +247,21 @@ function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
               <span />
               <span />
             </div>
+          )
+        }
+        if (p.kind === 'level') {
+          return (
+            <Plain key={p.name} name={label}>
+              <NumberScrub
+                value={val(p.name) as number}
+                min={p.min}
+                max={p.max}
+                step={p.max !== undefined && p.max > 1000 ? 10 : 0.1}
+                digits={p.unit === 'Hz' ? 0 : 1}
+                suffix={p.unit ? ` ${p.unit}` : ''}
+                onChange={(x) => set(p.name, x, label)}
+              />
+            </Plain>
           )
         }
         if (p.kind === 'choice') {

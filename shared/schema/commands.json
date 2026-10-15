@@ -4127,7 +4127,7 @@
   },
   {
     "name": "effect.add",
-    "description": "Apply a video effect (drag from the Effects panel). Effects run in stack order, before Motion.",
+    "description": "Apply an effect (drag from the Effects panel). Video effects run in stack order before Motion;\naudio effects after Audio Gain and before Volume.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -4155,7 +4155,10 @@
         "type": {
           "enum": [
             "transform",
-            "gaussian_blur"
+            "gaussian_blur",
+            "parametric_eq",
+            "compressor",
+            "hard_limiter"
           ],
           "title": "Type",
           "type": "string"

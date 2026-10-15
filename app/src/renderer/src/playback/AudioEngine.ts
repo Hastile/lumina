@@ -47,8 +47,62 @@ export type AudioVoice = {
   sourceIn: number
   speed: number
   span: [number, number]
-  gain: number // Audio Gain x Volume (crossfades included), linear
+  pre: number // Audio Gain, linear (before the effects)
+  fx: AudioFx[] // the clip's enabled audio effects, in stack order
+  gain: number // Volume (crossfades included), linear
   track: string
+}
+
+export type AudioFx = { type: string; params: Record<string, number> }
+
+const dbg = (db: number) => Math.pow(10, db / 20)
+const makeupDb = (threshold: number, ratio: number) => -0.6 * threshold * (1 - 1 / ratio)
+
+/** Web Audio nodes for a clip's audio effects, between ``input`` and ``output`` (the export runs the
+ * same maths through ffmpeg: engine/lumina/audio_fx.py). Returns the nodes to disconnect later. */
+export function buildFx(ctx: BaseAudioContext, fx: AudioFx[], input: AudioNode, output: AudioNode): AudioNode[] {
+  const made: AudioNode[] = []
+  let at = input
+  const add = (n: AudioNode) => {
+    at.connect(n)
+    made.push(n)
+    at = n
+  }
+  for (const e of fx) {
+    const p = e.params
+    if (e.type === 'parametric_eq') {
+      for (const [type, f, g, q] of [['lowshelf', p.low_freq, p.low_gain, 1], ['peaking', p.mid_freq, p.mid_gain, p.mid_q], ['highshelf', p.high_freq, p.high_gain, 1]] as const) {
+        if (Math.abs(g) < 1e-9) continue
+        const b = ctx.createBiquadFilter()
+        b.type = type
+        b.frequency.value = Math.min(f, ctx.sampleRate / 2 * 0.999)
+        b.gain.value = g
+        b.Q.value = q
+        add(b)
+      }
+    } else if (e.type === 'compressor' || e.type === 'hard_limiter') {
+      const limiter = e.type === 'hard_limiter'
+      if (limiter && p.input_boost) {
+        const boost = ctx.createGain()
+        boost.gain.value = dbg(p.input_boost)
+        add(boost)
+      }
+      const c = ctx.createDynamicsCompressor()
+      const threshold = limiter ? p.max_amplitude : p.threshold
+      const ratio = limiter ? 20 : p.ratio
+      c.threshold.value = threshold
+      c.ratio.value = ratio
+      c.knee.value = 0
+      c.attack.value = limiter ? 0.001 : Math.max(0, p.attack) / 1000
+      c.release.value = limiter ? 0.05 : Math.max(0.01, p.release) / 1000
+      add(c)
+      const out = ctx.createGain()
+      out.gain.value = dbg((limiter ? 0 : p.output_gain) - makeupDb(threshold, ratio))
+      add(out)
+    }
+  }
+  at.connect(output)
+  return made
 }
 
 /** The Audio Track Mixer: per-track fader and pan, and the Mix fader (linear gains, pan -1..1). */
@@ -59,7 +113,7 @@ type Meter = { l: AnalyserNode; r: AnalyserNode }
 
 const SCRUB = 0.09 // s of sound per scrub step (Premiere plays about a frame plus its tail)
 
-type Live = { v: AudioVoice; gain: GainNode; nodes: Set<AudioBufferSourceNode>; stopped: boolean }
+type Live = { v: AudioVoice; input: GainNode; fxNodes: AudioNode[]; fxKey: string; gain: GainNode; nodes: Set<AudioBufferSourceNode>; stopped: boolean }
 
 class AudioEngine {
   private ctx: AudioContext | null = null
@@ -174,11 +228,11 @@ class AudioEngine {
         const env = ctx.createGain()
         const now = ctx.currentTime + 0.005
         env.gain.setValueAtTime(0, now)
-        env.gain.linearRampToValueAtTime(v.gain, now + 0.005)
-        env.gain.setValueAtTime(v.gain, now + SCRUB - 0.012)
+        env.gain.linearRampToValueAtTime(v.gain * v.pre, now + 0.005)
+        env.gain.setValueAtTime(v.gain * v.pre, now + SCRUB - 0.012)
         env.gain.linearRampToValueAtTime(0, now + SCRUB)
         n.connect(env)
-        env.connect(this.bus(v.track).gain)
+        const fxNodes = buildFx(ctx, v.fx, env, this.bus(v.track).gain)
         const offset = Math.max(0, src - wb.timestamp)
         // a buffer is only ~20-40 ms long: chain the next one for the rest of the slice
         n.start(now, offset)
@@ -198,7 +252,10 @@ class AudioEngine {
           end = nb.timestamp + nb.duration
         }
         for (const x of cur.nodes) x.stop(now + SCRUB)
-        setTimeout(() => env.disconnect(), (SCRUB + 0.2) * 1000)
+        setTimeout(() => {
+          env.disconnect()
+          for (const x of fxNodes) x.disconnect()
+        }, (SCRUB + 0.3) * 1000)
       })
     }
   }
@@ -256,15 +313,28 @@ class AudioEngine {
         l = undefined
       }
       if (!l) {
+        // buffers -> Audio Gain -> effects -> Volume -> track bus
+        const input = ctx.createGain()
+        input.gain.value = v.pre
         const gain = ctx.createGain()
         gain.gain.value = v.gain
         gain.connect(this.bus(v.track).gain)
-        l = { v, gain, nodes: new Set(), stopped: false }
+        const fxKey = JSON.stringify(v.fx)
+        l = { v, input, fxNodes: buildFx(ctx, v.fx, input, gain), fxKey, gain, nodes: new Set(), stopped: false }
         this.voices.set(v.key, l)
         void this.schedule(l, s)
-      } else if (Math.abs(l.v.gain - v.gain) > 1e-4) {
+      } else {
         // the picture shows the sequence time heard now; ramp from there
-        l.gain.gain.setTargetAtTime(v.gain, ctx.currentTime, 0.004)
+        if (Math.abs(l.v.gain - v.gain) > 1e-4) l.gain.gain.setTargetAtTime(v.gain, ctx.currentTime, 0.004)
+        if (Math.abs(l.v.pre - v.pre) > 1e-4) l.input.gain.setTargetAtTime(v.pre, ctx.currentTime, 0.004)
+        const fxKey = JSON.stringify(v.fx)
+        if (fxKey !== l.fxKey) {
+          // effect edited while playing: rewire the chain in place
+          l.input.disconnect()
+          for (const n of l.fxNodes) n.disconnect()
+          l.fxNodes = buildFx(ctx, v.fx, l.input, l.gain)
+          l.fxKey = fxKey
+        }
       }
       l.v = v
     }
@@ -280,6 +350,8 @@ class AudioEngine {
       }
     }
     l.nodes.clear()
+    l.input.disconnect()
+    for (const n of l.fxNodes) n.disconnect()
     l.gain.disconnect()
   }
 
@@ -318,7 +390,7 @@ class AudioEngine {
         const n = ctx.createBufferSource()
         n.buffer = wb.buffer
         n.playbackRate.value = v.speed * s.rate
-        n.connect(l.gain)
+        n.connect(l.input)
         n.start(when, offset)
         if (b1 > end) n.stop(toCtx(end))
         l.nodes.add(n)

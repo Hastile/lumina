@@ -29,6 +29,7 @@ from ..commands.registry import CommandError, resolve_time
 from ..media.probe import ffmpeg_bin, run_ffprobe
 from .. import effects as fx_
 from ..motion import value_at
+from ..audio_fx import ffmpeg_filters
 from .compositor import Compositor, RenderError, media_path
 
 TPS = timebase.TICKS_PER_SECOND
@@ -126,8 +127,11 @@ def _atempo(speed: float) -> list[str]:
     return out
 
 
-def decode_audio(path: str, src_start: int, src_dur: int, speed: float, rate: int) -> np.ndarray:
-    af = ",".join(_atempo(speed) + [f"aresample={rate}"])
+def decode_audio(path: str, src_start: int, src_dur: int, speed: float, rate: int, filters: list[str] | None = None,
+                 channels: int = 2) -> np.ndarray:
+    # mono plays at full level on both sides, as in the preview (ffmpeg's -ac 2 would mix it 3 dB down)
+    up = ["pan=stereo|c0=c0|c1=c0"] if channels == 1 else []
+    af = ",".join(up + _atempo(speed) + [f"aresample={rate}"] + list(filters or []))
     cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{max(0, src_start) / TPS:.6f}", "-t", f"{src_dur / TPS:.6f}",
            "-i", path, "-vn", "-af", af, "-ac", "2", "-ar", str(rate), "-f", "f32le", "-"]
     proc = subprocess.run(cmd, capture_output=True, timeout=3600, **NO_WINDOW)
@@ -191,7 +195,9 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
             src = 0
             if s >= e:
                 continue
-        pcm = decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate)
+        # Audio Gain, then the clip's audio effects (Volume and the mixer follow below)
+        pre = ([f"volume={c['gain_db']}dB"] if c.get("gain_db") else []) + ffmpeg_filters(c.get("effects") or [], rate)
+        pcm = decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate, pre, (media["audio"] or {}).get("channels", 2))
         off = round((s - a) * rate / TPS)
         n = min(len(pcm), round((e - a) * rate / TPS) - off, total - off)
         if n <= 0:
@@ -215,8 +221,8 @@ def mix_audio(doc: dict, seq: dict, a: int, b: int, out_path: Path, cancelled: C
             pcm = pcm * gain[:, None]
         elif c["volume_db"] != 0:
             pcm = pcm * np.float32(10 ** (c["volume_db"] / 20))
-        # Audio Gain, the track fader and the Mix fader are plain gains; then the track's pan
-        g = 10 ** ((c.get("gain_db", 0.0) + track.get("volume_db", 0.0)) / 20) * master
+        # the track fader and the Mix fader are plain gains; then the track's pan
+        g = 10 ** (track.get("volume_db", 0.0) / 20) * master
         if g != 1:
             pcm = pcm * np.float32(g)
         pcm = stereo_pan(pcm, track.get("pan", 0.0))

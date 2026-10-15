@@ -2,10 +2,11 @@
 import type { Clip, Effect, Track, Transition } from '../engine/document'
 import { interpolate, sourceTime, type Kf } from './motion'
 
-export type ParamKind = 'point' | 'number' | 'bool' | 'choice'
-export type ParamSpec = { name: string; kind: ParamKind; default: number | boolean | null; label: string; min?: number; max?: number }
+/** 'level': a number that is not keyframed (audio effect settings). */
+export type ParamKind = 'point' | 'number' | 'bool' | 'choice' | 'level'
+export type ParamSpec = { name: string; kind: ParamKind; default: number | boolean | null; label: string; min?: number; max?: number; unit?: string }
 
-export const EFFECTS: Record<Effect['type'], { label: string; category: string; params: ParamSpec[] }> = {
+export const EFFECTS: Record<Effect['type'], { label: string; category: string; media?: 'audio'; params: ParamSpec[] }> = {
   transform: {
     label: 'Transform',
     category: 'Distort',
@@ -29,8 +30,49 @@ export const EFFECTS: Record<Effect['type'], { label: string; category: string; 
       { name: 'dimensions', kind: 'choice', default: 0, label: 'Blur Dimensions' },
       { name: 'repeat_edge', kind: 'bool', default: false, label: 'Repeat Edge Pixels' }
     ]
+  },
+  parametric_eq: {
+    label: 'Parametric Equalizer',
+    category: 'Filter and EQ',
+    media: 'audio',
+    params: [
+      { name: 'low_freq', kind: 'level', default: 100, label: 'Low Frequency', min: 20, max: 2000, unit: 'Hz' },
+      { name: 'low_gain', kind: 'level', default: 0, label: 'Low Gain', min: -30, max: 30, unit: 'dB' },
+      { name: 'mid_freq', kind: 'level', default: 1000, label: 'Mid Frequency', min: 40, max: 16000, unit: 'Hz' },
+      { name: 'mid_gain', kind: 'level', default: 0, label: 'Mid Gain', min: -30, max: 30, unit: 'dB' },
+      { name: 'mid_q', kind: 'level', default: 1, label: 'Mid Q', min: 0.1, max: 30, unit: '' },
+      { name: 'high_freq', kind: 'level', default: 8000, label: 'High Frequency', min: 1000, max: 20000, unit: 'Hz' },
+      { name: 'high_gain', kind: 'level', default: 0, label: 'High Gain', min: -30, max: 30, unit: 'dB' }
+    ]
+  },
+  compressor: {
+    label: 'Single-band Compressor',
+    category: 'Amplitude and Compression',
+    media: 'audio',
+    params: [
+      { name: 'threshold', kind: 'level', default: -20, label: 'Threshold', min: -60, max: 0, unit: 'dB' },
+      { name: 'ratio', kind: 'level', default: 4, label: 'Ratio', min: 1, max: 20, unit: ':1' },
+      { name: 'attack', kind: 'level', default: 10, label: 'Attack', min: 0, max: 1000, unit: 'ms' },
+      { name: 'release', kind: 'level', default: 100, label: 'Release', min: 0, max: 3000, unit: 'ms' },
+      { name: 'output_gain', kind: 'level', default: 0, label: 'Output Gain', min: -30, max: 30, unit: 'dB' }
+    ]
+  },
+  hard_limiter: {
+    label: 'Hard Limiter',
+    category: 'Amplitude and Compression',
+    media: 'audio',
+    params: [
+      { name: 'max_amplitude', kind: 'level', default: -0.1, label: 'Maximum Amplitude', min: -30, max: 0, unit: 'dB' },
+      { name: 'input_boost', kind: 'level', default: 0, label: 'Input Boost', min: 0, max: 30, unit: 'dB' }
+    ]
   }
 }
+
+export const effectMedia = (type: Effect['type']): 'audio' | 'video' => EFFECTS[type].media ?? 'video'
+
+/** Web Audio's automatic compressor makeup (spec: (1 / fullRangeGain) ^ 0.6, knee 0); the preview
+ * cancels it so it matches the export (engine/lumina/audio_fx.py). */
+export const compressorMakeupDb = (threshold: number, ratio: number): number => -0.6 * threshold * (1 - 1 / ratio)
 
 export const TRANSITIONS: Record<Transition['type'], { label: string; kind: 'video' | 'audio'; category: string }> = {
   cross_dissolve: { label: 'Cross Dissolve', kind: 'video', category: 'Dissolve' },

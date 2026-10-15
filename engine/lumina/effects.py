@@ -40,7 +40,55 @@ EFFECTS: dict[str, dict] = {
             "repeat_edge": ("bool", False, "Repeat Edge Pixels"),
         },
     },
+    # audio effects ("level": a number that is not keyframed); DSP in audio_fx.py
+    "parametric_eq": {
+        "label": "Parametric Equalizer",
+        "category": "Filter and EQ",
+        "media": "audio",
+        "params": {
+            "low_freq": ("level", 100.0, "Low Frequency"),
+            "low_gain": ("level", 0.0, "Low Gain"),
+            "mid_freq": ("level", 1000.0, "Mid Frequency"),
+            "mid_gain": ("level", 0.0, "Mid Gain"),
+            "mid_q": ("level", 1.0, "Mid Q"),
+            "high_freq": ("level", 8000.0, "High Frequency"),
+            "high_gain": ("level", 0.0, "High Gain"),
+        },
+    },
+    "compressor": {
+        "label": "Single-band Compressor",
+        "category": "Amplitude and Compression",
+        "media": "audio",
+        "params": {
+            "threshold": ("level", -20.0, "Threshold"),
+            "ratio": ("level", 4.0, "Ratio"),
+            "attack": ("level", 10.0, "Attack"),
+            "release": ("level", 100.0, "Release"),
+            "output_gain": ("level", 0.0, "Output Gain"),
+        },
+    },
+    "hard_limiter": {
+        "label": "Hard Limiter",
+        "category": "Amplitude and Compression",
+        "media": "audio",
+        "params": {
+            "max_amplitude": ("level", -0.1, "Maximum Amplitude"),
+            "input_boost": ("level", 0.0, "Input Boost"),
+        },
+    },
 }
+
+# ranges of "level" parameters (Premiere's)
+LEVEL_RANGES: dict[str, tuple[float, float]] = {
+    "low_freq": (20, 2000), "mid_freq": (40, 16000), "high_freq": (1000, 20000),
+    "low_gain": (-30, 30), "mid_gain": (-30, 30), "high_gain": (-30, 30), "mid_q": (0.1, 30),
+    "threshold": (-60, 0), "ratio": (1, 20), "attack": (0, 1000), "release": (0, 3000), "output_gain": (-30, 30),
+    "max_amplitude": (-30, 0), "input_boost": (0, 30),
+}
+
+
+def media_of(kind: str) -> str:
+    return EFFECTS[kind].get("media", "video")
 
 TRANSITIONS: dict[str, dict] = {
     "cross_dissolve": {"label": "Cross Dissolve", "kind": "video"},

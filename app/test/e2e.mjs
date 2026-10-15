@@ -547,8 +547,27 @@ try {
   await page.keyboard.press('ArrowRight')
   await page.keyboard.press('ArrowRight')
   await page.waitForFunction((n) => window.__lumina.audio.stats.scrubs >= n + 2, scrubs0, { timeout: 5000 })
+  // audio effects: the preview's Web Audio EQ is the export's biquad (+6 dB at the centre frequency),
+  // and a Hard Limiter on the selected audio clip shows its settings in Effect Controls
+  const eqDb = await page.evaluate(async () => {
+    const run = async (fx) => {
+      const ctx = new OfflineAudioContext(2, 48000, 48000)
+      const o = ctx.createOscillator()
+      o.frequency.value = 1000
+      window.__lumina.buildFx(ctx, fx, o, ctx.destination)
+      o.start()
+      const d = (await ctx.startRendering()).getChannelData(0).slice(4800, 43200)
+      return 10 * Math.log10(d.reduce((a, x) => a + x * x, 0) / d.length)
+    }
+    return (await run([{ type: 'parametric_eq', params: { low_freq: 100, low_gain: 0, mid_freq: 1000, mid_gain: 6, mid_q: 1, high_freq: 8000, high_gain: 0 } }])) - (await run([]))
+  })
+  assert.ok(Math.abs(eqDb - 6) < 0.05, `EQ +6 dB at 1 kHz (${eqDb})`)
+  await page.evaluate((id) => window.__lumina.engine.exec('effect.add', { clip_ids: [id], type: 'hard_limiter' }), afterFader.clips[1].id)
+  await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), afterFader.clips[1].id)
+  await page.locator('.dv-tab', { hasText: '효과 컨트롤' }).click()
+  await page.locator('.lm-panel.lm-ec .lm-ec-group', { hasText: '하드 리미터' }).locator('.pname', { hasText: '최대 진폭' }).waitFor()
   const fin = await audioState()
-  log('audio: Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub')
+  log('audio: EQ preview', eqDb.toFixed(2), 'dB; Mix peak', cutProbe.fwd.peak.toFixed(3), '; A1 fader', fin.a1, 'dB; rubber band', fin.clips[0].vol, 'dB; G adjust gain', fin.clips[1].gain, 'dB; arrow keys scrub')
   log('forward across 3 cuts: every frame exact', cutProbe.fwd.frames, 'refreshes; reverse:', cutProbe.rev.inexact, 'warm-up refreshes')
 
   // ---- presets: Effects panel > Presets > 쇼츠 > 팝인, double-click applies to the selected clip

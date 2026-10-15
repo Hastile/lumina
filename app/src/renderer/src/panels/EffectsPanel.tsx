@@ -6,7 +6,8 @@ import { ChevronDown, ChevronRight, Download, Folder, Search, Sparkles, SquareSp
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { activeSequence, get, toast, useStore } from '../state/store'
-import { EFFECTS, TRANSITIONS } from '../util/effects'
+import { EFFECTS, effectMedia, TRANSITIONS } from '../util/effects'
+import type { Effect } from '../engine/document'
 
 export const EFFECT_MIME = 'application/x-lumina-effect'
 export type EffectDrag = { kind: 'effect' | 'transition' | 'preset'; type: string }
@@ -54,9 +55,9 @@ const group = (kind: 'effect' | 'transition', entries: [string, { label: string;
 
 const BUILTIN: Node[] = [
   { label: 'Lumetri Presets', children: [] },
-  { label: 'Audio Effects', children: [] },
+  { label: 'Audio Effects', children: group('effect', Object.entries(EFFECTS).filter(([, d]) => d.media === 'audio')) },
   { label: 'Audio Transitions', children: group('transition', Object.entries(TRANSITIONS).filter(([, d]) => d.kind === 'audio')) },
-  { label: 'Video Effects', children: group('effect', Object.entries(EFFECTS)) },
+  { label: 'Video Effects', children: group('effect', Object.entries(EFFECTS).filter(([, d]) => !d.media)) },
   { label: 'Video Transitions', children: group('transition', Object.entries(TRANSITIONS).filter(([, d]) => d.kind === 'video')) }
 ]
 
@@ -77,7 +78,8 @@ export async function applyFromPanel(drag: EffectDrag): Promise<void> {
       return
     }
     if (drag.kind === 'effect') {
-      const ids = s.selectedClips.filter((id) => seq.video_tracks.some((tid) => seq.tracks[tid].clips[id]))
+      const tracks = effectMedia(drag.type as Effect['type']) === 'audio' ? seq.audio_tracks : seq.video_tracks
+      const ids = s.selectedClips.filter((id) => tracks.some((tid) => seq.tracks[tid].clips[id]))
       if (!ids.length) return toast(t('Select a clip first'), 'info')
       await engine.exec('effect.add', { sequence_id: seq.id, clip_ids: ids, type: drag.type }, t('Apply Effect'))
       return

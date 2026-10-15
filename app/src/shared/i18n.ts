@@ -352,7 +352,27 @@ const ko: Record<string, string> = {
   'Pan': '팬',
   'Mix': '혼합',
   'Track Volume': '트랙 볼륨',
-  'Mix Volume': '혼합 볼륨'
+  'Mix Volume': '혼합 볼륨',
+  // audio effects
+  'Parametric Equalizer': '파라메트릭 이퀄라이저',
+  'Single-band Compressor': '싱글밴드 압축기',
+  'Hard Limiter': '하드 리미터',
+  'Filter and EQ': '필터 및 EQ',
+  'Amplitude and Compression': '진폭 및 압축',
+  'Threshold': '임계값',
+  'Ratio': '비율',
+  'Attack': '어택',
+  'Release': '릴리스',
+  'Output Gain': '출력 게인',
+  'Maximum Amplitude': '최대 진폭',
+  'Input Boost': '입력 증폭',
+  'Low Frequency': '저주파',
+  'Low Gain': '저역 게인',
+  'Mid Frequency': '중간 주파수',
+  'Mid Gain': '중역 게인',
+  'Mid Q': '중역 Q',
+  'High Frequency': '고주파',
+  'High Gain': '고역 게인'
 }
 
 let locale: Locale = 'ko'

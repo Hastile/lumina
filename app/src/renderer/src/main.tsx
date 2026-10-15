@@ -8,10 +8,10 @@ import { engine } from './engine/client'
 import { useStore } from './state/store'
 import { play, stop } from './state/transport'
 import { decodeBench, firstTimestamps, sourceBench } from './playback/bench'
-import { audioEngine } from './playback/AudioEngine'
+import { audioEngine, buildFx } from './playback/AudioEngine'
 
 // test/automation hook (used by scripts/e2e.mjs)
-;(window as unknown as Record<string, unknown>).__lumina = { get: useStore.getState, set: useStore.setState, engine, play, stop, decodeBench, sourceBench, firstTimestamps, audio: audioEngine }
+;(window as unknown as Record<string, unknown>).__lumina = { get: useStore.getState, set: useStore.setState, engine, play, stop, decodeBench, sourceBench, firstTimestamps, audio: audioEngine, buildFx }
 
 let locale: Locale = 'ko'
 try {

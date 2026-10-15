@@ -14,7 +14,7 @@ import { goTo, type Monitor } from '../state/transport'
 import { focusPanel } from '../layout/dock'
 import { floorToFrame, parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
-import { effectCss, trackTransitions, transitionProgress } from '../util/effects'
+import { effectCss, effectMedia, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
 import { FrameCanvas } from '../playback/FrameCanvas'
 import { GLStage } from '../playback/GLStage'
@@ -263,7 +263,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
       if (!m || (!m.audio && m.kind !== 'audio')) continue
       audio.push({
         key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, at)), span: [s0, e0], track: tid,
-        volume: dbToGain((valueAt(clip, 'volume_db', at, seq, m) as number) + (clip.gain_db ?? 0)) * (gains.get(clip.id) ?? 1)
+        volume: dbToGain(valueAt(clip, 'volume_db', at, seq, m) as number) * (gains.get(clip.id) ?? 1)
       })
     }
     if (lookahead > 0) {
@@ -274,7 +274,7 @@ export function activeLayers(seq: Sequence, media: Record<string, MediaItem>, at
         if (!m || (!m.audio && m.kind !== 'audio')) continue
         // the gain it starts with: scheduled audio is heard before the picture reaches the cut
         const e0 = ext.get(clip.id)?.[1] ?? clip.end
-        const g0 = dbToGain((valueAt(clip, 'volume_db', s0, seq, m) as number) + (clip.gain_db ?? 0)) * (s0 < clip.start ? 0 : 1)
+        const g0 = dbToGain(valueAt(clip, 'volume_db', s0, seq, m) as number) * (s0 < clip.start ? 0 : 1)
         audio.push({ key: `a-${clip.id}`, clip, media: m, time: ticksToSeconds(sourceTime(clip, s0)), span: [s0, e0], track: tid, volume: g0, preroll: true })
       }
     }
@@ -309,7 +309,11 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0)
   const voices = audio
     .filter((a) => a.clip.speed > 0 && audioEngine.status(mediaSrc(a.media)) === 'ok')
-    .map((a) => ({ key: a.key, url: mediaSrc(a.media), start: a.clip.start, sourceIn: a.clip.source_in, speed: a.clip.speed, span: a.span, gain: a.volume, track: a.track }))
+    .map((a) => ({
+      key: a.key, url: mediaSrc(a.media), start: a.clip.start, sourceIn: a.clip.source_in, speed: a.clip.speed, span: a.span, track: a.track,
+      pre: dbToGain(a.clip.gain_db ?? 0), gain: a.volume,
+      fx: (a.clip.effects ?? []).filter((e) => e.enabled && effectMedia(e.type) === 'audio').map((e) => ({ type: e.type, params: e.params as Record<string, number> }))
+    }))
   const scrubAt = useRef<number | null>(null)
   const scrubOn = useStore((s) => s.audioScrub)
   useEffect(() => {
@@ -477,7 +481,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         />
       )}
       {audio.filter((a) => audioEngine.status(mediaSrc(a.media)) === 'fail' || a.clip.speed <= 0).map((a) => (
-        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.preroll ? 0 : a.volume} />
+        <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.preroll ? 0 : a.volume * dbToGain(a.clip.gain_db ?? 0)} />
       ))}
     </div>
   )

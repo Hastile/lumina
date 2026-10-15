@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import Field
 
 from .. import timebase
-from ..effects import ANIMATABLE, EFFECTS, TRANSITIONS, default_params, param, transition_window
+from ..effects import ANIMATABLE, EFFECTS, LEVEL_RANGES, TRANSITIONS, default_params, media_of, param, transition_window
 from ..model import EffectType, TransitionType, new_id
 from ..motion import source_size, source_time
 from .motion import INTERPS, _at, _ctx, _interp_near, handles_of, with_ease, with_interp
@@ -40,6 +40,11 @@ def _check_param(kind: str, name: str, v: ParamValue) -> ParamValue:
     if isinstance(v, (list, bool)):
         raise CommandError("BAD_VALUE", f"{name} needs a number")
     v = float(v)
+    if ptype == "level":
+        lo, hi = LEVEL_RANGES[name]
+        if not lo <= v <= hi:
+            raise CommandError("BAD_VALUE", f"{name} is {lo}-{hi}")
+        return v
     if name == "opacity" and not 0 <= v <= 100:
         raise CommandError("BAD_VALUE", "opacity is 0-100")
     if name in ("scale", "scale_width") and not 0 <= v <= 10000:
@@ -75,12 +80,14 @@ class AddEffect(Params):
 
 @command("effect.add", AddEffect)
 def effect_add(ctx: Context, p: AddEffect):
-    """Apply a video effect (drag from the Effects panel). Effects run in stack order, before Motion."""
+    """Apply an effect (drag from the Effects panel). Video effects run in stack order before Motion;
+    audio effects after Audio Gain and before Volume."""
     ids = []
+    kind = media_of(p.type)
     for cid in p.clip_ids:
         seq, tid, clip, media = _ctx(ctx, p.sequence_id, cid)
-        if seq["tracks"][tid]["kind"] != "video":
-            raise CommandError("NOT_VIDEO", "video effects go on video clips")
+        if seq["tracks"][tid]["kind"] != kind:
+            raise CommandError("NOT_VIDEO" if kind == "video" else "NOT_AUDIO", f"{kind} effects go on {kind} clips")
         w, h = source_size(clip, seq, media)
         params = default_params(p.type, w, h)
         for k, v in p.params.items():

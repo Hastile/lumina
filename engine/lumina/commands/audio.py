@@ -7,10 +7,15 @@ from typing import Literal
 
 from pydantic import Field
 
-from ..render.export import media_path
 from .project import seq_of
 from .registry import CommandError, Context, Params, command
 from .timeline import clip_path, find_clip, require_unlocked
+
+
+def media_path(media: dict) -> str | None:
+    from ..render.compositor import media_path as path  # lazy: render imports the command registry
+
+    return path(media)
 
 
 class AudioGain(Params):

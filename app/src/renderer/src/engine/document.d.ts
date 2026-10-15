@@ -285,7 +285,7 @@ export type Layers = (TextLayer | ShapeLayer)[];
  */
 export type Source = string | null;
 export type Id8 = string;
-export type Type2 = "transform" | "gaussian_blur";
+export type Type2 = "transform" | "gaussian_blur" | "parametric_eq" | "compressor" | "hard_limiter";
 export type Enabled1 = boolean;
 export type Effects = Effect[];
 export type Id9 = string;
