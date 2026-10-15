@@ -10,7 +10,7 @@ import { dockApi, buildEditingLayout, focusPanel, toggleMaximize } from '../layo
 import { openDialog } from '../state/dialog'
 import { exportFrame, openExportDialog } from '../layout/ExportDialog'
 import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, type PanelId, type Tool } from '../state/store'
-import { goTo, shuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
+import { goTo, shuttle, slowShuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
 import { secondsToTicks, ticksPerFrame, ticksToSeconds } from '../util/time'
 
 export type Action = { id: string; label: string; run: () => void | Promise<void> }
@@ -428,6 +428,7 @@ def('edit.selectAll', t('Select All'), () => {
   const seq = activeSequence()
   if (seq) set({ selectedClips: Object.values(seq.tracks).flatMap((t) => (t.locked ? [] : Object.keys(t.clips))) })
 })
+def('edit.keyboardShortcuts', t('Keyboard Shortcuts...'), () => void import('../layout/ShortcutsDialog').then((m) => m.openShortcuts()))
 def('edit.deselectAll', t('Deselect All'), () => set({ selectedClips: [], selectedItems: [] }))
 
 // Clip
@@ -554,6 +555,8 @@ def('transport.playStop', t('Play-Stop Toggle'), () => togglePlay(monitor()))
 def('transport.shuttleLeft', 'Shuttle Left', () => shuttle(monitor(), -1))
 def('transport.shuttleStop', 'Shuttle Stop', () => stop())
 def('transport.shuttleRight', 'Shuttle Right', () => shuttle(monitor(), 1))
+def('transport.shuttleSlowLeft', 'Shuttle Slow Left', () => slowShuttle(monitor(), -1))
+def('transport.shuttleSlowRight', 'Shuttle Slow Right', () => slowShuttle(monitor(), 1))
 def('transport.stepBack', t('Step Back 1 Frame'), () => step(monitor(), -1))
 def('transport.stepForward', t('Step Forward 1 Frame'), () => step(monitor(), 1))
 def('transport.stepBack5', 'Step Back Five Frames', () => step(monitor(), -5))

@@ -260,7 +260,7 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-vband { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .lm-vband .line { fill: none; stroke: #e6d34a; stroke-width: 1.2; }
 .lm-vband .hit { fill: none; stroke: transparent; stroke-width: 9; pointer-events: stroke; cursor: ns-resize; }
-.lm-vband .kf { fill: #e6d34a; stroke: #1a1a1a; stroke-width: 0.8; pointer-events: all; cursor: ns-resize; }
+.lm-vband .kf { fill: #e6d34a; stroke: #1a1a1a; stroke-width: 0.8; pointer-events: all; cursor: move; }
 .lm-vband .db { fill: #fff; font-size: 10px; paint-order: stroke; stroke: #000; stroke-width: 2px; }
 
 /* Essential Sound */

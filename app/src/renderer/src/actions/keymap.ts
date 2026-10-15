@@ -31,6 +31,7 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   'Shift+Backspace': 'edit.rippleDelete',
   'Ctrl+A': 'edit.selectAll',
   'Ctrl+Shift+A': 'edit.deselectAll',
+  'Ctrl+Alt+K': 'edit.keyboardShortcuts',
   // Clip
   'Ctrl+R': 'clip.speed',
   G: 'clip.audioGain',
@@ -62,6 +63,8 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   J: 'transport.shuttleLeft',
   K: 'transport.shuttleStop',
   L: 'transport.shuttleRight',
+  'Shift+J': 'transport.shuttleSlowLeft',
+  'Shift+L': 'transport.shuttleSlowRight',
   ArrowLeft: 'transport.stepBack',
   ArrowRight: 'transport.stepForward',
   'Shift+ArrowLeft': 'transport.stepBack5',
@@ -117,12 +120,57 @@ export function keyString(e: KeyboardEvent): string {
   return [...mods, key].join('+')
 }
 
-export function installKeymap(keymap: Record<string, string> = DEFAULT_KEYMAP): () => void {
+// ---------------------------------------------------------------- user keymap (Edit > Keyboard Shortcuts)
+
+const STORE = 'lumina.keymap'
+
+/** The user's changes to the Premiere defaults: key -> action id, or null for a default they removed. */
+export function loadOverrides(): Record<string, string | null> {
+  try {
+    return JSON.parse(localStorage.getItem(STORE) || '{}') as Record<string, string | null>
+  } catch {
+    return {}
+  }
+}
+
+export function saveOverrides(o: Record<string, string | null>): void {
+  try {
+    if (Object.keys(o).length) localStorage.setItem(STORE, JSON.stringify(o))
+    else localStorage.removeItem(STORE)
+  } catch {
+    /* storage unavailable: the change lasts for this session */
+  }
+  live = Object.keys(o).length ? build(o) : null
+}
+
+let live: Record<string, string> | null = null
+
+function build(o: Record<string, string | null>): Record<string, string> {
+  const out = { ...DEFAULT_KEYMAP }
+  for (const [k, a] of Object.entries(o)) {
+    if (a) out[k] = a
+    else delete out[k]
+  }
+  return out
+}
+
+/** The keymap in effect: Premiere defaults with the user's changes. */
+export function currentKeymap(): Record<string, string> {
+  if (!live) live = build(loadOverrides())
+  return live
+}
+
+/** Keys bound to an action, in the current keymap. */
+export function keysOf(action: string, map = currentKeymap()): string[] {
+  return Object.entries(map).filter(([, a]) => a === action).map(([k]) => k)
+}
+
+export function installKeymap(keymap?: Record<string, string>): () => void {
   const onKey = (e: KeyboardEvent) => {
     const target = e.target as HTMLElement | null
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
     if (document.querySelector('.lm-dialog-backdrop')) return
-    const action = keymap[keyString(e)]
+    const action = (keymap ?? currentKeymap())[keyString(e)]
     if (!action) return
     e.preventDefault()
     e.stopPropagation()

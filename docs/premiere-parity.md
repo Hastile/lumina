@@ -31,7 +31,7 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | Shift+1…8 | Focus panels | ✓ |
 | Ctrl+X / Ctrl+C / Ctrl+V / Ctrl+Shift+V / Ctrl+Alt+V | Cut / copy / paste / paste insert / paste attributes | ✓ |
 | Ctrl+M, Ctrl+Shift+E | Export Media, Export Frame | ✓ |
-| Ctrl+Alt+K editor, `.kys` import | Keyboard shortcuts | ✗ |
+| Ctrl+Alt+K editor (search, add/remove keys, reset to Premiere defaults) | Keyboard shortcuts | ✓ (`.kys` import ✗) |
 
 ## Timeline
 | Item | Status |
@@ -44,7 +44,7 @@ file at every milestone. Treat each ✗ that is in scope for the milestone as a 
 | Rolling (N), Rate Stretch (R), Slip (Y), Slide (U) tools | ✓ (linked clips follow; Alt = this clip only) |
 | Pen (P), Type (T) tools on the timeline | ✗ |
 | Marquee selection | ✓ (Shift adds) |
-| Rubber bands (volume) | ✓ (opacity band ✗) |
+| Rubber bands (volume on audio, opacity on video; keyframes drag in value and time) | ✓ |
 | Nested sequences | ✗ (M2) |
 
 ## Premiere project hand-off (.prproj, read-only)
@@ -101,7 +101,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Program audio on Web Audio: every clip scheduled sample-accurately at its cut, the audio output is the playback clock (no element warm-up, no rate nudging) | ✓ (media Web Audio can't decode fall back to <audio>; reverse play is silent) |
 | J/K/L shuttle incl. reverse play (long-GOP sources decoded in 0.5 s chunks) and 2x-8x | ✓ |
 | Select Playback Resolution (Full, 1/2, 1/4; paused frames full) | ✓ |
-| Shift+J/L slow motion, trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |
+| Shift+J/L slow play (10% steps) | ✓ |
+| Trim-mode dual view, dropped-frame indicator, render bar / preview files | ✗ |
 | Program monitor composited on the GPU (WebGL2) in the export renderer's order: Motion, crop, opacity, Transform/Gaussian Blur effects, transitions; text and shapes rasterized by the export renderer | ✓ mean pixel difference vs export < 1 (CSS fallback without WebGL2) |
 
 ## Keyframes & audio
@@ -115,7 +116,8 @@ The `project_import_premiere` MCP tool does the same. The source file is never m
 | Audio effects: Parametric Equalizer, Single-band Compressor, Hard Limiter (preview = export for EQ; dynamics within ~1 dB) | ✓ |
 | Essential Sound: audio types, Auto-Tag (file name + speech/music/ambience analysis), Loudness Auto-Match (LUFS) | ✓ (heuristic tagger, not Premiere's AI model) |
 | Auto-Match judgement: measured through speed + audio effects (compressor/limiter re-measured), one gain per source so cuts keep their dynamics (outliers pulled halfway), music under dialogue as a bed (-12 LU), true-peak ceiling, +20 dB boost cap, noise warning, sub-0.5 dB changes skipped | ✓ (Lumina extension) |
-| Spatial interpolation menu for Position, keyframes on the rubber band dragged in time, clip pan | ✗ |
+| Keyframes on the rubber band dragged in time | ✓ |
+| Spatial interpolation menu for Position, clip pan | ✗ |
 
 ## Export
 | Item | Status |

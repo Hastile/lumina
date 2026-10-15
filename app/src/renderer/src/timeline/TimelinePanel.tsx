@@ -543,7 +543,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
         )}
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} />}
-        {row.kind === 'audio' && x1 - x0 > 6 && <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} />}
+        {x1 - x0 > 6 && (tool === 'select' || tool === 'pen') && !pv && (
+          <VolumeBand clip={clip} seq={seq} width={Math.max(2, x1 - x0)} height={target.height - 2} prop={row.kind === 'audio' ? 'volume_db' : 'opacity'} />
+        )}
         <span className="name">
           {(pv?.speed ?? clip.speed) !== 1 && <b>{Math.round((pv?.speed ?? clip.speed) * 100)}% </b>}
           {clip.name}

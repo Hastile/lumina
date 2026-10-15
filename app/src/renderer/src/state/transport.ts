@@ -106,6 +106,14 @@ export function shuttle(m: Monitor, dir: 1 | -1): void {
   }
 }
 
+/** Shift+J / Shift+L: slow play, each press 10% faster in that direction (up to 90%). */
+export function slowShuttle(m: Monitor, dir: 1 | -1): void {
+  const s = get()
+  const r = s.playing === m && Math.sign(s.shuttle) === dir && Math.abs(s.shuttle) < 1 ? Math.min(0.9, Math.abs(s.shuttle) + 0.1) : 0.1
+  if (s.playing) stop()
+  play(m, Math.round(r * 10) / 10 * dir)
+}
+
 export function step(m: Monitor, frames: number): void {
   if (get().playing) stop()
   const tpf = ticksPerFrame(monitorRate(m))

@@ -172,3 +172,18 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .fxbadge.off { text-decoration: line-through; opacity: 0.6; }
 .lm-fxtree .node.leaf { cursor: grab; }
 .lm-fxtree .node.leaf:hover { background: rgba(255, 255, 255, 0.06); }
+
+.lm-shortcuts { width: min(760px, 92vw); height: min(640px, 86vh); display: flex; flex-direction: column; }
+.lm-shortcuts .bar { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid #3a3a3a; }
+.lm-shortcuts .bar input { flex: 1; }
+.lm-shortcuts .note { padding: 6px 16px; color: #e0b050; font-size: 11px; }
+.lm-shortcuts .list { flex: 1; overflow-y: auto; padding: 4px 16px; }
+.lm-shortcuts .group { font-weight: 600; margin: 10px 0 4px; color: var(--text-dim); }
+.lm-shortcuts .row { display: flex; justify-content: space-between; align-items: center; min-height: 24px; border-bottom: 1px solid #333; gap: 12px; }
+.lm-shortcuts .keys { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+.lm-shortcuts .chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 3px; background: #3c3c3c; font: 11px monospace; }
+.lm-shortcuts .chip.custom { background: #2d4f7a; }
+.lm-shortcuts .chip svg { cursor: pointer; opacity: 0.6; }
+.lm-shortcuts .chip svg:hover { opacity: 1; }
+.lm-shortcuts .add { background: none; border: 1px dashed #555; color: var(--text-dim); border-radius: 3px; padding: 1px 6px; cursor: pointer; font-size: 11px; }
+.lm-shortcuts .add.on { border-color: #2d8ceb; color: #fff; }

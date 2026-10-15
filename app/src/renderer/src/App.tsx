@@ -6,6 +6,7 @@ import { installKeymap } from './actions/keymap'
 import { buildEditingLayout, setDockApi } from './layout/dock'
 import { ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
 import { ExportDialog, RenderQueue } from './layout/ExportDialog'
+import { ShortcutsDialog } from './layout/ShortcutsDialog'
 import { connectEngine, set, useStore, type PanelId } from './state/store'
 import { ProjectPanel } from './panels/ProjectPanel'
 import { ProgramMonitor, SourceMonitor } from './panels/Monitors'
@@ -104,6 +105,7 @@ export function App() {
       </div>
       <DialogHost />
       <ExportDialog />
+      <ShortcutsDialog />
       <RenderQueue />
       <ContextMenuHost />
       <Toasts />

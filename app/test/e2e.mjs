@@ -680,6 +680,56 @@ try {
   for (let i = 0; i < 30 && t6.v[3].speed === 1; i++) { await page.waitForTimeout(100); t6 = await tl() }
   assert.ok(t6.v[3].speed < 1 && t6.v[3].end > t4.v[3].end, `rate stretch slowed the clip (${t6.v[3].speed})`)
   await page.keyboard.press('v')
+  // opacity rubber band on a video clip: Ctrl+click adds keyframes, a dot drags in value and time
+  {
+    const vid = t6.v[1].id
+    const band = page.locator(`[data-vband="${vid}"][data-band="opacity"]`)
+    await band.waitFor()
+    const ob = await band.boundingBox()
+    await page.keyboard.down('Control')
+    await page.mouse.click(ob.x + ob.width * 0.25, ob.y + 4)
+    await page.waitForTimeout(200)
+    await page.mouse.click(ob.x + ob.width * 0.75, ob.y + 4)
+    await page.keyboard.up('Control')
+    const kfs = () => page.evaluate((id) => {
+      const s = window.__lumina.get()
+      const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return Object.values(seq.tracks).map((t) => t.clips[id]).find(Boolean).keyframes.opacity ?? []
+    }, vid)
+    let k = await kfs()
+    for (let i = 0; i < 30 && k.length < 2; i++) { await page.waitForTimeout(100); k = await kfs() }
+    assert.equal(k.length, 2, 'two opacity keyframes')
+    const dot = band.locator('[data-vkf="0"]')
+    const db = await dot.boundingBox()
+    await page.mouse.move(db.x + db.width / 2, db.y + db.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(db.x + db.width / 2 + 15, db.y + db.height / 2 + 15, { steps: 5 })
+    await page.mouse.up()
+    let k2 = await kfs()
+    for (let i = 0; i < 30 && k2[0].t === k[0].t; i++) { await page.waitForTimeout(100); k2 = await kfs() }
+    assert.ok(k2[0].t > k[0].t && k2[0].v < 100 && k2[1].v === 100, `keyframe moved in time and value ${JSON.stringify(k2)}`)
+    log('opacity rubber band: Ctrl+click keyframes, dot dragged to', k2[0].v.toFixed(1), '% and +', ((k2[0].t - k[0].t) / TPS).toFixed(2), 's')
+  }
+  // Keyboard Shortcuts (Ctrl+Alt+K): bind Ctrl+Shift+M to Add Marker, use it, then restore the defaults
+  await page.keyboard.press('Control+Alt+k')
+  await page.locator('[data-shortcuts] [data-action-id="markers.add"] .add').click()
+  await page.keyboard.press('Control+Shift+m')
+  await page.locator('[data-shortcuts] [data-action-id="markers.add"] [data-key="Ctrl+Shift+M"]').waitFor()
+  await page.locator('[data-shortcuts] .actions .lm-btn').click()
+  const markers0 = await page.evaluate(() => { const s = window.__lumina.get(); return Object.keys(s.doc.sequences[s.doc.active_sequence_id].markers).length })
+  await page.keyboard.press('Control+Shift+m')
+  await page.waitForFunction((n) => { const s = window.__lumina.get(); return Object.keys(s.doc.sequences[s.doc.active_sequence_id].markers).length === n + 1 }, markers0, { timeout: 10000 })
+  await page.keyboard.press('Control+Alt+k')
+  await page.locator('[data-shortcuts] [data-action="reset-keys"]').click()
+  assert.equal(await page.locator('[data-shortcuts] [data-key="Ctrl+Shift+M"]').count(), 0, 'reset to Premiere defaults')
+  await page.locator('[data-shortcuts] .actions .lm-btn').click()
+  // Shift+L: slow play, each press 10% faster; K stops
+  await page.keyboard.press('Shift+l')
+  await page.keyboard.press('Shift+l')
+  const slow = await page.evaluate(() => window.__lumina.get().shuttle)
+  await page.keyboard.press('k')
+  assert.equal(slow, 0.2, 'Shift+L twice plays at 20%')
+  log('Keyboard Shortcuts: custom Ctrl+Shift+M added a marker, reset restored defaults; Shift+L x2 =', slow * 100 + '%')
   // Lumetri Color panel: dragging Exposure adds the effect and previews live, as one undo step
   await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), t6.v[3].id)
   await page.locator('.dv-tab', { hasText: 'Lumetri 색상' }).first().click()
