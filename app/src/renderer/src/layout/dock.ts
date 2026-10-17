@@ -30,6 +30,15 @@ export function setDockApi(a: DockviewApi): void {
   api = a
 }
 
+// Double-clicking the Program panel's header (its tab row) also toggles Maximize Frame, like
+// double-clicking the monitor itself. Only while Program is the group's shown tab.
+document.addEventListener('dblclick', (e) => {
+  const header = (e.target as HTMLElement | null)?.closest?.('.dv-tabs-and-actions-container')
+  const panel = api?.getPanel('program')
+  if (!header || !panel || !panel.group.element.contains(header) || panel.group.activePanel?.id !== 'program') return
+  toggleMaximize('program')
+})
+
 export function dockApi(): DockviewApi | null {
   return api
 }
