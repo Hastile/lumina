@@ -366,3 +366,22 @@ def test_new_video_track_numbering_skips_captions(media):
     run(e, "caption.add_track")
     tid = run(e, "track.add", kind="video")["track_id"]
     assert seq(e)["tracks"][tid]["name"] == "Video 4"
+
+
+def test_caption_cues_take_the_track_transform(media):
+    e, _ = engine_with([media["video"]])
+    black_sequence(e)
+    r = run(e, "caption.add", text="x", at=0, duration="1s")
+    for cmd, params in (("clip.set_property", {"prop": "position", "value": [10, 10]}), ("clip.toggle_animation", {"prop": "scale"}),
+                        ("clip.reset_motion", None), ("clip.set", None)):
+        args = {"clip_ids": [r["clip_id"]]} if params is None else {"clip_id": r["clip_id"], **params}
+        if cmd == "clip.set":
+            args["opacity"] = 50
+        with pytest.raises(CommandError):
+            run(e, cmd, **args)
+    with pytest.raises(CommandError):
+        run(e, "caption.set", clip_id=r["clip_id"], style={"position": [1, 2]})
+    run(e, "caption.set", clip_id=r["clip_id"], style={"color": "#00ff00"})  # formatting stays per cue
+    run(e, "caption.set_style", track_id=r["track_id"], style={"position": [100, 100], "scale": 150, "rotation": 10, "opacity": 80})
+    st = seq(e)["tracks"][r["track_id"]]["caption_style"]
+    assert st["position"] == [100, 100] and st["scale"] == 150 and st["opacity"] == 80

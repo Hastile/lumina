@@ -7,14 +7,14 @@ import { clipTime, current, KeyframeRow, KfRow, laneSpan, NumberScrub, setProp, 
 import { EFFECTS, effectMedia, effectParam } from '../util/effects'
 import type { Clip, Effect } from '../engine/document'
 import { timingClip } from '../util/tracks'
-import { captionStyleDialog } from '../actions/extra'
 import { findClip, useStore } from '../state/store'
+import { CaptionStyleSection, CaptionTransformSection, TrackEffectsSection, TrackPanel, useSelectedTrack } from './TrackPanel'
 import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
 import { GraphicLayers } from './GraphicLayers'
 import { marqueeMouseDown } from './KeyframeSelect'
 
-function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, fxId }: {
+export function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, fxId }: {
   title: string; children: React.ReactNode; onReset?: () => void; enabled?: boolean; onToggleEnabled?: () => void; onDelete?: () => void; fxId?: string
 }) {
   const [open, setOpen] = useState(true)
@@ -51,7 +51,7 @@ function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, f
   )
 }
 
-function Plain({ name, children }: { name: string; children: React.ReactNode }) {
+export function Plain({ name, children }: { name: string; children: React.ReactNode }) {
   return (
     <div className="lm-ec-prop">
       <span />
@@ -107,6 +107,7 @@ export function MotionControls({ c }: { c: ClipCtx }) {
 
 export function EffectControlsPanel() {
   const c = useSelectedClip()
+  const tr = useSelectedTrack()
   // Ctrl/Alt+wheel zooms the keyframe lane around the pointer, Shift+wheel scrolls it. A native,
   // non-passive listener: React's onWheel cannot preventDefault the panel's own scroll.
   const wheel = useRef<(e: WheelEvent) => void>(() => {})
@@ -134,6 +135,19 @@ export function EffectControlsPanel() {
     if (!el) return
     el.addEventListener('wheel', (e) => wheel.current(e), { passive: false })
   }, [])
+  if (!c && tr) {
+    return (
+      <div className="lm-panel lm-ec" ref={panel}>
+        <div className="lm-ec-title">
+          <span>{tr.track.caption_style ? t('Caption Track') : t('Track')} · {tr.track.name}</span>
+          <span className="dim">{tr.seq.name}</span>
+        </div>
+        <div className="lm-ec-scroll">
+          <TrackPanel seq={tr.seq} track={tr.track} />
+        </div>
+      </div>
+    )
+  }
   if (!c) return <div className="lm-panel"><div className="lm-empty">{t('(no clip selected)')}</div></div>
   const { clip, seq } = c
   const reset = () => void exec('clip.reset_motion', { sequence_id: seq.id, clip_ids: [clip.id] }, t('Reset'))
@@ -170,7 +184,8 @@ export function EffectControlsPanel() {
                 <GraphicLayers c={c} compact />
               </Group>
             )}
-            {clip.caption && <CaptionGroup c={c} />}
+            {clip.caption && <CaptionCueSections c={c} />}
+            {!clip.caption && (<>
             <Group title={t('Motion')} onReset={reset}>
               <MotionControls c={c} />
             </Group>
@@ -182,10 +197,12 @@ export function EffectControlsPanel() {
                 <span className="dim">{t('Normal')}</span>
               </Plain>
             </Group>
+            </>)}
             {(clip.effects ?? []).map((fx) => (
               <EffectGroup key={fx.id} c={c} fx={fx} />
             ))}
             <TrackEffects c={c} />
+            {!clip.caption && (
             <Group title={t('Time Remapping')}>
               <Plain name={t('Speed')}>
                 <NumberScrub value={Math.abs(clip.speed) * 100} min={1} max={10000} digits={2} suffix={clip.speed < 0 ? ' % ◂' : ' %'} onChange={(v) => void exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: v / 100 }, t('Speed'))} />
@@ -197,6 +214,7 @@ export function EffectControlsPanel() {
                 </label>
               </Plain>
             </Group>
+            )}
           </>
         ) : (
           <>
@@ -231,6 +249,7 @@ const DIMENSIONS = ['Horizontal and Vertical', 'Horizontal', 'Vertical']
 function TrackEffects({ c }: { c: ClipCtx }) {
   const track = useStore((s) => (s.doc ? findClip(c.seq, c.clip.id)?.track ?? null : null))
   const fxs = track?.effects ?? []
+  if (track && (fxs.length || track.caption_style)) return <TrackEffectsSection seq={c.seq} track={track} refClip={c.clip} time={c.time} />
   if (!track || !fxs.length) return null
   return (
     <>
@@ -253,12 +272,26 @@ const ANCHORS: { value: NonNullable<Effect['anchor']>; label: string }[] = [
   { value: 'stretch', label: 'Stretched over each clip' }
 ]
 
+/** A selected caption cue: its text, then its track's style and transform (a cue has none of its own). */
+function CaptionCueSections({ c }: { c: ClipCtx }) {
+  const track = findClip(c.seq, c.clip.id)?.track
+  return (
+    <>
+      <CaptionGroup c={c} />
+      {track?.caption_style && (
+        <>
+          <div className="lm-ec-hint">{t('Caption cues share their track\'s style and transform: changes here apply to every caption on {track}.').replace('{track}', track.name)}</div>
+          <CaptionStyleSection seq={c.seq} track={track} />
+          <CaptionTransformSection seq={c.seq} track={track} />
+        </>
+      )}
+    </>
+  )
+}
+
 function CaptionGroup({ c }: { c: ClipCtx }) {
   const cap = c.clip.caption!
-  const track = findClip(c.seq, c.clip.id)?.track
-  const style = track?.caption_style
   const [text, setText] = useState<string | null>(null)
-  const setStyle = (s: Record<string, unknown>, label: string) => track && void exec('caption.set_style', { sequence_id: c.seq.id, track_id: track.id, style: s }, label)
   return (
     <Group title={t('Caption')}>
       <div className="lm-ec-prop">
@@ -279,30 +312,11 @@ function CaptionGroup({ c }: { c: ClipCtx }) {
         <span />
         <span />
       </div>
-      {style && (
-        <>
-          <Plain name={t('Font Size')}>
-            <NumberScrub value={style.font_size} min={1} max={2000} onChange={(v) => setStyle({ font_size: v }, t('Caption Track Style'))} />
-          </Plain>
-          <Plain name={t('Position')}>
-            <NumberScrub value={style.position[0]} onChange={(v) => setStyle({ position: [v, style.position[1]] }, t('Caption Track Style'))} />
-            <NumberScrub value={style.position[1]} onChange={(v) => setStyle({ position: [style.position[0], v] }, t('Caption Track Style'))} />
-          </Plain>
-          <Plain name={t('Fill')}>
-            <input type="color" value={style.color.slice(0, 7)} onChange={(e) => setStyle({ color: e.target.value }, t('Caption Track Style'))} />
-          </Plain>
-          <Plain name={t('Track Style')}>
-            <button className="lm-btn small" onClick={() => track && captionStyleDialog(track.id)}>
-              {t('Caption Track Style...')}
-            </button>
-          </Plain>
-        </>
-      )}
     </Group>
   )
 }
 
-function EffectGroup({ c, fx, trackId }: { c: ClipCtx; fx: Effect; trackId?: string }) {
+export function EffectGroup({ c, fx, trackId }: { c: ClipCtx; fx: Effect; trackId?: string }) {
   const def = EFFECTS[fx.type]
   const at = clipTime(c)
   const [w, h] = c.media?.video ? [c.media.video.width, c.media.video.height] : [c.seq.settings.width, c.seq.settings.height]

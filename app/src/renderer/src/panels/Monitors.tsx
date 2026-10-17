@@ -10,7 +10,7 @@ import type { Clip, Effect, MediaItem, Sequence } from '../engine/document'
 import { mediaUrl } from '../engine/client'
 import { runAction } from '../actions/actions'
 import { DRAG_MIME } from './ProjectPanel'
-import { activeSequence, exec, get, set, sequenceEnd, useStore } from '../state/store'
+import { activeSequence, exec, findClip, get, set, sequenceEnd, useStore } from '../state/store'
 import { goTo, type Monitor } from '../state/transport'
 import { focusPanel, toggleMaximize } from '../layout/dock'
 import { floorToFrame, parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
@@ -443,6 +443,13 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       setDrag(null)
       const layer = visual.find((l) => !l.preroll && l.clip?.id === clipId)
       if (!layer || (Math.abs(last.dx) < 0.5 && Math.abs(last.dy) < 0.5)) return
+      const found = findClip(seq, clipId)
+      const style = found?.clip.caption ? found.track.caption_style : null
+      if (found && style) {
+        // a caption cue has no transform of its own: the drag moves every caption of its track
+        void exec('caption.set_style', { sequence_id: seq.id, track_id: found.track.id, style: { position: [style.position[0] + last.dx, style.position[1] + last.dy] } }, t('Position'))
+        return
+      }
       const pos = valueAt(layer.clip!, 'position', at, seq, layer.media) as number[]
       void exec('clip.set_property', { sequence_id: seq.id, clip_id: clipId, prop: 'position', value: [pos[0] + last.dx, pos[1] + last.dy], at }, t('Position'))
     }

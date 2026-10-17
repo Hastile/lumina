@@ -19,6 +19,8 @@ from .registry import CommandError, Context, Params, TimeValue, command, resolve
 from .timeline import DEFAULT_MOTION, clear_range, clip_path, clips_sorted, find_clip, require_unlocked, write_clip
 
 Style = dict[str, str | float | bool | list[float] | dict | None]
+# the track's transform: never overridden per cue (Premiere)
+TRANSFORM_FIELDS = {"position", "scale", "rotation", "opacity", "box", "vertical_align"}
 
 
 def _check_style(style: Style) -> dict:
@@ -149,6 +151,9 @@ def caption_set(ctx: Context, p: SetCaption):
     if p.clear_style:
         cap["style"] = None
     if p.style:
+        moved = sorted(set(p.style) & TRANSFORM_FIELDS)
+        if moved:
+            raise CommandError("CAPTION_TRANSFORM", f"{', '.join(moved)}: caption cues share their track's transform (caption.set_style)")
         merged = {**(cap.get("style") or {}), **_check_style(p.style)}
         cap["style"] = {k: v for k, v in merged.items() if v is not None} or None
     path = clip_path(seq, tid, clip["id"])

@@ -14,6 +14,7 @@ import { current, KeyframeRow, NumberScrub, setProp, useSelectedClip } from './P
 import { GraphicLayers } from './GraphicLayers'
 import { DRAG_MIME, setDraggedItems } from './ProjectPanel'
 import { placeAsset } from '../actions/extra'
+import { TrackPanel, useSelectedTrack } from './TrackPanel'
 
 function Section({ title, children, reset }: { title: string; children: React.ReactNode; reset?: () => void }) {
   return (
@@ -35,6 +36,21 @@ function Section({ title, children, reset }: { title: string; children: React.Re
 
 export function PropertiesPanel() {
   const c = useSelectedClip()
+  const tr = useSelectedTrack()
+  const cueTrack = c?.clip.caption ? findClip(c.seq, c.clip.id)?.track : undefined
+  if ((!c && tr) || (c && cueTrack?.caption_style)) {
+    // a caption cue shows its track: Premiere's captions have one style and transform per track
+    const seq = c ? c.seq : tr!.seq
+    const track = c ? cueTrack! : tr!.track
+    return (
+      <div className="lm-panel lm-props">
+        <div className="lm-props-title">{track.caption_style ? t('Caption Track') : t('Track')} · {track.name}</div>
+        <div className="lm-props-scroll lm-ec">
+          <TrackPanel seq={seq} track={track} />
+        </div>
+      </div>
+    )
+  }
   if (!c) return <div className="lm-panel"><div className="lm-empty">{t('Select a clip to see its properties.')}</div></div>
   const { clip, seq } = c
   const pos = current(c, 'position') as number[]

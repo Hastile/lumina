@@ -6,6 +6,16 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
+  'Caption Track': '캡션 트랙',
+  'Tracking': '자간',
+  'Shadow': '그림자',
+  'Distance': '거리',
+  'Blur': '흐림',
+  'Align and Transform': '정렬 및 변형',
+  'Region': '영역',
+  'Drop an effect or preset here or on the track header: it applies to every clip of the track.': '효과나 사전 설정을 여기 또는 트랙 헤더에 놓으면 트랙의 모든 클립에 적용됩니다.',
+  'Caption cues share their track\'s style and transform: changes here apply to every caption on {track}.': '캡션은 트랙의 스타일과 변형을 함께 씁니다: 여기서 바꾸면 {track}의 모든 캡션에 적용됩니다.',
+  // captions, track effects, frame hold, media, analysis
   'New Caption Track': '새 캡션 트랙',
   'Track Name': '트랙 이름',
   'captions will be placed at': '개의 캡션이 다음 위치에 배치됩니다:',

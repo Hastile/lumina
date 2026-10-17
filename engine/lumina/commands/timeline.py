@@ -701,6 +701,8 @@ def clip_set(ctx: Context, p: SetClips):
     for cid in p.clip_ids:
         tid, c = find_clip(seq, cid)
         require_unlocked(seq, tid)
+        if p.opacity is not None and c.get("caption") is not None and c["opacity"] != p.opacity:
+            raise CommandError("CAPTION_TRANSFORM", "a caption cue uses its track's opacity (caption.set_style)")
         for key in ("name", "enabled", "label", "opacity", "volume_db", "gain_db", "muted"):
             value = getattr(p, key)
             if value is not None and c.get(key) != value:

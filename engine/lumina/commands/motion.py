@@ -42,6 +42,14 @@ def _ctx(ctx: Context, sequence_id: str | None, clip_id: str):
     return seq, tid, clip, media
 
 
+def no_caption_transform(clip: dict, prop: str | None = None) -> None:
+    """Caption cues take their track's transform (Premiere): position, scale, rotation and
+    opacity are set on the caption track (caption.set_style), never per cue."""
+    if clip.get("caption") is not None and prop != "volume_db":
+        raise CommandError("CAPTION_TRANSFORM", "a caption cue uses its track's transform: change it on the caption track "
+                                                "(caption.set_style position/scale/rotation/opacity)")
+
+
 def _write_static(ctx: Context, seq: dict, tid: str, clip: dict, prop: str, v: Value) -> None:
     path = clip_path(seq, tid, clip["id"])
     if prop in ("opacity", "volume_db"):
@@ -67,6 +75,7 @@ class SetProperty(Params):
 def clip_set_property(ctx: Context, p: SetProperty):
     """Set a Motion/Opacity/Volume property. If it is animated, adds or updates the keyframe at `at` (like Premiere)."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, p.prop)
     v = _check_value(p.prop, p.value)
     kfs = clip["keyframes"].get(p.prop)
     if not kfs:
@@ -203,6 +212,7 @@ class KeyframeEase(Params):
 def clip_set_keyframe_ease(ctx: Context, p: KeyframeEase):
     """Bezier handle of a Motion/Opacity/Volume keyframe: speed and influence on one side."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, p.prop)
     kfs = clip["keyframes"].get(p.prop)
     if not kfs:
         raise CommandError("NOT_ANIMATED", f"{p.prop} has no keyframes")
@@ -224,6 +234,7 @@ class ToggleAnimation(Params):
 def clip_toggle_animation(ctx: Context, p: ToggleAnimation):
     """The stopwatch: start animating (keyframe at `at` with the current value) or stop (drop keyframes, keep value at `at`)."""
     seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, p.prop)
     at = _at(seq, clip, p.at)
     path = clip_path(seq, tid, clip["id"])
     current = value_at(clip, p.prop, at, seq, media)
@@ -248,6 +259,7 @@ class KeyframeOp(Params):
 def clip_keyframe(ctx: Context, p: KeyframeOp):
     """Add / remove / toggle a keyframe at a time (the diamond button), or change its interpolation."""
     seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, p.prop)
     at = _at(seq, clip, p.at)
     t = source_time(clip, at)
     tol = round(timebase.ticks_per_frame(seq["settings"]["fps_num"], seq["settings"]["fps_den"]) * clip["speed"] / 2)
@@ -284,6 +296,7 @@ class SetKeyframes(Params):
 def clip_set_keyframes(ctx: Context, p: SetKeyframes):
     """Replace a property's keyframes in one go (times are relative to the clip's start)."""
     seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, p.prop)
     path = clip_path(seq, tid, clip["id"]) + ["keyframes", p.prop]
     if not p.keyframes:
         if clip["keyframes"].get(p.prop):
@@ -311,6 +324,7 @@ def clip_reset_motion(ctx: Context, p: ResetMotion):
     """Reset Motion and Opacity to defaults and remove their keyframes."""
     for cid in p.clip_ids:
         seq, tid, clip, _ = _ctx(ctx, p.sequence_id, cid)
+        no_caption_transform(clip)
         path = clip_path(seq, tid, cid)
         ctx.m.set(path + ["motion"], {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0,
                                       "anchor": None, "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0})
@@ -330,6 +344,7 @@ class SetUniform(Params):
 def clip_set_uniform_scale(ctx: Context, p: SetUniform):
     """Uniform Scale checkbox."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    no_caption_transform(clip, None)
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["motion", "uniform"], p.uniform)
 
 
@@ -344,6 +359,7 @@ def clip_fit_to_frame(ctx: Context, p: FitToFrame):
     """Set to Frame Size (fit) / Scale to fill (fill): centers the clip and sets Scale."""
     for cid in p.clip_ids:
         seq, tid, clip, media = _ctx(ctx, p.sequence_id, cid)
+        no_caption_transform(clip)
         if not media or not media.get("video"):
             continue
         st = seq["settings"]

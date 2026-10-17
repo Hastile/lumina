@@ -25,6 +25,7 @@ type State = {
   snap: boolean
   selectedClips: string[]
   selectedTransition: string | null
+  selectedTrack: string | null // a track header clicked: Effect Controls / Properties show the track (caption style, track effects)
   selectedItems: string[]
   currentBin: string | null
 
@@ -61,6 +62,7 @@ export const useStore = create<State>(() => ({
   snap: true,
   selectedClips: [],
   selectedTransition: null,
+  selectedTrack: null,
   selectedItems: [],
   currentBin: null,
   sourceMediaId: null,
@@ -167,6 +169,12 @@ useStore.subscribe((s, prev) => {
   const active = doc.active_sequence_id
   if (active && doc.sequences[active] && active !== prev.doc?.active_sequence_id && !open.includes(active)) open = [...open, active]
   if (open.length !== s.openSequences.length || open.some((id, i) => id !== s.openSequences[i])) set({ openSequences: open })
+})
+
+// selecting clips (or a transition) leaves the track selection
+useStore.subscribe((s, prev) => {
+  if (s.selectedTrack && ((s.selectedClips.length && s.selectedClips !== prev.selectedClips) || (s.selectedTransition && s.selectedTransition !== prev.selectedTransition)))
+    set({ selectedTrack: null })
 })
 
 // ---------------------------------------------------------------- toasts

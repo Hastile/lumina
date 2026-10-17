@@ -1118,6 +1118,7 @@ const AUDIO_FX = ['parametric_eq', 'compressor', 'hard_limiter'] as const
 function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize: (h: number, commit: boolean) => void }) {
   const t = row.track
   const caption = isCaptionTrack(t)
+  const selectedTrack = useStore((s) => s.selectedTrack === t.id)
   const patched = !caption && patchedTrack(seq, row.kind) === t.id
   const fxCount = (t.effects ?? []).length
   const hasGraphics = Object.values(t.clips).some((c) => c.graphic)
@@ -1140,8 +1141,14 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
     void exec('track.set', { sequence_id: seq.id, track_id: t.id, [key]: !t[key] }, `Track ${key}`)
   return (
     <div
-      className={`lm-th ${row.kind} ${caption ? 'caption' : ''}`}
+      className={`lm-th ${row.kind} ${caption ? 'caption' : ''} ${selectedTrack ? 'selected' : ''}`}
       style={{ top: row.top, height: row.height }}
+      data-track-header={t.id}
+      onMouseDown={(e) => {
+        // a click on the header (not its buttons): select the track - its style, transform and track effects
+        if (e.button !== 0 || (e.target as HTMLElement).closest('button, input, select, .lm-th-resize')) return
+        set({ selectedTrack: t.id, selectedClips: [], selectedTransition: null, focusedPanel: 'effectControls' })
+      }}
       onDragOver={(e) => e.dataTransfer.types.includes(EFFECT_MIME) && e.preventDefault()}
       onDrop={(e) => {
         // an effect or preset dropped on a track header becomes a track effect (every clip, as is)
