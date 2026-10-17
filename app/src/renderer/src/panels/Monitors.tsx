@@ -12,7 +12,7 @@ import { runAction } from '../actions/actions'
 import { DRAG_MIME } from './ProjectPanel'
 import { activeSequence, exec, get, set, sequenceEnd, useStore } from '../state/store'
 import { goTo, type Monitor } from '../state/transport'
-import { focusPanel } from '../layout/dock'
+import { focusPanel, toggleMaximize } from '../layout/dock'
 import { floorToFrame, parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
 import { effectCss, effectMedia, trackTransitions, transitionProgress } from '../util/effects'
@@ -88,8 +88,9 @@ function Scrubber({ monitor, duration, time, inPoint, outPoint, markers }: {
 }
 
 /** Letterboxed frame of the given aspect; children get the display scale factor. */
-function Frame({ width, height, children, onDrop }: {
+function Frame({ width, height, children, onDrop, onDoubleClick }: {
   width: number; height: number; children: (scale: number) => React.ReactNode; onDrop?: (e: React.DragEvent) => void
+  onDoubleClick?: () => void
 }) {
   const box = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ w: 0, h: 0 })
@@ -104,7 +105,7 @@ function Frame({ width, height, children, onDrop }: {
     return () => ro.disconnect()
   }, [width, height])
   return (
-    <div ref={box} className="lm-frame-box" onDragOver={(e) => onDrop && e.preventDefault()} onDrop={onDrop}>
+    <div ref={box} className="lm-frame-box" onDragOver={(e) => onDrop && e.preventDefault()} onDrop={onDrop} onDoubleClick={onDoubleClick}>
       <div className="lm-frame" style={{ width: size.w, height: size.h }}>
         {size.w > 0 && children(size.w / width)}
       </div>
@@ -575,6 +576,13 @@ function PlaybackResolution() {
   )
 }
 
+/** Double-click the Program monitor: Maximize Frame (the panel fills the window, like Premiere's `);
+ * double-click again to restore. Not while the Type or Shape tools draw on the frame. */
+function toggleProgramMaximized(): void {
+  if (['type', 'rectangle', 'ellipse', 'pen'].includes(get().tool)) return
+  toggleMaximize('program')
+}
+
 export function ProgramMonitor() {
   const seq = useStore((s) => activeSequence(s))
   const mediaMap = useStore((s) => s.doc?.media)
@@ -597,7 +605,7 @@ export function ProgramMonitor() {
   return (
     <div className="lm-panel lm-monitor">
       <div className="lm-monitor-title">{t('Program')}: {seq.name}</div>
-      <Frame width={st.width} height={st.height}>
+      <Frame width={st.width} height={st.height} onDoubleClick={toggleProgramMaximized}>
         {(scale) => <Stage seq={seq} media={mediaMap} at={floorToFrame(time, st)} playing={playing} rate={rate} scale={scale} />}
       </Frame>
       <div className="lm-monitor-bar">

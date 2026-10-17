@@ -180,9 +180,38 @@ export function focusPanel(id: PanelId): void {
   set({ focusedPanel: id })
 }
 
+// dockview maximizes by hiding the other leaves and restores from cached sizes, which shifts the
+// columns by a few pixels each time. The split sizes of the whole grid are kept before Maximize
+// and put back exactly after it. (Its gridview tree is internal: children / getChildSize / resizeChild.)
+type GridNode = { children?: GridNode[]; getChildSize?: (i: number) => number; resizeChild?: (i: number, size: number) => void }
+type Sizes = { sizes: number[]; children: (Sizes | null)[] }
+let beforeMaximize: Sizes | null = null
+
+const gridRoot = (): GridNode | null => (api as unknown as { component?: { gridview?: { root?: GridNode } } })?.component?.gridview?.root ?? null
+
+function snapshot(node: GridNode): Sizes | null {
+  if (!node.children || !node.getChildSize) return null
+  return { sizes: node.children.map((_, i) => node.getChildSize!(i)), children: node.children.map(snapshot) }
+}
+
+function restore(node: GridNode, s: Sizes): void {
+  if (!node.children || !node.resizeChild || node.children.length !== s.sizes.length) return
+  // left to right: each resize takes its difference from the next child, so the last one is exact too
+  for (let i = 0; i < s.sizes.length - 1; i++) node.resizeChild(i, s.sizes[i])
+  node.children.forEach((c, i) => s.children[i] && restore(c, s.children[i]!))
+}
+
 export function toggleMaximize(id: PanelId): void {
   const panel = api?.getPanel(id)
-  if (!panel) return
-  if (panel.api.isMaximized()) panel.api.exitMaximized()
-  else panel.api.maximize()
+  if (!api || !panel) return
+  if (panel.api.isMaximized()) {
+    panel.api.exitMaximized()
+    const root = gridRoot()
+    if (root && beforeMaximize) restore(root, beforeMaximize)
+    beforeMaximize = null
+  } else {
+    const root = gridRoot()
+    beforeMaximize = root ? snapshot(root) : null
+    panel.api.maximize()
+  }
 }
