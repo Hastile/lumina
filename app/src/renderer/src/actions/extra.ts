@@ -330,6 +330,7 @@ export async function reverseSelection(): Promise<void> {
   }
 }
 
+def('graphics.importTextStyles', t('Import Text Styles...'), () => void import('../panels/TrackPanel').then((m) => m.importTextStyles()))
 def('sequence.addCaptionTrack', t('Add Caption Track'), () => void addCaptionTrack())
 def('sequence.addCaption', t('Add Caption'), addCaptionAtPlayhead)
 def('file.importCaptions', t('Import Captions...'), () => importCaptions())

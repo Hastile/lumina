@@ -74,6 +74,10 @@ class Engine:
             "presets.list": lambda p: presets_mod.load(),
             "presets.import_premiere": lambda p: presets_mod.import_premiere(p.get("path")),
             "presets.remove": lambda p: {"removed": presets_mod.remove(p["preset_id"])},
+            "styles.list": lambda p: self._styles().load(),
+            "styles.import_premiere": lambda p: self._styles().import_premiere(p.get("path")),
+            "styles.remove": lambda p: {"removed": self._styles().remove(p["style_id"])},
+            "styles.save": self._styles_save,
             "export.start": self._export_start,
             "export.cancel": lambda p: self.exports.cancel(p["job_id"]),
             "export.frame": self._export_frame,
@@ -190,6 +194,24 @@ class Engine:
         return {"ticks": ticks, "seconds": timebase.ticks_to_seconds(ticks),
                 "frame": timebase.ticks_to_frames(ticks, st["fps_num"], st["fps_den"]),
                 "timecode": timebase.timecode(ticks, st["fps_num"], st["fps_den"])}
+
+    # ------------------------------------------------------------ text styles
+
+    @staticmethod
+    def _styles():
+        from . import text_styles
+
+        return text_styles
+
+    def _styles_save(self, p: dict) -> dict:
+        """Save a caption track's formatting as a text style (Premiere's Create Style)."""
+        from .commands.project import seq_of
+
+        seq = seq_of(self.session.doc, p.get("sequence_id"))
+        track = seq["tracks"].get(p.get("track_id") or "")
+        if not track or not track.get("caption_style"):
+            raise CommandError("NOT_CAPTION_TRACK", "styles.save needs a caption track")
+        return self._styles().save_style(p.get("name") or track["name"], track["caption_style"])
 
     # ------------------------------------------------------------ captions / media / analysis
 

@@ -208,6 +208,29 @@ def caption_import_srt(ctx: Context, p: ImportSrt):
     return {"track_id": tid, "clip_ids": made, "count": len(made), "skipped": parsed.get("skippedCueCount", 0)}
 
 
+class ApplyStyle(Params):
+    sequence_id: str | None = None
+    track_id: str
+    style_id: str = Field(description="a text style from styles.list (imported from Premiere .prtextstyle files)")
+
+
+@command("caption.apply_style", ApplyStyle)
+def caption_apply_style(ctx: Context, p: ApplyStyle):
+    """Apply a text style to a caption track (Premiere's Track Style): font, size, fill, stroke, shadow,
+    background, tracking and alignment change for every cue; position and transform stay."""
+    from .. import text_styles
+
+    st = text_styles.get(p.style_id)
+    if st is None:
+        raise CommandError("NO_STYLE", f"text style not found: {p.style_id}")
+    seq = seq_of(ctx.doc, p.sequence_id)
+    tid = _caption_track(seq, p.track_id)
+    require_unlocked(seq, tid)
+    fmt = {k: v for k, v in st["style"].items() if k in text_styles.FORMAT_FIELDS}
+    ctx.m.set(["sequences", seq["id"], "tracks", tid, "caption_style"], {**seq["tracks"][tid]["caption_style"], **fmt})
+    return {"style": st["name"]}
+
+
 class TrackRef(Params):
     sequence_id: str | None = None
     track_id: str

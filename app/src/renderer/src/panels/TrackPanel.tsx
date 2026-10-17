@@ -2,10 +2,14 @@
 // caption cue is selected). Caption tracks work like Premiere's: one Track Style for the text of every
 // cue, one Align and Transform for all of them (cues have no transform of their own), and track
 // effects that animate every cue without upgrading the captions to graphics.
+import { useEffect, useState } from 'react'
 import { AlignCenter, AlignLeft, AlignRight, Bold, Italic } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { CaptionStyle, Clip, Effect, Sequence, Track } from '../engine/document'
-import { exec, useStore } from '../state/store'
+import { call, exec, toast, useStore } from '../state/store'
+import { engine } from '../engine/client'
+import { openContextMenu } from '../layout/Chrome'
+import { openDialog } from '../state/dialog'
 import { EFFECTS, effectMedia } from '../util/effects'
 import { timingClip } from '../util/tracks'
 import { EffectGroup, Group, Plain } from './EffectControls'
@@ -25,8 +29,18 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
   const set = (style: Partial<CaptionStyle>, label: string) => setStyle(seq, track, style, label)
   const fonts = FONTS.includes(s.font_family) ? FONTS : [s.font_family, ...FONTS]
   const shadow = s.shadow
+  const saveStyle = () =>
+    openDialog({
+      title: t('Save as Text Style...'),
+      fields: [{ key: 'name', label: t('Name'), type: 'text', value: track.name }],
+      onSubmit: async (v) => {
+        await call('styles.save', { sequence_id: seq.id, track_id: track.id, name: String(v.name) })
+        window.dispatchEvent(new Event('lumina:styles'))
+      }
+    })
   return (
     <Group title={t('Track Style')}>
+      <TextStyleChips onApply={(id, name) => void exec('caption.apply_style', { sequence_id: seq.id, track_id: track.id, style_id: id }, `${t('Track Style')}: ${name}`)} onSave={saveStyle} />
       <div className="lm-text-layer compact" data-caption-style={track.id}>
         <div className="row">
           <select value={s.font_family} onChange={(e) => set({ font_family: e.target.value }, t('Font'))} title={t('Font')}>
@@ -98,6 +112,97 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
         )}
       </div>
     </Group>
+  )
+}
+
+
+// ---------------------------------------------------------------- text styles (Premiere's Text Styles)
+
+export type TextStyleRec = { id: string; name: string; style: Partial<CaptionStyle>; source: string | null }
+
+/** The style library (outside the project, like Premiere's Text Styles folder), refreshed on 'lumina:styles'. */
+export function useTextStyles(): TextStyleRec[] {
+  const [styles, setStyles] = useState<TextStyleRec[]>([])
+  const connected = useStore((s) => s.connected)
+  useEffect(() => {
+    const refresh = () => void engine.call<TextStyleRec[]>('styles.list', {}).then(setStyles).catch(() => undefined)
+    if (connected) refresh()
+    window.addEventListener('lumina:styles', refresh)
+    return () => window.removeEventListener('lumina:styles', refresh)
+  }, [connected])
+  return styles
+}
+
+export async function importTextStyles(defaultFolder = false): Promise<void> {
+  let paths: (string | null)[] = [null]
+  if (!defaultFolder) {
+    paths = await window.lumina.openDialog({ title: t('Import Text Styles'), properties: ['openFile', 'multiSelections'], filters: [{ name: 'Premiere Text Styles', extensions: ['prtextstyle', 'prproj'] }] }, 'import')
+    if (!paths.length) return
+  }
+  let n = 0
+  for (const path of paths) {
+    const r = await call<{ imported: number; skipped: string[] }>('styles.import_premiere', { path })
+    if (r) n += r.imported
+  }
+  toast(`${t('Imported text styles')}: ${n}`, 'info')
+  window.dispatchEvent(new Event('lumina:styles'))
+}
+
+/** CSS that previews a style on its own name (font, fill, stroke, shadow). */
+function chipCss(s: Partial<CaptionStyle>): React.CSSProperties {
+  const sh = s.shadow
+  const rad = ((sh?.angle ?? 135) - 90) * (Math.PI / 180)
+  const d = Math.min(3, (sh?.distance ?? 0) / 3)
+  const hex = (s.color ?? '#ffffff').replace('#', '')
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16) || 0)
+  const dark = 0.2126 * r + 0.7152 * g + 0.0722 * b < 90
+  return {
+    fontFamily: `"${s.font_family}", Pretendard, sans-serif`,
+    fontWeight: s.bold ? 700 : undefined,
+    fontStyle: s.italic ? 'italic' : undefined,
+    color: s.color ?? '#fff',
+    // the outline drawn behind the fill, as in the video (not eating into small glyphs)
+    WebkitTextStroke: s.stroke_color && (s.stroke_width ?? 0) > 0 ? `${Math.min(3, Math.max(1, (s.stroke_width ?? 0) / 2))}px ${s.stroke_color}` : undefined,
+    paintOrder: 'stroke fill',
+    textShadow: sh ? `${(Math.cos(rad) * d).toFixed(1)}px ${(Math.sin(rad) * d).toFixed(1)}px ${Math.min(4, sh.blur / 3)}px ${sh.color}` : undefined,
+    // dark text gets a light chip so it can be read
+    background: s.background ?? (dark ? '#d8d8d8' : undefined),
+    padding: '0 3px',
+    borderRadius: 2
+  }
+}
+
+/** The style list: click a style to apply it; + imports Premiere styles or saves the current one. */
+export function TextStyleChips({ onApply, onSave }: { onApply: (id: string, name: string) => void; onSave?: () => void }) {
+  const styles = useTextStyles()
+  const menu = (e: React.MouseEvent) =>
+    openContextMenu(e, [
+      { label: t('Import Text Styles...'), run: () => void importTextStyles() },
+      { label: t("Import Premiere's Text Styles Folder"), run: () => void importTextStyles(true) },
+      ...(onSave ? ['sep' as const, { label: t('Save as Text Style...'), run: onSave }] : [])
+    ])
+  return (
+    <div className="lm-style-chips" data-text-styles={styles.length}>
+      {styles.map((s) => (
+        <button
+          key={s.id}
+          className="chip"
+          data-style={s.id}
+          title={`${s.name} · ${s.style.font_family} ${s.style.font_size ?? ''}`}
+          onClick={() => onApply(s.id, s.name)}
+          onContextMenu={(e) =>
+            openContextMenu(e, [
+              { label: t('Apply'), run: () => onApply(s.id, s.name) },
+              { label: t('Delete Text Style'), run: () => void call('styles.remove', { style_id: s.id }).then(() => window.dispatchEvent(new Event('lumina:styles'))) }
+            ])
+          }
+        >
+          <span style={chipCss(s.style)}>{s.name}</span>
+        </button>
+      ))}
+      <button className="chip add" title={t('Text Styles')} onClick={menu} data-style-menu="">＋</button>
+      {!styles.length && <span className="dim">{t('No text styles yet: + imports Premiere styles')}</span>}
+    </div>
   )
 }
 

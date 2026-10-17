@@ -244,6 +244,7 @@ const MENU: Record<string, Item[]> = {
     { label: 'New Layer > Rectangle', action: 'graphics.newRectangle', accel: 'Ctrl+Alt+R' },
     { label: 'New Layer > Ellipse', action: 'graphics.newEllipse', accel: 'Ctrl+Alt+E' },
     'sep',
+    { label: 'Import Text Styles...', action: 'graphics.importTextStyles' },
     { label: 'Add Caption', action: 'sequence.addCaption' },
     { label: 'Caption Track Style...', action: 'caption.style' },
     { label: 'Upgrade Caption to Graphic', action: 'caption.upgrade' }

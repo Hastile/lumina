@@ -385,3 +385,28 @@ def test_caption_cues_take_the_track_transform(media):
     run(e, "caption.set_style", track_id=r["track_id"], style={"position": [100, 100], "scale": 150, "rotation": 10, "opacity": 80})
     st = seq(e)["tracks"][r["track_id"]]["caption_style"]
     assert st["position"] == [100, 100] and st["scale"] == 150 and st["opacity"] == 80
+
+
+def test_text_styles_import_and_apply(media, tmp_path, monkeypatch):
+    import glob
+    from lumina import text_styles
+
+    monkeypatch.setenv("LUMINA_TEXT_STYLES", str(tmp_path / "styles.json"))
+    files = glob.glob(str(__import__("pathlib").Path(__file__).parent / "fixtures" / "*.prtextstyle"))
+    if not files:
+        pytest.skip("no .prtextstyle fixture")
+    e, _ = engine_with([media["video"]])
+    black_sequence(e)
+    r = e.dispatch("styles.import_premiere", {"path": files[0]})
+    assert r["imported"] == 1
+    st = e.dispatch("styles.list")[0]
+    again = e.dispatch("styles.import_premiere", {"path": files[0]})
+    assert again["imported"] == 0  # same name and look: kept once
+    cap = run(e, "caption.add", text="스타일", at=0, duration="1s")
+    run(e, "caption.set_style", track_id=cap["track_id"], style={"position": [320, 300]})
+    run(e, "caption.apply_style", track_id=cap["track_id"], style_id=st["id"])
+    cs = seq(e)["tracks"][cap["track_id"]]["caption_style"]
+    assert cs["font_family"] == st["style"]["font_family"] and cs["font_size"] == st["style"]["font_size"]
+    assert cs["position"] == [320, 300]  # transform kept
+    saved = e.dispatch("styles.save", {"track_id": cap["track_id"], "name": "mine"})
+    assert text_styles.get(saved["id"])["style"]["font_family"] == cs["font_family"]

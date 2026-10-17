@@ -443,3 +443,10 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-ec-section .lm-add-fx { margin-left: 8px; font-size: 11px; background: #222; color: var(--text); border: 1px solid #444; border-radius: 2px; max-width: 150px; }
 .lm-ec-hint { padding: 4px 10px; font-size: 11px; color: var(--text-dim); }
 .lm-ec-prop.tall { height: auto; min-height: 44px; padding: 3px 0; align-items: center; }
+
+/* text style library chips (Premiere's Text Styles) */
+.lm-style-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 10px 6px; align-items: center; }
+.lm-style-chips .chip { background: #3a3a3a; border: 1px solid #4a4a4a; border-radius: 3px; padding: 2px 8px; cursor: pointer; font-size: 13px; max-width: 160px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lm-style-chips .chip:hover { border-color: var(--accent); }
+.lm-style-chips .chip.add { color: var(--text-dim); font-size: 12px; padding: 2px 7px; }
+.lm-style-chips .dim { font-size: 11px; }

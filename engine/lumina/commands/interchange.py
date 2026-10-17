@@ -79,6 +79,14 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
             "kind": info["kind"], "duration": duration, "video": info["video"], "audio": info["audio"],
         })
 
+    # the project's text styles join the style library (Premiere keeps them per project too)
+    try:
+        from .. import text_styles
+
+        styles_added = text_styles.import_premiere(p.path)["names"]
+    except Exception:  # noqa: BLE001 - styles are a bonus; the project still imports
+        styles_added = []
+
     # captions files, Motion Graphics Templates and adjustment layers: project items, not media
     for a in ex.assets:
         aid = new_id()
@@ -203,4 +211,4 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         warnings.append(f"{clamped} clip(s) were shortened by a few frames to fit the actual media length")
     if created and not doc.get("active_sequence_id"):
         ctx.m.set(["active_sequence_id"], created[-1])
-    return {"bin_id": top, "media": len(media_map), "sequences": created, "bins": len(ex.bins), "warnings": warnings}
+    return {"bin_id": top, "media": len(media_map), "sequences": created, "bins": len(ex.bins), "warnings": warnings, "text_styles_added": styles_added}

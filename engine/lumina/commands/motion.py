@@ -487,6 +487,34 @@ def graphic_place_mogrt(ctx: Context, p: PlaceMogrt):
             "fields": [l.get("name") for l in ae["layers"]]}
 
 
+class ApplyTextStyle(Params):
+    sequence_id: str | None = None
+    clip_ids: list[str] = Field(min_length=1)
+    style_id: str = Field(description="a text style from styles.list")
+
+
+@command("graphic.apply_style", ApplyTextStyle)
+def graphic_apply_style(ctx: Context, p: ApplyTextStyle):
+    """Apply a text style to every text layer of graphic clips (formatting only; positions stay)."""
+    from .. import text_styles
+
+    st = text_styles.get(p.style_id)
+    if st is None:
+        raise CommandError("NO_STYLE", f"text style not found: {p.style_id}")
+    fmt = {k: v for k, v in st["style"].items() if k in text_styles.FORMAT_FIELDS}
+    seq = seq_of(ctx.doc, p.sequence_id)
+    changed = 0
+    for cid in p.clip_ids:
+        tid, clip = find_clip(seq, cid)
+        require_unlocked(seq, tid)
+        if not clip.get("graphic"):
+            continue
+        layers = [dict(l, **fmt, runs=None) if l.get("type", "text") == "text" else l for l in clip["graphic"]["layers"]]
+        changed += sum(1 for l in clip["graphic"]["layers"] if l.get("type", "text") == "text")
+        ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
+    return {"layers": changed}
+
+
 def _free_track_above(ctx: Context, seq: dict, start: int, end: int) -> str:
     vt = seq["video_tracks"]
     top_used = -1

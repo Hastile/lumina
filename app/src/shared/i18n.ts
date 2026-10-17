@@ -6,6 +6,16 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
+  'Import Text Styles': '텍스트 스타일 가져오기',
+  'Import Text Styles...': '텍스트 스타일 가져오기...',
+  'Imported text styles': '텍스트 스타일을 가져왔습니다',
+  'Import Premiere\'s Text Styles Folder': 'Premiere 텍스트 스타일 폴더 가져오기',
+  'Save as Text Style...': '텍스트 스타일로 저장...',
+  'Delete Text Style': '텍스트 스타일 삭제',
+  'Text Styles': '텍스트 스타일',
+  'Apply': '적용',
+  'No text styles yet: + imports Premiere styles': '텍스트 스타일이 없습니다: +로 Premiere 스타일을 가져오세요',
+  // captions, track effects, frame hold, media, analysis
   'Caption Track': '캡션 트랙',
   'Tracking': '자간',
   'Shadow': '그림자',

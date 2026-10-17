@@ -5,6 +5,7 @@ import { t } from '@shared/i18n'
 import type { TextLayer } from '../engine/document'
 import { exec } from '../state/store'
 import { NumberScrub, type ClipCtx } from './PropertyControls'
+import { TextStyleChips } from './TrackPanel'
 
 const FONTS = ['Pretendard', 'Pretendard-Bold', 'Pretendard-Black', 'Malgun Gothic', 'S-CoreDream-6Bold', 'S-CoreDream-9Black', 'Noto Sans KR', 'Arial', 'Impact']
 
@@ -21,6 +22,7 @@ export function TextLayerEditor({ c, layer, compact = false }: { c: ClipCtx; lay
           <TriangleAlert size={12} /> {t('Approximate styling imported from Premiere: check font size and position.')}
         </div>
       )}
+      <TextStyleChips onApply={(id, name) => void exec('graphic.apply_style', { sequence_id: c.seq.id, clip_ids: [c.clip.id], style_id: id }, `${t('Text Styles')}: ${name}`)} />
       <textarea
         value={text}
         rows={Math.min(4, Math.max(1, text.split('\n').length))}

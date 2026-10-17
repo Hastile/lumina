@@ -76,6 +76,9 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
     "caption_export_srt": ("caption.export_srt", "Write a caption track's cues to an .srt file (default: the topmost caption track).",
                            {"type": "object", "properties": {"path": {"type": "string"}, "track_id": {"type": "string"},
                                                              "sequence_id": {"type": "string"}}, "required": ["path"]}, None),
+    "list_text_styles": ("styles.list", "Text styles in the library (imported from Premiere .prtextstyle files); apply with caption_apply_style / graphic_apply_style.", _OBJ, None),
+    "import_text_styles": ("styles.import_premiere", "Import Premiere text styles: a .prtextstyle file, a folder, or a .prproj; default Premiere's Text Styles folder.",
+                           {"type": "object", "properties": {"path": {"type": "string"}}}, None),
     "media_scan": ("media.scan", "Offline media (missing file / Made Offline), duplicate imports and unused media.", _OBJ, None),
     "analyze_media": ("analysis.detect",
                       "Analyse a media item, or the source range a clip uses: silence / black / freeze intervals, scene changes, "
