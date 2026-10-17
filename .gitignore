@@ -9,5 +9,5 @@ samples/
 .hypothesis/
 .pytest_cache/
 release/
-build-resources/ffmpeg/
+app/build-resources/ffmpeg/
 engine/build/
