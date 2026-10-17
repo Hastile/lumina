@@ -6,6 +6,8 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
+  'Include the vertical position': '세로 위치(y)도 저장',
+  // captions, track effects, frame hold, media, analysis
   'Import Text Styles': '텍스트 스타일 가져오기',
   'Import Text Styles...': '텍스트 스타일 가져오기...',
   'Imported text styles': '텍스트 스타일을 가져왔습니다',

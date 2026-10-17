@@ -32,9 +32,12 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
   const saveStyle = () =>
     openDialog({
       title: t('Save as Text Style...'),
-      fields: [{ key: 'name', label: t('Name'), type: 'text', value: track.name }],
+      fields: [
+        { key: 'name', label: t('Name'), type: 'text', value: track.name },
+        { key: 'y', label: t('Include the vertical position'), type: 'checkbox', value: true }
+      ],
       onSubmit: async (v) => {
-        await call('styles.save', { sequence_id: seq.id, track_id: track.id, name: String(v.name) })
+        await call('styles.save', { sequence_id: seq.id, track_id: track.id, name: String(v.name), with_position: !!v.y })
         window.dispatchEvent(new Event('lumina:styles'))
       }
     })
@@ -118,7 +121,7 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
 
 // ---------------------------------------------------------------- text styles (Premiere's Text Styles)
 
-export type TextStyleRec = { id: string; name: string; style: Partial<CaptionStyle>; source: string | null }
+export type TextStyleRec = { id: string; name: string; style: Partial<CaptionStyle> & { y?: number }; source: string | null }
 
 /** The style library (outside the project, like Premiere's Text Styles folder), refreshed on 'lumina:styles'. */
 export function useTextStyles(): TextStyleRec[] {
@@ -188,7 +191,7 @@ export function TextStyleChips({ onApply, onSave }: { onApply: (id: string, name
           key={s.id}
           className="chip"
           data-style={s.id}
-          title={`${s.name} · ${s.style.font_family} ${s.style.font_size ?? ''}`}
+          title={`${s.name} · ${s.style.font_family} ${s.style.font_size ?? ''}${s.style.y != null ? ` · y ${s.style.y}` : ''}`}
           onClick={() => onApply(s.id, s.name)}
           onContextMenu={(e) =>
             openContextMenu(e, [

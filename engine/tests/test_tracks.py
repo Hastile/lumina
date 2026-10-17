@@ -410,3 +410,18 @@ def test_text_styles_import_and_apply(media, tmp_path, monkeypatch):
     assert cs["position"] == [320, 300]  # transform kept
     saved = e.dispatch("styles.save", {"track_id": cap["track_id"], "name": "mine"})
     assert text_styles.get(saved["id"])["style"]["font_family"] == cs["font_family"]
+
+
+def test_text_style_default_y(media, tmp_path, monkeypatch):
+    from lumina import text_styles
+
+    monkeypatch.setenv("LUMINA_TEXT_STYLES", str(tmp_path / "styles.json"))
+    rec = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 100.0}, y=1058)
+    e, _ = engine_with([media["video"]])
+    black_sequence(e)
+    cap = run(e, "caption.add", text="y", at=0, duration="1s")
+    x0 = seq(e)["tracks"][cap["track_id"]]["caption_style"]["position"][0]
+    run(e, "caption.apply_style", track_id=cap["track_id"], style_id=rec["id"])
+    assert seq(e)["tracks"][cap["track_id"]]["caption_style"]["position"] == [x0, 1058.0]
+    again = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 100.0}, y=900, replace=True)
+    assert again["id"] == rec["id"] and len(text_styles.load()) == 1

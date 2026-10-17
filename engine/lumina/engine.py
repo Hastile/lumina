@@ -211,7 +211,8 @@ class Engine:
         track = seq["tracks"].get(p.get("track_id") or "")
         if not track or not track.get("caption_style"):
             raise CommandError("NOT_CAPTION_TRACK", "styles.save needs a caption track")
-        return self._styles().save_style(p.get("name") or track["name"], track["caption_style"])
+        y = track["caption_style"]["position"][1] if p.get("with_position") else None
+        return self._styles().save_style(p.get("name") or track["name"], track["caption_style"], y)
 
     # ------------------------------------------------------------ captions / media / analysis
 

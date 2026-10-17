@@ -227,7 +227,10 @@ def caption_apply_style(ctx: Context, p: ApplyStyle):
     tid = _caption_track(seq, p.track_id)
     require_unlocked(seq, tid)
     fmt = {k: v for k, v in st["style"].items() if k in text_styles.FORMAT_FIELDS}
-    ctx.m.set(["sequences", seq["id"], "tracks", tid, "caption_style"], {**seq["tracks"][tid]["caption_style"], **fmt})
+    cur = seq["tracks"][tid]["caption_style"]
+    if st["style"].get("y") is not None:
+        fmt["position"] = [cur["position"][0], float(st["style"]["y"])]  # the style's default height
+    ctx.m.set(["sequences", seq["id"], "tracks", tid, "caption_style"], {**cur, **fmt})
     return {"style": st["name"]}
 
 

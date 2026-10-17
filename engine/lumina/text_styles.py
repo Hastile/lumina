@@ -4,9 +4,10 @@ Styles live outside projects, in ``~/.lumina/text_styles.json`` (or
 ``$LUMINA_TEXT_STYLES``), like Premiere keeps them in
 ``Documents/Adobe/Common/Assets/Text Styles``, where they are imported from
 (.prtextstyle files: a one-item Premiere project whose StyleProjectItem holds
-an ``AE.ADBE Text`` component). A style is text formatting only - font, size,
-fill, stroke, shadow, background, tracking, alignment - never position or
-transform, so applying one to a caption track restyles every cue in place.
+an ``AE.ADBE Text`` component). A style is text formatting - font, size,
+fill, stroke, shadow, background, tracking, alignment - plus, optionally, a
+default vertical position ``y`` (sequence pixels): applying it to a caption
+track restyles every cue and, with ``y``, moves the captions to that height.
 """
 
 from __future__ import annotations
@@ -105,7 +106,9 @@ def read_styles(path: str) -> list[dict]:
 
 
 def _key(s: dict) -> str:
-    return hashlib.sha1(json.dumps([s["name"], s["style"]], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    # the same name and look is the same style, whatever default position it was given
+    fmt = {k: v for k, v in s["style"].items() if k in FORMAT_FIELDS}
+    return hashlib.sha1(json.dumps([s["name"], fmt], sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 def import_premiere(path: str | None = None) -> dict:
@@ -154,9 +157,21 @@ def remove(style_id: str) -> bool:
         return len(keep) != len(lib)
 
 
-def save_style(name: str, style: dict) -> dict:
-    """Save a caption track's (or text layer's) formatting as a new style."""
-    rec = {"id": new_id(), "name": name, "style": {k: style.get(k) for k in FORMAT_FIELDS if k in style}, "source": None}
+def save_style(name: str, style: dict, y: float | None = None, replace: bool = False) -> dict:
+    """Save formatting (and an optional default y) as a style; replace=True updates the style of the
+    same name instead of adding another."""
+    fmt = {k: style.get(k) for k in FORMAT_FIELDS if k in style}
+    if y is not None:
+        fmt["y"] = float(y)
+    rec = {"id": new_id(), "name": name, "style": fmt, "source": None}
+    if replace:
+        with _lock:
+            lib = load()
+            old = next((s for s in lib if s["name"] == name), None)
+            if old is not None:
+                old.update(style=fmt)
+                save(lib)
+                return old
     with _lock:
         lib = load()
         lib.append(rec)
