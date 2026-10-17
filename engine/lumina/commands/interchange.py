@@ -68,12 +68,22 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         mid = new_id()
         media_map[uid] = mid
         info = probed.get(uid) or {k: m[k] for k in ("kind", "duration", "video", "audio")}
+        # Premiere can count a file longer than its decoded audio (MP3s without an exact length
+        # header); its clips use that tail, which plays as silence. Keep Premiere's length so
+        # those clips import as they are instead of being shortened.
+        duration = max(info["duration"], m["duration"]) if info["kind"] != "image" and m.get("duration") else info["duration"]
         ctx.m.set(["media", mid], {
             "id": mid, "name": m["name"], "path": m["path"], "bin_id": bin_map.get(m["bin"], top),
             "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None, "filmstrip_path": None,
             "in_point": None, "out_point": None, "offline": False,
-            "kind": info["kind"], "duration": info["duration"], "video": info["video"], "audio": info["audio"],
+            "kind": info["kind"], "duration": duration, "video": info["video"], "audio": info["audio"],
         })
+
+    # captions files, Motion Graphics Templates and adjustment layers: project items, not media
+    for a in ex.assets:
+        aid = new_id()
+        ctx.m.set(["assets", aid], {"id": aid, "name": a["name"], "bin_id": bin_map.get(a["bin"], top), "kind": a["kind"],
+                                    "path": a.get("path"), "cues": a.get("cues"), "label": a.get("label") or "rose"})
 
     created = []
     clamped = 0
@@ -110,8 +120,8 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                     nested = seq_ids.get(it.get("sequence_uid")) if it.get("sequence_uid") else None
                     if it.get("sequence_uid") and nested is None:
                         continue
-                    if graphic or nested:
-                        if graphic and kind != "video":
+                    if graphic or nested or it.get("adjustment"):
+                        if (graphic or it.get("adjustment")) and kind != "video":
                             continue
                         mid, item = None, None
                     else:
@@ -136,6 +146,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "caption": None,
                         "effects": [{"id": new_id(), **e} for e in it.get("effects", [])],
                         "freeze": None,
+                        "adjustment": bool(it.get("adjustment")),
                     }
                     if clip["start"] != it["start"]:
                         clip["source_in"] += round((clip["start"] - it["start"]) * clip["speed"])

@@ -286,6 +286,8 @@ class Clip(_Model):
     caption: Caption | None = Field(default=None, description="a cue on a caption track")
     effects: list[Effect] = Field(default_factory=list)
     freeze: int | None = Field(default=None, description="Frame Hold: the source time shown for the whole clip (ticks)")
+    adjustment: bool = Field(default=False, description="Adjustment Layer: its effects apply to everything below it "
+                                                        "(Opacity mixes the result in; Motion and crop are not used)")
 
 
 class Track(_Model):
@@ -341,6 +343,24 @@ class Sequence(_Model):
     source_audio_track: str | None = Field(default=None, description="source patching for audio; null = first targeted audio track; '' = none")
 
 
+class CaptionCue(_Model):
+    start: int = Field(description="ticks from the start of the captions")
+    end: int
+    text: str
+
+
+class Asset(_Model):
+    """A project item that is not a media file: a captions file (its cues), a Motion
+    Graphics Template, or an Adjustment Layer. Placed on the timeline with asset.place."""
+    id: str
+    name: str
+    bin_id: str
+    kind: Literal["captions", "template", "adjustment"]
+    path: str | None = Field(default=None, description="template: the .mogrt / .aegraphic file; captions: the source .srt, if any")
+    cues: list[CaptionCue] | None = Field(default=None, description="captions: the cues")
+    label: LabelColor = "rose"
+
+
 class Project(_Model):
     schema_version: int = SCHEMA_VERSION
     id: str
@@ -349,6 +369,7 @@ class Project(_Model):
     bins: dict[str, Bin] = Field(default_factory=dict)
     media: dict[str, MediaItem] = Field(default_factory=dict)
     sequences: dict[str, Sequence] = Field(default_factory=dict)
+    assets: dict[str, Asset] = Field(default_factory=dict, description="captions, templates and adjustment layers")
     active_sequence_id: str | None = None
 
 

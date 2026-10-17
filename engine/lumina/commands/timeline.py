@@ -300,6 +300,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "caption": None,
             "effects": [],
             "freeze": None,
+            "adjustment": False,
         }
         write_clip(ctx, seq, tid, clip)
         created[f"{kind}_clip_id"] = clip["id"]

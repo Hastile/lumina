@@ -426,3 +426,5 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-btn.small { padding: 1px 8px; font-size: 11px; }
 .lm-ec-section[data-track-effects] { color: #f2c14e; }
 .lm-project-row .busy.offline { background: #6a2626; color: #ffb3b3; }
+.lm-clip.adjustment { background: color-mix(in srgb, var(--clip-color) 45%, #222); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 6px, transparent 6px 12px); }
+.lm-templates .lm-tree .node { cursor: grab; }

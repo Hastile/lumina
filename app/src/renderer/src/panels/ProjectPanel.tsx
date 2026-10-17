@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react'
 import { t } from '@shared/i18n'
-import { ChevronLeft, Film, Folder, FolderPlus, Image, LayoutGrid, List, Music, Search, Clapperboard, FilePlus2 } from 'lucide-react'
-import type { MediaItem, Sequence } from '../engine/document'
+import { ChevronLeft, Film, Folder, FolderPlus, Image, LayoutGrid, List, Music, Search, Clapperboard, FilePlus2, Captions, Layers, Sparkles } from 'lucide-react'
+import type { Asset, MediaItem, Sequence } from '../engine/document'
 import { mediaUrl } from '../engine/client'
 import { importFiles, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { focusPanel } from '../layout/dock'
 import { exec, get, openSequence, set, useStore } from '../state/store'
-import { linkMedia, makeOffline } from '../actions/extra'
+import { linkMedia, makeOffline, newAdjustmentLayer, placeAsset } from '../actions/extra'
 import { timecode } from '../util/time'
 
 export const DRAG_MIME = 'application/x-lumina-item'
@@ -16,6 +16,7 @@ type Row =
   | { kind: 'bin'; id: string; name: string }
   | { kind: 'media'; id: string; name: string; item: MediaItem }
   | { kind: 'sequence'; id: string; name: string; seq: Sequence }
+  | { kind: 'asset'; id: string; name: string; asset: Asset }
 
 function rateLabel(num?: number, den?: number): string {
   if (!num || !den) return ''
@@ -29,6 +30,10 @@ function durationLabel(r: Row): string {
     const rate = v ? { fps_num: v.fps_num, fps_den: v.fps_den } : { fps_num: 30, fps_den: 1 }
     return r.item.kind === 'image' ? '' : timecode(r.item.duration, rate)
   }
+  if (r.kind === 'asset') {
+    const cues = r.asset.cues ?? []
+    return cues.length ? timecode(cues[cues.length - 1].end, { fps_num: 30, fps_den: 1 }) : ''
+  }
   if (r.kind === 'sequence') {
     let end = 0
     for (const t of Object.values(r.seq.tracks)) for (const c of Object.values(t.clips)) end = Math.max(end, c.end)
@@ -39,6 +44,7 @@ function durationLabel(r: Row): string {
 
 function openRow(r: Row): void {
   if (r.kind === 'bin') set({ currentBin: r.id, selectedItems: [] })
+  else if (r.kind === 'asset') void placeAsset(r.id)
   else if (r.kind === 'media') {
     set({ sourceMediaId: r.id, sourceTime: r.item.in_point ?? 0 })
     focusPanel('source')
@@ -50,6 +56,10 @@ function openRow(r: Row): void {
 }
 
 function RowIcon({ r }: { r: Row }) {
+  if (r.kind === 'asset') {
+    const A = r.asset.kind === 'captions' ? Captions : r.asset.kind === 'template' ? Sparkles : Layers
+    return <A size={14} color={`var(--label-${r.asset.label})`} style={{ flex: 'none' }} />
+  }
   const color = r.kind === 'media' ? `var(--label-${r.item.label})` : r.kind === 'sequence' ? 'var(--label-forest)' : '#c9a64a'
   const Icon = r.kind === 'bin' ? Folder : r.kind === 'sequence' ? Clapperboard : r.item.kind === 'audio' ? Music : r.item.kind === 'image' ? Image : Film
   return <Icon size={14} color={color} style={{ flex: 'none' }} />
@@ -72,7 +82,8 @@ export function ProjectPanel() {
     const out: Row[] = [
       ...Object.values(doc.bins).filter((b) => b.parent_id && inBin(b.parent_id)).map((b) => ({ kind: 'bin' as const, id: b.id, name: b.name })),
       ...Object.values(doc.sequences).filter((s) => inBin(s.bin_id)).map((s) => ({ kind: 'sequence' as const, id: s.id, name: s.name, seq: s })),
-      ...Object.values(doc.media).filter((m) => inBin(m.bin_id)).map((m) => ({ kind: 'media' as const, id: m.id, name: m.name, item: m }))
+      ...Object.values(doc.media).filter((m) => inBin(m.bin_id)).map((m) => ({ kind: 'media' as const, id: m.id, name: m.name, item: m })),
+      ...Object.values(doc.assets ?? {}).filter((a) => inBin(a.bin_id)).map((a) => ({ kind: 'asset' as const, id: a.id, name: a.name, asset: a }))
     ]
     return out.filter((r) => !q || r.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name))
   }, [doc, binId, query])
@@ -116,6 +127,7 @@ export function ProjectPanel() {
     openContextMenu(e, [
       { label: t('New Bin'), action: 'file.newBin' },
       { label: t('New Sequence...'), action: 'file.newSequence' },
+      { label: t('New Item > Adjustment Layer'), run: () => void newAdjustmentLayer() },
       'sep',
       { label: t('Import...'), action: 'file.import' },
       'sep',
@@ -128,6 +140,7 @@ export function ProjectPanel() {
         run: () => r && r.kind === 'media' && void exec('sequence.create_from_media', { media_id: r.id }).then(() => focusPanel('timeline'))
       },
       { label: t('Duplicate'), disabled: !r || r.kind !== 'sequence', run: () => r && void exec('sequence.duplicate', { sequence_id: r.id }) },
+      ...(r && r.kind === 'asset' ? [{ label: r.asset.kind === 'captions' ? t('Place on a Caption Track') : t('Place at Playhead'), run: () => void placeAsset(r.id) }] : []),
       'sep',
       { label: t('Link Media...'), disabled: !r || r.kind !== 'media', run: () => r && r.kind === 'media' && linkMedia(r.id) },
       {
@@ -246,7 +259,7 @@ export function ProjectPanel() {
         <button className="lm-iconbtn" title={t('New Bin')} onClick={() => runAction('file.newBin')}>
           <FolderPlus size={15} />
         </button>
-        <button className="lm-iconbtn" title={t('New Item')} onClick={(e) => openContextMenu(e, [{ label: t('Sequence...'), action: 'file.newSequence' }, { label: t('Import...'), action: 'file.import' }])}>
+        <button className="lm-iconbtn" title={t('New Item')} onClick={(e) => openContextMenu(e, [{ label: t('Sequence...'), action: 'file.newSequence' }, { label: t('Adjustment Layer'), run: () => void newAdjustmentLayer() }, { label: t('Import...'), action: 'file.import' }])}>
           <FilePlus2 size={15} />
         </button>
       </div>

@@ -378,7 +378,7 @@ def graphic_clip(name: str, start: int, end: int, layers: list[dict], source: st
         "enabled": True, "link_id": None, "label": label, "opacity": 100.0, "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": None, "muted": False, "auto_match": None,
         "motion": {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0, "anchor": None,
                    "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0},
-        "keyframes": {}, "graphic": {"layers": layers, "source": source}, "caption": None, "effects": [], "freeze": None,
+        "keyframes": {}, "graphic": {"layers": layers, "source": source}, "caption": None, "effects": [], "freeze": None, "adjustment": False,
     }
 
 

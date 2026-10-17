@@ -2035,274 +2035,6 @@
     }
   },
   {
-    "name": "clip.audio_gain",
-    "description": "Audio Gain: set, adjust, or normalize the clip gain of audio clips (peaks measured on the media).",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "sequence_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Id"
-        },
-        "clip_ids": {
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Clip Ids",
-          "type": "array"
-        },
-        "mode": {
-          "description": "set: Set Gain to; adjust: Adjust Gain by; normalize_max: Normalize Max Peak to (one gain change for the selection, its loudest peak lands on db); normalize_all: Normalize All Peaks to (each clip)",
-          "enum": [
-            "set",
-            "adjust",
-            "normalize_max",
-            "normalize_all"
-          ],
-          "title": "Mode",
-          "type": "string"
-        },
-        "db": {
-          "maximum": 96,
-          "minimum": -96,
-          "title": "Db",
-          "type": "number"
-        }
-      },
-      "required": [
-        "clip_ids",
-        "mode",
-        "db"
-      ],
-      "title": "AudioGain",
-      "type": "object"
-    }
-  },
-  {
-    "name": "clip.set_audio_tag",
-    "description": "Essential Sound: mark audio clips as Dialogue, Music, SFX or Ambience (or clear the type).",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "sequence_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Id"
-        },
-        "clip_ids": {
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Clip Ids",
-          "type": "array"
-        },
-        "tag": {
-          "anyOf": [
-            {
-              "enum": [
-                "dialogue",
-                "music",
-                "sfx",
-                "ambience"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "description": "Essential Sound type; null clears it",
-          "title": "Tag"
-        }
-      },
-      "required": [
-        "clip_ids",
-        "tag"
-      ],
-      "title": "SetAudioTag",
-      "type": "object"
-    }
-  },
-  {
-    "name": "audio.auto_tag",
-    "description": "Essential Sound Auto-Tag: classify audio clips as dialogue / music / sfx / ambience from the file\nname and the sound (syllable-rate modulation and pauses, noise flatness, length).",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "sequence_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Id"
-        },
-        "clip_ids": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "default: every audio clip of the sequence",
-          "title": "Clip Ids"
-        },
-        "overwrite": {
-          "default": false,
-          "description": "re-tag clips that already have a type",
-          "title": "Overwrite",
-          "type": "boolean"
-        }
-      },
-      "title": "AutoTag",
-      "type": "object"
-    }
-  },
-  {
-    "name": "audio.auto_match",
-    "description": "Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.\n\nMeasured as the clip plays (speed and its audio effects included), on integrated loudness (a clip under\na second of sound on its loudest moment). Cuts of one source share one gain\nso a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;\ngains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured\nat the new gain.",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "sequence_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Id"
-        },
-        "clip_ids": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "default: every tagged audio clip of the sequence",
-          "title": "Clip Ids"
-        },
-        "targets": {
-          "additionalProperties": {
-            "type": "number"
-          },
-          "description": "LUFS per type, e.g. {'dialogue': -16}; defaults: dialogue -23, music -25, sfx -21, ambience -30",
-          "title": "Targets",
-          "type": "object"
-        },
-        "music_bed_db": {
-          "anyOf": [
-            {
-              "maximum": 40,
-              "minimum": 0,
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": 12.0,
-          "description": "music playing under dialogue is matched this many LU below the dialogue target (null: match music to its own target everywhere)",
-          "title": "Music Bed Db"
-        },
-        "peak_ceiling": {
-          "default": -1.0,
-          "description": "true-peak ceiling (dBTP) no clip may exceed after its gain",
-          "maximum": 0,
-          "minimum": -20,
-          "title": "Peak Ceiling",
-          "type": "number"
-        },
-        "max_boost": {
-          "default": 20.0,
-          "description": "largest gain Auto-Match will apply",
-          "maximum": 60,
-          "minimum": 0,
-          "title": "Max Boost",
-          "type": "number"
-        }
-      },
-      "title": "AutoMatch",
-      "type": "object"
-    }
-  },
-  {
-    "name": "audio.reset_match",
-    "description": "Essential Sound Loudness Reset: undo Auto-Match on the clips (the Audio Gain they had before).",
-    "undoable": true,
-    "params": {
-      "additionalProperties": false,
-      "properties": {
-        "sequence_id": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sequence Id"
-        },
-        "clip_ids": {
-          "items": {
-            "type": "string"
-          },
-          "minItems": 1,
-          "title": "Clip Ids",
-          "type": "array"
-        }
-      },
-      "required": [
-        "clip_ids"
-      ],
-      "title": "ResetMatch",
-      "type": "object"
-    }
-  },
-  {
     "name": "caption.add_track",
     "description": "New caption (subtitle) track: a video track whose cues are text in one track style.",
     "undoable": true,
@@ -2760,6 +2492,456 @@
         }
       },
       "title": "ToGraphics",
+      "type": "object"
+    }
+  },
+  {
+    "name": "asset.add",
+    "description": "New project item: import captions (.srt) or a Motion Graphics Template, or New Item > Adjustment Layer.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "captions",
+            "template",
+            "adjustment"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "captions: an .srt file; template: a .mogrt / .aegraphic",
+          "title": "Path"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "bin_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bin Id"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "AddAsset",
+      "type": "object"
+    }
+  },
+  {
+    "name": "asset.remove",
+    "description": "Delete project items (clips already on timelines stay).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Asset Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "asset_ids"
+      ],
+      "title": "AssetRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "asset.rename",
+    "description": "",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_id",
+        "name"
+      ],
+      "title": "RenameAsset",
+      "type": "object"
+    }
+  },
+  {
+    "name": "asset.place",
+    "description": "Put a project item on the timeline: captions become cues on a caption track, a template a graphic\nclip, an adjustment layer an adjustment clip on the first free video track above what is there.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: the playhead (captions: the sequence start, where they were timed)",
+          "title": "At"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "adjustment/template: a video track; captions: a caption track (default a new one)",
+          "title": "Track Id"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "5s",
+          "description": "adjustment layers and templates",
+          "title": "Duration"
+        }
+      },
+      "required": [
+        "asset_id"
+      ],
+      "title": "PlaceAsset",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.audio_gain",
+    "description": "Audio Gain: set, adjust, or normalize the clip gain of audio clips (peaks measured on the media).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "mode": {
+          "description": "set: Set Gain to; adjust: Adjust Gain by; normalize_max: Normalize Max Peak to (one gain change for the selection, its loudest peak lands on db); normalize_all: Normalize All Peaks to (each clip)",
+          "enum": [
+            "set",
+            "adjust",
+            "normalize_max",
+            "normalize_all"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "db": {
+          "maximum": 96,
+          "minimum": -96,
+          "title": "Db",
+          "type": "number"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "mode",
+        "db"
+      ],
+      "title": "AudioGain",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.set_audio_tag",
+    "description": "Essential Sound: mark audio clips as Dialogue, Music, SFX or Ambience (or clear the type).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "tag": {
+          "anyOf": [
+            {
+              "enum": [
+                "dialogue",
+                "music",
+                "sfx",
+                "ambience"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Essential Sound type; null clears it",
+          "title": "Tag"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "tag"
+      ],
+      "title": "SetAudioTag",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.auto_tag",
+    "description": "Essential Sound Auto-Tag: classify audio clips as dialogue / music / sfx / ambience from the file\nname and the sound (syllable-rate modulation and pauses, noise flatness, length).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: every audio clip of the sequence",
+          "title": "Clip Ids"
+        },
+        "overwrite": {
+          "default": false,
+          "description": "re-tag clips that already have a type",
+          "title": "Overwrite",
+          "type": "boolean"
+        }
+      },
+      "title": "AutoTag",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.auto_match",
+    "description": "Essential Sound Loudness Auto-Match: set each tagged clip's Audio Gain so it lands on its type's target.\n\nMeasured as the clip plays (speed and its audio effects included), on integrated loudness (a clip under\na second of sound on its loudest moment). Cuts of one source share one gain\nso a performance keeps its dynamics; music under dialogue is matched as a bed below the dialogue target;\ngains respect a true-peak ceiling and a boost limit; clips with a compressor or limiter are re-measured\nat the new gain.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: every tagged audio clip of the sequence",
+          "title": "Clip Ids"
+        },
+        "targets": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "description": "LUFS per type, e.g. {'dialogue': -16}; defaults: dialogue -23, music -25, sfx -21, ambience -30",
+          "title": "Targets",
+          "type": "object"
+        },
+        "music_bed_db": {
+          "anyOf": [
+            {
+              "maximum": 40,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 12.0,
+          "description": "music playing under dialogue is matched this many LU below the dialogue target (null: match music to its own target everywhere)",
+          "title": "Music Bed Db"
+        },
+        "peak_ceiling": {
+          "default": -1.0,
+          "description": "true-peak ceiling (dBTP) no clip may exceed after its gain",
+          "maximum": 0,
+          "minimum": -20,
+          "title": "Peak Ceiling",
+          "type": "number"
+        },
+        "max_boost": {
+          "default": 20.0,
+          "description": "largest gain Auto-Match will apply",
+          "maximum": 60,
+          "minimum": 0,
+          "title": "Max Boost",
+          "type": "number"
+        }
+      },
+      "title": "AutoMatch",
+      "type": "object"
+    }
+  },
+  {
+    "name": "audio.reset_match",
+    "description": "Essential Sound Loudness Reset: undo Auto-Match on the clips (the Audio Gain they had before).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "ResetMatch",
       "type": "object"
     }
   },

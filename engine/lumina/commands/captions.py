@@ -39,7 +39,7 @@ def caption_clip(text: str, start: int, end: int) -> dict:
         "id": new_id(), "media_id": None, "sequence_id": None, "name": first_line(text), "start": start, "end": end,
         "source_in": 0, "speed": 1.0, "enabled": True, "link_id": None, "label": "yellow", "opacity": 100.0,
         "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "muted": False, "auto_match": None, "motion": dict(DEFAULT_MOTION),
-        "keyframes": {}, "graphic": None, "caption": {"text": text, "style": None}, "effects": [], "freeze": None,
+        "keyframes": {}, "graphic": None, "caption": {"text": text, "style": None}, "effects": [], "freeze": None, "adjustment": False,
     }
 
 

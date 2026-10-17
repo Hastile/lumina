@@ -135,6 +135,26 @@ export async function upgradeCaptions(trackId?: string): Promise<void> {
   await exec('caption.to_graphics', { sequence_id: seq.id, track_id: cues.length ? null : captionTrack(seq, trackId), clip_ids: cues }, t('Upgrade Caption to Graphic'))
 }
 
+// ---------------------------------------------------------------- project items (assets)
+
+export async function newAdjustmentLayer(): Promise<void> {
+  const r = await exec<{ asset_id: string }>('asset.add', { kind: 'adjustment', name: t('Adjustment Layer'), bin_id: get().currentBin }, t('New Item > Adjustment Layer'))
+  if (r) set({ selectedItems: [r.asset_id] })
+}
+
+/** Put a project item on the timeline (double-click / drop): captions -> a caption track at the
+ * sequence start, templates and adjustment layers -> the playhead (or ``at`` / ``trackId``). */
+export async function placeAsset(assetId: string, at?: number, trackId?: string): Promise<void> {
+  const seq = seqOrToast()
+  const a = get().doc?.assets?.[assetId]
+  if (!seq || !a) return
+  const label = a.kind === 'captions' ? t('Place Captions') : a.kind === 'template' ? t('Place Motion Graphics Template') : t('Adjustment Layer')
+  const r = await exec<{ clip_id?: string; clip_ids?: string[] }>('asset.place', {
+    sequence_id: seq.id, asset_id: assetId, at: at ?? (a.kind === 'captions' ? null : get().programTime), track_id: trackId ?? null
+  }, label)
+  if (r?.clip_id) set({ selectedClips: [r.clip_id] })
+}
+
 // ---------------------------------------------------------------- track effects
 
 export async function addTrackEffect(trackId: string, type: string): Promise<void> {

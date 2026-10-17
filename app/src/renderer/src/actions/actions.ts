@@ -109,14 +109,9 @@ async function importFiles(paths?: string[]): Promise<void> {
     }, 'import'))
   if (!files.length) return
   for (const p of files.filter(isPremiere)) await importPremiere(p)
-  // captions go onto a caption track of the open sequence, templates onto the timeline at the playhead
-  const srt = files.filter((p) => /\.srt$/i.test(p))
-  if (srt.length) await import('./extra').then((m) => m.importCaptions(srt))
-  for (const p of files.filter((x) => /\.(mogrt|aegraphic)$/i.test(x))) {
-    const seq = activeSequence()
-    if (!seq) toast(t('No sequence is open'), 'info')
-    else await exec('graphic.place_mogrt', { sequence_id: seq.id, path: p, at: get().programTime }, t('Place Motion Graphics Template'))
-  }
+  // captions files and templates become project items (place them from the Project / Graphic Templates panels)
+  for (const p of files.filter((x) => /\.srt$/i.test(x))) await exec('asset.add', { kind: 'captions', path: p, bin_id: get().currentBin }, t('Import'))
+  for (const p of files.filter((x) => /\.(mogrt|aegraphic)$/i.test(x))) await exec('asset.add', { kind: 'template', path: p, bin_id: get().currentBin }, t('Import'))
   const media = files.filter((p) => !isPremiere(p) && !/\.(srt|mogrt|aegraphic)$/i.test(p))
   if (!media.length) return
   const res = await exec<{ media_ids: string[]; errors: { path: string; error: string }[] }>('media.import', { paths: media, bin_id: get().currentBin })
@@ -165,7 +160,7 @@ function rename(): void {
   if (s.focusedPanel === 'project' && s.selectedItems.length === 1) {
     const id = s.selectedItems[0]
     const doc = s.doc!
-    const current = doc.media[id]?.name ?? doc.sequences[id]?.name ?? doc.bins[id]?.name
+    const current = doc.media[id]?.name ?? doc.sequences[id]?.name ?? doc.assets?.[id]?.name ?? doc.bins[id]?.name
     if (current === undefined) return
     openDialog({
       title: t('Rename'), fields: [{ key: 'name', label: t('Name'), type: 'text', value: current }],
@@ -173,6 +168,7 @@ function rename(): void {
         const name = String(v.name)
         if (doc.media[id]) await exec('media.rename', { media_id: id, name })
         else if (doc.sequences[id]) await exec('sequence.rename', { sequence_id: id, name })
+        else if (doc.assets?.[id]) await exec('asset.rename', { asset_id: id, name })
         else await exec('bin.rename', { bin_id: id, name })
       }
     })
@@ -332,6 +328,7 @@ def('edit.clear', t('Clear'), async () => {
     for (const id of s.selectedItems) {
       if (doc.media[id]) await exec('media.remove', { media_ids: [id], remove_clips: true })
       else if (doc.sequences[id]) await exec('sequence.delete', { sequence_id: id })
+      else if (doc.assets?.[id]) await exec('asset.remove', { asset_ids: [id] })
       else if (doc.bins[id]) await exec('bin.delete', { bin_id: id })
     }
     set({ selectedItems: [] })

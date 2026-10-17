@@ -90,6 +90,7 @@ def bin_delete(ctx: Context, p: DeleteBin):
         any(b["parent_id"] == p.bin_id for b in doc["bins"].values())
         or any(mi["bin_id"] == p.bin_id for mi in doc["media"].values())
         or any(s["bin_id"] == p.bin_id for s in doc["sequences"].values())
+        or any(a["bin_id"] == p.bin_id for a in doc.get("assets", {}).values())
     )
     if used:
         raise CommandError("BIN_NOT_EMPTY", "bin is not empty")
@@ -111,6 +112,8 @@ def bin_move_items(ctx: Context, p: MoveItems):
             ctx.m.set(["media", iid, "bin_id"], p.bin_id)
         elif iid in doc["sequences"]:
             ctx.m.set(["sequences", iid, "bin_id"], p.bin_id)
+        elif iid in doc.get("assets", {}):
+            ctx.m.set(["assets", iid, "bin_id"], p.bin_id)
         elif iid in doc["bins"] and iid != doc["root_bin_id"]:
             # refuse cycles
             cur: str | None = p.bin_id

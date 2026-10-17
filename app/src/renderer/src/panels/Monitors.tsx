@@ -208,6 +208,7 @@ export function activeLayers(
     const track = seq.tracks[tid]
     const fx = activeTrackEffects(track)
     const ctx = { ...(depth ? { ctx: { seq, at } } : {}), ...(fx.length ? { trackFx: fx } : {}) }
+    if (clip.adjustment) return { key: `${prefix}adj-${clip.id}`, clip, media: null, z, ...ctx, ...extra }
     const g = clipGraphic(clip, track)
     // a caption cue is drawn as the text graphic its track style makes
     if (g) return { key: `${prefix}g-${clip.id}`, clip: g === clip.graphic ? clip : { ...clip, graphic: g }, media: null, z, ...ctx, ...extra }
@@ -464,7 +465,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     const isSel = selected.includes(clip.id)
     let content: React.ReactNode = clip.graphic ? (
       <GraphicView graphic={clip.graphic} />
-    ) : gl || l.nested ? (
+    ) : gl || l.nested || clip.adjustment ? (
       <div style={{ width: '100%', height: '100%' }} />
     ) : l.media!.kind === 'image' ? (
       <MediaLayer url={mediaSrc(l.media!)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />

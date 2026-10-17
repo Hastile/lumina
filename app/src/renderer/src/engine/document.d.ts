@@ -343,6 +343,10 @@ export type Effects = Effect[];
  * Frame Hold: the source time shown for the whole clip (ticks)
  */
 export type Freeze = number | null;
+/**
+ * Adjustment Layer: its effects apply to everything below it (Opacity mixes the result in; Motion and crop are not used)
+ */
+export type Adjustment = boolean;
 export type Id9 = string;
 export type Type3 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
 /**
@@ -416,6 +420,41 @@ export type SourceVideoTrack = string | null;
  * source patching for audio; null = first targeted audio track; '' = none
  */
 export type SourceAudioTrack = string | null;
+export type Id11 = string;
+export type Name7 = string;
+export type BinId2 = string;
+export type Kind2 = "captions" | "template" | "adjustment";
+/**
+ * template: the .mogrt / .aegraphic file; captions: the source .srt, if any
+ */
+export type Path2 = string | null;
+/**
+ * captions: the cues
+ */
+export type Cues = CaptionCue[] | null;
+/**
+ * ticks from the start of the captions
+ */
+export type Start2 = number;
+export type End1 = number;
+export type Text3 = string;
+export type Label2 =
+  | "violet"
+  | "iris"
+  | "caribbean"
+  | "lavender"
+  | "cerulean"
+  | "forest"
+  | "rose"
+  | "mango"
+  | "purple"
+  | "blue"
+  | "teal"
+  | "magenta"
+  | "tan"
+  | "green"
+  | "brown"
+  | "yellow";
 export type ActiveSequenceId = string | null;
 
 export interface Project {
@@ -426,6 +465,7 @@ export interface Project {
   bins: Bins;
   media: Media;
   sequences: Sequences;
+  assets: Assets;
   active_sequence_id: ActiveSequenceId;
 }
 export interface Bins {
@@ -584,6 +624,7 @@ export interface Clip {
   caption: Caption | null;
   effects: Effects;
   freeze: Freeze;
+  adjustment: Adjustment;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -826,4 +867,35 @@ export interface Marker {
   name: Name6;
   comment: Comment;
   color: Color4;
+}
+/**
+ * captions, templates and adjustment layers
+ */
+export interface Assets {
+  [k: string]: Asset;
+}
+/**
+ * A project item that is not a media file: a captions file (its cues), a Motion
+ * Graphics Template, or an Adjustment Layer. Placed on the timeline with asset.place.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Asset".
+ */
+export interface Asset {
+  id: Id11;
+  name: Name7;
+  bin_id: BinId2;
+  kind: Kind2;
+  path: Path2;
+  cues: Cues;
+  label: Label2;
+}
+/**
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "CaptionCue".
+ */
+export interface CaptionCue {
+  start: Start2;
+  end: End1;
+  text: Text3;
 }

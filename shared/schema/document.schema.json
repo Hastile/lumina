@@ -1,5 +1,95 @@
 {
   "$defs": {
+    "Asset": {
+      "additionalProperties": false,
+      "description": "A project item that is not a media file: a captions file (its cues), a Motion\nGraphics Template, or an Adjustment Layer. Placed on the timeline with asset.place.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "bin_id": {
+          "title": "Bin Id",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "captions",
+            "template",
+            "adjustment"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "template: the .mogrt / .aegraphic file; captions: the source .srt, if any",
+          "title": "Path"
+        },
+        "cues": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/CaptionCue"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "captions: the cues",
+          "title": "Cues"
+        },
+        "label": {
+          "default": "rose",
+          "enum": [
+            "violet",
+            "iris",
+            "caribbean",
+            "lavender",
+            "cerulean",
+            "forest",
+            "rose",
+            "mango",
+            "purple",
+            "blue",
+            "teal",
+            "magenta",
+            "tan",
+            "green",
+            "brown",
+            "yellow"
+          ],
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "bin_id",
+        "kind",
+        "path",
+        "cues",
+        "label"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
     "AudioStream": {
       "additionalProperties": false,
       "properties": {
@@ -138,6 +228,31 @@
         "style"
       ],
       "title": "Caption",
+      "type": "object"
+    },
+    "CaptionCue": {
+      "additionalProperties": false,
+      "properties": {
+        "start": {
+          "description": "ticks from the start of the captions",
+          "title": "Start",
+          "type": "integer"
+        },
+        "end": {
+          "title": "End",
+          "type": "integer"
+        },
+        "text": {
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end",
+        "text"
+      ],
+      "title": "CaptionCue",
       "type": "object"
     },
     "CaptionStyle": {
@@ -516,6 +631,12 @@
           "default": null,
           "description": "Frame Hold: the source time shown for the whole clip (ticks)",
           "title": "Freeze"
+        },
+        "adjustment": {
+          "default": false,
+          "description": "Adjustment Layer: its effects apply to everything below it (Opacity mixes the result in; Motion and crop are not used)",
+          "title": "Adjustment",
+          "type": "boolean"
         }
       },
       "required": [
@@ -541,7 +662,8 @@
         "graphic",
         "caption",
         "effects",
-        "freeze"
+        "freeze",
+        "adjustment"
       ],
       "title": "Clip",
       "type": "object"
@@ -2091,6 +2213,14 @@
       "title": "Sequences",
       "type": "object"
     },
+    "assets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Asset"
+      },
+      "description": "captions, templates and adjustment layers",
+      "title": "Assets",
+      "type": "object"
+    },
     "active_sequence_id": {
       "anyOf": [
         {
@@ -2112,6 +2242,7 @@
     "bins",
     "media",
     "sequences",
+    "assets",
     "active_sequence_id"
   ],
   "title": "Project",

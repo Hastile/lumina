@@ -304,3 +304,43 @@ def test_scene_cuts_on_a_two_shot_clip(media, tmp_path):
     plan = e.dispatch("analysis.plan_scene_cuts", {"apply": True, "min_shot": 0.3})
     assert plan["count"] == 1 and abs(plan["points"][0]["seconds"] - 1.0) < 0.05
     assert len(clips(e)) == 2
+
+
+# ---------------------------------------------------------------- adjustment layers / project assets
+
+
+def test_adjustment_layer_blurs_everything_below(media, tmp_path):
+    red = tmp_path / "red.png"
+    img = Image.new("RGB", (640, 360), (0, 0, 0))
+    img.paste((255, 0, 0), (200, 100, 440, 260))
+    img.save(red)
+    e, (rid,) = engine_with([str(red)])
+    black_sequence(e)
+    run(e, "clip.place", media_id=rid, at=0, source_out="2s")
+    sharp = frame(e, "0.5s")
+    aid = run(e, "asset.add", kind="adjustment")["asset_id"]
+    cid = run(e, "asset.place", asset_id=aid, at=0, duration="2s")["clip_id"]
+    adj = next(c for c in clips(e) if c["id"] == cid)
+    assert adj["adjustment"] and seq(e)["video_tracks"].index(next(t for t in seq(e)["video_tracks"] if cid in seq(e)["tracks"][t]["clips"])) > 0
+    unchanged = frame(e, "0.5s")
+    assert np.abs(unchanged - sharp).mean() < 1  # no effects yet: the picture is untouched
+    run(e, "effect.add", clip_ids=[cid], type="gaussian_blur", params={"blurriness": 60})
+    blurred = frame(e, "0.5s")
+    edge = lambda im: np.abs(np.diff(im[180, 150:250, 0])).max()  # noqa: E731
+    assert edge(sharp) > 200 and edge(blurred) < 60
+    run(e, "clip.set", clip_ids=[cid], opacity=50)
+    half = frame(e, "0.5s")
+    assert abs(half[180, 199, 0] - (sharp[180, 199, 0] + blurred[180, 199, 0]) / 2) < 12
+    roundtrip(e)
+
+
+def test_caption_asset_from_srt_and_place(media):
+    e, _ = engine_with([media["video"]])
+    black_sequence(e)
+    aid = run(e, "asset.add", kind="captions", path=media["srt"])["asset_id"]
+    a = e.session.doc["assets"][aid]
+    assert a["kind"] == "captions" and [c["text"] for c in a["cues"]] == ["첫 줄", "둘째 줄"]
+    r = run(e, "asset.place", asset_id=aid, at="1s")
+    cues = clips(e, tid=r["track_id"])
+    assert [c["caption"]["text"] for c in cues] == ["첫 줄", "둘째 줄"] and cues[0]["start"] == SEC
+    roundtrip(e)

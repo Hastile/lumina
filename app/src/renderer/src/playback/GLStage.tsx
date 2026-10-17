@@ -195,7 +195,17 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     // track effects: the clip drawn on its own at sequence size, then through the track's effects
     let chain: [Effect, Timing][] = (clip.effects ?? []).map((fx) => [fx, clip])
     let identity = false
-    if (l.trackFx?.length) {
+    let adjust: number | null = null
+    if (clip.adjustment) {
+      // Adjustment Layer: its effects run on everything below; Opacity mixes the result in
+      const op = (l.ctx ? transformAt(clip, t, sq, null) : props.current.resolve(l)).opacity
+      adjust = Math.max(0, Math.min(1, op / 100)) * fade
+      const snap = c.snapshot()
+      c.clearTarget(target)
+      if (adjust < 1) c.draw(target, snap, c.seqToFrame, { tint: [1 - adjust, 1 - adjust, 1 - adjust, 1 - adjust] })
+      sources = [{ placed: snap, ps: c.seqToFrame[0], blend: 'add' }]
+      identity = true
+    } else if (l.trackFx?.length) {
       c.beginSub(W, H)
       drawClip(c, c.frameTarget, { ...l, trackFx: undefined }, 1, 'normal')
       const placed = c.endSub()
@@ -238,7 +248,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     if (!sources.length) return
     const r = identity ? null : l.ctx ? transformAt(clip, t, sq, l.media) : props.current.resolve(l)
     const motion = (r ? trs(r.position, r.anchor, r.scaleX / 100, r.scaleY / 100, r.rotation) : IDENTITY) as Affine
-    const opacity = Math.max(0, Math.min(1, (r?.opacity ?? 100) / 100)) * fade
+    const opacity = adjust ?? Math.max(0, Math.min(1, (r?.opacity ?? 100) / 100)) * fade
     const [cl, ct, cr, cb] = r?.crop ?? [0, 0, 0, 0]
     const crop: [number, number, number, number] | null = cl || ct || cr || cb ? [(cl / 100) * w, (ct / 100) * h, w - (cr / 100) * w, h - (cb / 100) * h] : null
     for (const s of sources) {

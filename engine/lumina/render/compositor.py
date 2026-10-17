@@ -769,10 +769,22 @@ class Compositor:
             self._close(self.active.pop(cid))
         for item in items:
             if item[0] == "clip":
-                self._draw(canvas, item[1], t)
+                if item[1].get("adjustment"):
+                    canvas = self._adjust(canvas, item[1], t)
+                else:
+                    self._draw(canvas, item[1], t)
             else:
                 self._transition(canvas, item[1], item[2], item[3], item[4], t)
         return canvas
+
+    def _adjust(self, canvas: Image.Image, clip: dict, t: int) -> Image.Image:
+        """An Adjustment Layer: its effects run on everything composited below it; its Opacity
+        mixes the result back in (Premiere)."""
+        img, origin, pre, pre_op = apply_effects(clip, canvas, (0.0, 0.0), (1.0, 1.0), t, self.w, self.h)
+        out = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+        place(out, img, origin, {**IDENTITY_TR, "src_w": self.w, "src_h": self.h}, (1.0, 1.0), pre, pre_op)
+        opacity = max(0.0, min(1.0, transform_at(clip, t, self.seq, None)["opacity"] / 100))
+        return out if opacity >= 1 else mix(canvas, out, opacity)
 
     @staticmethod
     def _close(ac: ActiveClip) -> None:

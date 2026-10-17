@@ -11,8 +11,9 @@ What is imported: the bin tree, file-based media, sequences (frame rate, frame
 size, video/audio tracks, clip placement, source in, speed, link groups,
 label colors, track mute), sequence markers and the playhead, Motion/Opacity
 and their keyframes, Transform/Gaussian Blur effects, transitions, native
-text and shape layers and MOGRT text fields. Not imported yet: other effects,
-captions and nested sequences (each is listed in ``warnings``).
+text and shape layers, MOGRT text fields, adjustment layers, and captions
+project items (as caption assets) and MOGRT project items (as template
+assets). Not imported yet: other effects (each is listed in ``warnings``).
 
 Premiere ticks are the same 254,016,000,000/s unit Lumina uses, so times copy
 over exactly.
@@ -173,6 +174,8 @@ class Extract:
     media: dict[str, dict] = field(default_factory=dict)    # media uid -> info
     sequences: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    assets: list[dict] = field(default_factory=list)        # {kind, name, bin, path?, cues?}
+    adjustment_media: set[str] = field(default_factory=set)  # Media uids of adjustment layers
 
 
 def _clip_source(g: Graph, clip_el: ET.Element | None) -> tuple[str, ET.Element | None]:
@@ -213,6 +216,45 @@ def _media_info(g: Graph, media: ET.Element) -> dict | None:
     return info
 
 
+def _caption_cues(g: Graph, clip: ET.Element | None) -> list[dict]:
+    """Cues of a captions project item (a TranscriptClip's CaptionCollection)."""
+    import base64
+
+    coll = g.at(clip, "TranscriptTextSegments")
+    cues = []
+    for mi in (coll.findall("CaptionMap/CaptionMapItem") if coll is not None else []):
+        cap = g.ref(mi.find("Second"))
+        if cap is None:
+            continue
+        lines = []
+        for bi in cap.findall("BlockVector/BlockVectorItem"):
+            blk = g.ref(bi)
+            raw = g.blob(blk.find("FormattedTextData")) if blk is not None else None
+            doc = _text_doc(base64.b64decode(raw)) if raw else None
+            if doc:
+                lines.append("".join(r["text"] for r in doc["runs"]))
+        text = "\n".join(x for x in lines if x).strip()
+        start, end = _int(cap, "TimeStart", 0), _int(cap, "TimeEnd", 0)
+        if text and end > start:
+            cues.append({"start": start, "end": end, "text": text.replace("\r\n", "\n").replace("\r", "\n")})
+    return sorted(cues, key=lambda c: c["start"])
+
+
+def _template_path(g: Graph, media: ET.Element) -> str | None:
+    """The template file a MOGRT project item uses: the project's own copy first, then the original."""
+    cands = []
+    for rp in [e.text for e in media.findall("RelativePath") if e.text]:
+        if g.path and not rp.startswith("..\\") and ":" not in rp:
+            cands.append(Path(g.path).parent / rp.replace("\\", "/"))
+    for k in ("ActualMediaFilePath", "FilePath"):
+        if v := _text(media, k):
+            cands.append(Path(v))
+    for c in cands:
+        if c.is_file():
+            return str(c)
+    return str(cands[0]) if cands else None
+
+
 def extract(path: str) -> Extract:
     g = load(path)
     out = Extract(name=Path(path).stem)
@@ -244,6 +286,19 @@ def extract(path: str) -> Extract:
                 clip0 = g.ref(master.find("Clips/Clip")) if master is not None and master.find("Clips/Clip") is not None else None
                 kind, target = _clip_source(g, clip0)
                 label = _label(_text(el, "ProjectItem/Node/Properties/Column.PropertyText.Label"))
+                if _text(master, "IsAdjustmentLayer") == "true":
+                    out.assets.append({"kind": "adjustment", "name": name, "bin": bin_key, "label": label})
+                    if kind == "media":
+                        out.adjustment_media.add(target.get("ObjectUID"))
+                    continue
+                if clip0 is not None and clip0.tag == "TranscriptClip":
+                    srt = Path(g.path).parent / name if g.path else None
+                    out.assets.append({"kind": "captions", "name": name, "bin": bin_key, "label": label,
+                                       "path": str(srt) if srt is not None and srt.is_file() else None, "cues": _caption_cues(g, clip0)})
+                    continue
+                if kind == "media" and Path(_text(target, "FilePath") or _text(target, "Title") or "").suffix.lower() in (".aegraphic", ".mogrt"):
+                    out.assets.append({"kind": "template", "name": name, "bin": bin_key, "label": label, "path": _template_path(g, target)})
+                    continue
                 if kind == "sequence":
                     uid = target.get("ObjectUID")
                     seq_bins[uid] = bin_key
@@ -328,6 +383,19 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                 clip_el = g.at(sub, "Clip")
                 src_kind, target = _clip_source(g, clip_el)
                 graphic = None
+                if src_kind == "media" and target.get("ObjectUID") in out.adjustment_media:
+                    if kind == "video":
+                        items.append({
+                            "media_uid": None, "sequence_uid": None, "adjustment": True, "name": _text(sub, "Name") or "Adjustment Layer",
+                            # keyframes are in the synthetic source's time: keep its In point
+                            "start": start, "end": end, "source_in": max(0, _int(clip_el, "Clip/InPoint", 0)), "speed": 1.0,
+                            "label": _label(_text(clip_el, "Clip/Node/Properties/asl.clip.label.name"), "lavender"),
+                            "link": None, "graphic": None,
+                            "transitions": [t for t in (_transition(g, g.ref(cti.find("HeadTransition")), "head", kind, stats),
+                                                        _transition(g, g.ref(cti.find("TailTransition")), "tail", kind, stats)) if t],
+                            **_motion(g, cti, seq_w, seq_h, None, stats),
+                        })
+                    continue
                 if src_kind == "sequence":
                     stats["nested"] += 1
                 elif src_kind != "media" or target.get("ObjectUID") not in out.media:

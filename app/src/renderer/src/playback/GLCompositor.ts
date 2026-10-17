@@ -288,6 +288,21 @@ export class GLCompositor {
     this.draw(t, { tex: this.white, x: 0, y: 0, w: this.seq.w, h: this.seq.h }, this.seqToFrame, { tint: [rgba[0] * a, rgba[1] * a, rgba[2] * a, a], blend })
   }
 
+  /** A copy of the frame composited so far (an Adjustment Layer works on it). */
+  snapshot(): Placed {
+    const m = this.main!
+    const r = this.rt(m.width, m.height)
+    this.scratch.push(r)
+    const t = { fbo: r.fbo, width: r.width, height: r.height }
+    this.clear(t)
+    this.draw(t, { tex: m.tex, x: 0, y: 0, w: this.seq.w, h: this.seq.h }, this.seqToFrame)
+    return { tex: r.tex, x: 0, y: 0, w: this.seq.w, h: this.seq.h }
+  }
+
+  clearTarget(t: Target): void {
+    this.clear(t)
+  }
+
   /** Present the frame over black. */
   end(): void {
     const gl = this.gl

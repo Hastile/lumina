@@ -12,6 +12,8 @@ import type { LumetriParams } from '../util/color'
 import { ticksToSeconds } from '../util/time'
 import { current, KeyframeRow, NumberScrub, setProp, useSelectedClip } from './PropertyControls'
 import { GraphicLayers } from './GraphicLayers'
+import { DRAG_MIME } from './ProjectPanel'
+import { placeAsset } from '../actions/extra'
 
 function Section({ title, children, reset }: { title: string; children: React.ReactNode; reset?: () => void }) {
   return (
@@ -273,6 +275,45 @@ export function LumetriPanel() {
 }
 
 
+/** Essential Graphics > Browse: the project's Motion Graphics Templates. Double-click (or drag onto the
+ * timeline) places one at the playhead as an editable graphic clip. */
 export function GraphicTemplatesPanel() {
-  return <div className="lm-panel"><div className="lm-empty">{t('Graphic templates (MOGRT-style) arrive with graphics (M4).')}</div></div>
+  const assets = useStore((s) => s.doc?.assets)
+  const templates = Object.values(assets ?? {}).filter((a) => a.kind === 'template').sort((a, b) => a.name.localeCompare(b.name))
+  const add = async () => {
+    const files = await window.lumina.openDialog({ title: t('Install Motion Graphics Template'), properties: ['openFile', 'multiSelections'], filters: [{ name: 'Motion Graphics Templates', extensions: ['mogrt', 'aegraphic'] }] }, 'import')
+    for (const path of files) await exec('asset.add', { kind: 'template', path }, t('Install Motion Graphics Template'))
+  }
+  return (
+    <div className="lm-panel lm-templates">
+      <div className="lm-toolbar">
+        <span className="dim" style={{ flex: 1 }}>{t('Motion Graphics Templates')}</span>
+        <button className="lm-iconbtn" title={t('Install Motion Graphics Template')} onClick={() => void add()} data-add-template="">
+          +
+        </button>
+      </div>
+      {templates.length ? (
+        <div className="lm-tree">
+          {templates.map((a) => (
+            <div
+              key={a.id}
+              className="node leaf"
+              data-template={a.id}
+              draggable
+              title={a.path ?? ''}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(DRAG_MIME, JSON.stringify([a.id]))
+                e.dataTransfer.effectAllowed = 'copy'
+              }}
+              onDoubleClick={() => void placeAsset(a.id)}
+            >
+              {a.name}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="lm-empty">{t('No templates in this project. Import a .mogrt (+) or a Premiere project that uses one.')}</div>
+      )}
+    </div>
+  )
 }

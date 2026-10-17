@@ -6,6 +6,15 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
+  'New Item > Adjustment Layer': '새 항목 > 조정 레이어',
+  'Adjustment Layer': '조정 레이어',
+  'Place on a Caption Track': '캡션 트랙에 배치',
+  'Place at Playhead': '재생 헤드에 배치',
+  'Place Captions': '캡션 배치',
+  'Install Motion Graphics Template': '모션 그래픽 템플릿 설치',
+  'Motion Graphics Templates': '모션 그래픽 템플릿',
+  'No templates in this project. Import a .mogrt (+) or a Premiere project that uses one.': '프로젝트에 템플릿이 없습니다. .mogrt를 설치(+)하거나 템플릿을 쓰는 Premiere 프로젝트를 가져오세요.',
+  // captions, track effects, frame hold, media, analysis
   'Add Caption Track': '캡션 트랙 추가',
   'Import Captions': '캡션 가져오기',
   'Imported captions': '캡션을 가져왔습니다',

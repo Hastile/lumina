@@ -16,7 +16,7 @@ import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
 import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
 import { mediaUrl } from '../engine/client'
-import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, upgradeCaptions } from '../actions/extra'
+import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, placeAsset, upgradeCaptions } from '../actions/extra'
 import { effectMedia } from '../util/effects'
 import { isCaptionTrack } from '../util/tracks'
 
@@ -567,6 +567,19 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     }
     const ids = JSON.parse(e.dataTransfer.getData(DRAG_MIME) || '[]') as string[]
     const doc = get().doc!
+    // project items that are not media: captions, templates, adjustment layers
+    const assets = ids.filter((id) => doc.assets?.[id])
+    if (assets.length) {
+      const { x, y } = laneXY(e)
+      const at = snapToFrame(toT(x), st)
+      const r = rows[rowAt(y)]
+      for (const id of assets) {
+        const a = doc.assets![id]
+        const onTrack = r && r.kind === 'video' && (a.kind === 'captions' ? !!r.track.caption_style : !r.track.caption_style) ? r.track.id : undefined
+        await placeAsset(id, at, onTrack)
+      }
+      return
+    }
     // media, and sequences (dropped as nested sequence clips)
     const items = ids.map((id): MediaItem | Sequence | undefined => doc.media[id] ?? doc.sequences[id]).filter((m): m is MediaItem | Sequence => !!m && m.id !== seq.id)
     if (!items.length) return
@@ -649,7 +662,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       <div
         key={clip.id}
         data-clip={clip.id}
-        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.caption ? 'graphic caption' : ''} ${clip.freeze != null ? 'held' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
+        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.adjustment ? 'graphic adjustment' : ''} ${clip.caption ? 'graphic caption' : ''} ${clip.freeze != null ? 'held' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
         onMouseDown={(e) => clipMouseDown(e, clip, rowIdx)}
         onDoubleClick={() => {
