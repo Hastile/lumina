@@ -24,8 +24,11 @@ export function loadWaveform(path: string, onReady: () => void): Waveform | null
   return null
 }
 
-/** Draw the clip's source range [srcStart, srcEnd) seconds into the canvas. */
-export function drawWaveform(canvas: HTMLCanvasElement, w: Waveform, srcStart: number, srcEnd: number, color: string): void {
+/** Draw the clip's source range [srcStart, srcEnd) seconds into the canvas. ``gainAt(f)`` is the linear
+ * gain at fraction f (0..1) of the clip (Audio Gain x Volume): the waveform shows the level the clip
+ * plays at, and peaks it pushes past full scale are drawn in ``clipColor``. */
+export function drawWaveform(canvas: HTMLCanvasElement, w: Waveform, srcStart: number, srcEnd: number, color: string,
+  gainAt: (f: number) => number = () => 1, clipColor = 'rgba(255,90,80,0.9)'): void {
   const dpr = window.devicePixelRatio || 1
   const width = canvas.clientWidth
   const height = canvas.clientHeight
@@ -46,8 +49,11 @@ export function drawWaveform(canvas: HTMLCanvasElement, w: Waveform, srcStart: n
     const b = Math.max(a + 1, Math.floor(Math.max(p0, p1)))
     let peak = 0
     for (let i = a; i < b && i < w.peaks.length; i++) if (w.peaks[i] > peak) peak = w.peaks[i]
-    const h = (peak / 255) * (height - 1)
-    if (h > 0.3) ctx.fillRect(x, height - h, 1, h)
+    const level = (peak / 255) * gainAt((x + 0.5) / width)
+    const h = Math.min(1, level) * (height - 1)
+    if (h <= 0.3) continue
+    ctx.fillStyle = level > 1 ? clipColor : color
+    ctx.fillRect(x, height - h, 1, h)
   }
 }
 

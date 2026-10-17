@@ -19,6 +19,7 @@ import { mediaUrl } from '../engine/client'
 import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, placeAsset, upgradeCaptions } from '../actions/extra'
 import { effectMedia } from '../util/effects'
 import { isCaptionTrack } from '../util/tracks'
+import { valueAt } from '../util/motion'
 
 const HEADER_W = 190
 const RULER_H = 30
@@ -753,7 +754,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         {row.kind === 'video' && m?.filmstrip_path && (
           <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
         )}
-        {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} />}
+        {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} clip={clip} seq={seq} />}
         {showKfs && !pv && !ghost && x1 - x0 > 10 && (
           <span className="lm-clip-kfs">
             {clipKeyframeTimes(clip, row.kind).map((k) => (
@@ -1264,14 +1265,23 @@ function renameTrack(seq: Sequence, t: Track) {
   })
 }
 
-function ClipWaveform({ path, srcIn, speed, duration }: { path: string; srcIn: number; speed: number; duration: number }) {
+function ClipWaveform({ path, srcIn, speed, duration, clip, seq }: { path: string; srcIn: number; speed: number; duration: number; clip: Clip; seq: Sequence }) {
   const ref = useRef<HTMLCanvasElement>(null)
   const [, force] = useState(0)
   useEffect(() => {
     const w = loadWaveform(path, () => force((n) => n + 1))
     if (!w || !ref.current) return
     const s = srcIn / TICKS_PER_SECOND
-    drawWaveform(ref.current, w, s, s + (duration * speed) / TICKS_PER_SECOND, 'rgba(255,255,255,0.55)')
+    // the level it plays at: Audio Gain (Auto-Match sets it) and Volume, keyframes included
+    const gain = clip.muted ? 0 : 10 ** ((clip.gain_db ?? 0) / 20)
+    const kfs = clip.keyframes.volume_db
+    const gainAt = kfs?.length
+      ? (f: number) => gain * 10 ** ((valueAt(clip, 'volume_db', clip.start + f * (clip.end - clip.start), seq) as number) / 20)
+      : (() => {
+          const g = gain * 10 ** ((clip.volume_db ?? 0) / 20)
+          return () => g
+        })()
+    drawWaveform(ref.current, w, s, s + (duration * speed) / TICKS_PER_SECOND, 'rgba(255,255,255,0.55)', gainAt)
   })
   return <canvas ref={ref} className="wave" />
 }
