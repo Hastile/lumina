@@ -136,7 +136,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
           const c = comp.current
           if (!c) return
           slot.tex = c.texture()
-          c.upload(slot.tex, bmp)
+          c.uploadStill(slot.tex, bmp)
           slot.w = bmp.width
           slot.h = bmp.height
           bmp.close()
@@ -166,7 +166,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
             const bytes = Uint8Array.from(atob(gr.png), (ch) => ch.charCodeAt(0))
             const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/png' }), { premultiplyAlpha: 'premultiply' })
             const tex = c.texture()
-            c.upload(tex, bmp)
+            c.uploadStill(tex, bmp)
             bmp.close()
             groups.push({ blend: gr.blend, x: gr.x, y: gr.y, w: gr.width, h: gr.height, tex })
           }

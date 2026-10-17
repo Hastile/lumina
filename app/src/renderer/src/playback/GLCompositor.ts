@@ -124,8 +124,10 @@ export class GLCompositor {
   private main: RT | null = null
   private group: RT | null = null
   private scratch: RT[] = []
-  /** sequence pixels -> canvas pixels */
+  /** sequence pixels -> frame (main buffer) pixels */
   private k = 1
+  /** frame pixels per canvas pixel (supersampling, a power of two) */
+  private ss = 1
   private seq = { w: 1, h: 1 }
 
   constructor(readonly canvas: HTMLCanvasElement) {
@@ -164,6 +166,15 @@ export class GLCompositor {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, src)
   }
 
+  /** Upload a still (image, rendered graphic) with mipmaps: drawn smaller than its pixels, as in a
+   * fitted monitor, plain bilinear skips texels and an animated scale crawls along edges. */
+  uploadStill(tex: WebGLTexture, src: ImageBitmap): void {
+    const gl = this.gl
+    this.upload(tex, src)
+    gl.generateMipmap(gl.TEXTURE_2D)
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+  }
+
   private rt(width: number, height: number, reuse?: RT | null): RT {
     const gl = this.gl
     width = Math.max(1, Math.round(width))
@@ -183,16 +194,21 @@ export class GLCompositor {
     this.gl.deleteTexture(r.tex)
   }
 
-  /** Size the output: ``scale`` canvas pixels per sequence pixel. */
+  /** Size the output: ``scale`` canvas pixels per sequence pixel. A canvas smaller than the
+   * sequence composites at 2x or 4x and is box-filtered down in end(): drawn straight at the
+   * canvas size, an animated scale slides the bilinear taps along edges and the layer jitters. */
   resize(seqW: number, seqH: number, scale: number): void {
     const w = Math.max(1, Math.round(seqW * scale))
     const h = Math.max(1, Math.round(seqH * scale))
     if (this.canvas.width !== w) this.canvas.width = w
     if (this.canvas.height !== h) this.canvas.height = h
-    this.k = w / seqW
+    let ss = 1
+    while (ss < 4 && w * ss < seqW) ss *= 2
+    this.ss = ss
+    this.k = (w * ss) / seqW
     this.seq = { w: seqW, h: seqH }
-    this.main = this.rt(w, h, this.main)
-    this.group = this.rt(w, h, this.group)
+    this.main = this.rt(w * ss, h * ss, this.main)
+    this.group = this.rt(w * ss, h * ss, this.group)
   }
 
   private bind(t: Target): void {
@@ -280,7 +296,15 @@ export class GLCompositor {
     gl.disable(gl.BLEND)
     gl.clearColor(0, 0, 0, 1)
     gl.clear(gl.COLOR_BUFFER_BIT)
-    this.draw({ fbo: null, width: this.canvas.width, height: this.canvas.height }, { tex: m.tex, x: 0, y: 0, w: this.seq.w, h: this.seq.h }, this.seqToFrame)
+    if (this.ss > 1) {
+      // mip level log2(ss) is the frame box-filtered to exactly the canvas size
+      gl.bindTexture(gl.TEXTURE_2D, m.tex)
+      gl.generateMipmap(gl.TEXTURE_2D)
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR)
+    }
+    const kc = this.k / this.ss
+    this.draw({ fbo: null, width: this.canvas.width, height: this.canvas.height }, { tex: m.tex, x: 0, y: 0, w: this.seq.w, h: this.seq.h }, [kc, 0, 0, 0, kc, 0])
+    if (this.ss > 1) gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
     for (const r of this.scratch) this.free(r)
     this.scratch = []
   }
