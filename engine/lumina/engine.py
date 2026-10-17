@@ -87,6 +87,7 @@ class Engine:
             "project.save": lambda p: self._session_of(p).save(p.get("path")),
             "project.summary": lambda p: views.project_summary(self.session.doc),
             "timeline.state": lambda p: views.timeline_state(self.session.doc, p.get("sequence_id")),
+            "clip.get": lambda p: views.clip_details(self.session.doc, p.get("sequence_id"), p.get("clip_ids"), p.get("track_id")),
             "jobs.list": lambda p: self.jobs.list() + self.exports.list(),
             "export.presets": lambda p: export_mod.presets(),
             "render.graphic": self._render_graphic,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from . import timebase
 from .commands.project import seq_of
+from .commands.registry import CommandError
 
 
 def _t(ticks: int | None, st: dict) -> dict | None:
@@ -34,6 +35,31 @@ def project_summary(doc: dict) -> dict:
             for s in doc["sequences"].values()
         ],
     }
+
+
+def clip_details(doc: dict, sequence_id: str | None = None, clip_ids: list[str] | None = None,
+                 track_id: str | None = None) -> dict:
+    """Every property of clips (Effect Controls): motion, opacity, volume / gain, speed, keyframes, effects,
+    graphic layers, caption. ``clip_ids``, or every clip of ``track_id``, or every clip of the sequence."""
+    seq = seq_of(doc, sequence_id)
+    st = seq["settings"]
+    labels = {tid: f"V{i + 1}" for i, tid in enumerate(seq["video_tracks"])}
+    labels.update({tid: f"A{i + 1}" for i, tid in enumerate(seq["audio_tracks"])})
+    want = set(clip_ids or [])
+    out, found = [], set()
+    for tid in [*seq["video_tracks"], *seq["audio_tracks"]]:
+        if track_id and tid != track_id:
+            continue
+        for c in sorted(seq["tracks"][tid]["clips"].values(), key=lambda c: c["start"]):
+            if want and c["id"] not in want:
+                continue
+            found.add(c["id"])
+            out.append({**c, "track_id": tid, "track": labels[tid], "start": _t(c["start"], st), "end": _t(c["end"], st),
+                        "source_in": _t(c["source_in"], st)})
+    missing = sorted(want - found)
+    if missing:
+        raise CommandError("NO_CLIP", f"clips not in sequence {seq['id']}: {', '.join(missing)}")
+    return {"sequence_id": seq["id"], "clips": out}
 
 
 def timeline_state(doc: dict, sequence_id: str | None = None) -> dict:

@@ -156,3 +156,19 @@ def test_cache_clean_older_and_settings(tmp_path):
     _fill("stale", age_days=10)
     Engine(services=FakeServices(), run_jobs=False)
     assert not (media_cache.root() / "stale").exists()
+
+
+def test_get_clips_returns_every_property():
+    e, _ = make()
+    e.dispatch("project.new", {"name": "A"})
+    mid = ex(e, "media.import", {"paths": ["a.mp4"]})["media_ids"][0]
+    sid = ex(e, "sequence.create", {"name": "S"})["sequence_id"]
+    vid = ex(e, "clip.place", {"media_id": mid, "at": 0})["video_clip_id"]
+    ex(e, "clip.set_property", {"clip_id": vid, "prop": "scale", "value": 150})
+    got = e.dispatch("clip.get", {"clip_ids": [vid]})
+    assert got["sequence_id"] == sid and len(got["clips"]) == 1
+    c = got["clips"][0]
+    assert c["track"] == "V1" and c["motion"]["scale"] == 150 and "effects" in c and c["start"]["seconds"] == 0
+    assert len(e.dispatch("clip.get", {})["clips"]) == 2  # video and its linked audio
+    with pytest.raises(CommandError):
+        e.dispatch("clip.get", {"clip_ids": ["nope"]})

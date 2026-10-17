@@ -30,6 +30,12 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
     "get_project": ("project.summary", "Project overview: bins, media (ids, durations, streams) and sequences.", _OBJ, None),
     "get_timeline_state": ("timeline.state", "Tracks, clips (ticks/seconds/timecode), markers and playhead of a sequence.",
                            {"type": "object", "properties": {"sequence_id": {"type": "string"}}}, None),
+    "get_clips": ("clip.get", "Every property of clips, as Effect Controls shows them: motion (position / scale / rotation / "
+                  "anchor), opacity, volume and gain, speed, keyframes, effects, graphic layers (text, style) and caption. "
+                  "clip_ids, or every clip of track_id, or the whole sequence.",
+                  {"type": "object", "properties": {"sequence_id": {"type": "string"},
+                                                    "clip_ids": {"type": "array", "items": {"type": "string"}},
+                                                    "track_id": {"type": "string"}}}, None),
     "undo": ("undo", "Undo the last edit (Ctrl+Z).", _OBJ, None),
     "redo": ("redo", "Redo (Ctrl+Shift+Z).", _OBJ, None),
     "begin_transaction": ("transaction.begin", "Group following edits into one undo step.",
