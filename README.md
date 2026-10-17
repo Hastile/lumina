@@ -19,6 +19,17 @@ cd engine && uv sync
 cd ../app && npm install && npm run dev    # starts the GUI, which spawns the engine
 ```
 
+## Build (Windows installer)
+
+```sh
+cd app && npm run dist        # -> app/release/Lumina-Setup-<version>.exe
+npm run dist:dir              # unpacked app only: app/release/win-unpacked/Lumina.exe
+```
+
+`scripts/build-exe.mjs` freezes the engine with PyInstaller (`lumina-engine.exe`),
+copies `ffmpeg`/`ffprobe` and their DLLs from PATH into the app's resources, then
+runs electron-builder. The installed app needs neither `uv`, Python nor FFmpeg.
+
 ## Automate
 
 While the GUI is open, its engine writes `~/.lumina/engine.json`. Agents and

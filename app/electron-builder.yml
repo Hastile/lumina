@@ -1,0 +1,25 @@
+# Windows installer: npm run dist (scripts/build-exe.mjs stages the engine and FFmpeg first)
+appId: com.lumina.editor
+productName: Lumina
+directories:
+  output: release
+  buildResources: build-resources
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: ../engine/build/dist/lumina-engine
+    to: engine
+  - from: build-resources/ffmpeg
+    to: ffmpeg
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: x64
+  artifactName: Lumina-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true

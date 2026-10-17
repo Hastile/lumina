@@ -8,3 +8,6 @@ samples/
 *.lumina.oplog
 .hypothesis/
 .pytest_cache/
+release/
+build-resources/ffmpeg/
+engine/build/

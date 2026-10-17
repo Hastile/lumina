@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "gen:types": "node scripts/gen-types.mjs",
     "test": "vitest run",
-    "e2e": "electron-vite build && node test/e2e.mjs"
+    "e2e": "electron-vite build && node test/e2e.mjs",
+    "dist": "node scripts/build-exe.mjs",
+    "dist:dir": "node scripts/build-exe.mjs --dir"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
@@ -20,6 +22,7 @@
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
     "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "json-schema-to-typescript": "^16.0.0",
     "playwright": "^1.64.0",

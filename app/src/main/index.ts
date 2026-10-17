@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { createReadStream, statSync, writeFileSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { createReadStream, existsSync, statSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { createInterface } from 'node:readline'
 import { setLocale, t, type Locale } from '../shared/i18n'
@@ -70,14 +70,34 @@ function engineDir(): string {
   return process.env.LUMINA_ENGINE_DIR ?? resolve(app.getAppPath(), '..', 'engine')
 }
 
+// Packaged builds ship the frozen engine (PyInstaller) and FFmpeg under resources/.
+function bundledEngine(): string | null {
+  if (!app.isPackaged) return null
+  const exe = join(process.resourcesPath, 'engine', process.platform === 'win32' ? 'lumina-engine.exe' : 'lumina-engine')
+  return existsSync(exe) ? exe : null
+}
+
+function bundledFfmpegEnv(): Record<string, string> {
+  if (!app.isPackaged) return {}
+  const ext = process.platform === 'win32' ? '.exe' : ''
+  const ffmpeg = join(process.resourcesPath, 'ffmpeg', `ffmpeg${ext}`)
+  const ffprobe = join(process.resourcesPath, 'ffmpeg', `ffprobe${ext}`)
+  return existsSync(ffmpeg) && existsSync(ffprobe) ? { LUMINA_FFMPEG: ffmpeg, LUMINA_FFPROBE: ffprobe } : {}
+}
+
 function startEngine(): Promise<EngineInfo> {
   return new Promise((resolvePromise, reject) => {
     const custom = process.env.LUMINA_ENGINE_CMD
+    const bundled = bundledEngine()
     const [cmd, args] = custom
       ? [custom.split(' ')[0], [...custom.split(' ').slice(1), 'serve']]
-      : ['uv', ['run', '--project', engineDir(), 'lumina', 'serve']]
+      : bundled
+        ? [bundled, ['serve']]
+        : ['uv', ['run', '--project', engineDir(), 'lumina', 'serve']]
     args.push('--parent-pid', String(process.pid))
-    const proc = spawn(cmd, args, { cwd: engineDir(), windowsHide: true, env: { ...process.env, PYTHONUNBUFFERED: '1' } })
+    const cwd = bundled && !custom ? dirname(bundled) : engineDir()
+    const env = { ...process.env, ...bundledFfmpegEnv(), PYTHONUNBUFFERED: '1' }
+    const proc = spawn(cmd, args, { cwd, windowsHide: true, env })
     engineProc = proc
     let stderr = ''
     proc.stderr?.on('data', (d) => {
