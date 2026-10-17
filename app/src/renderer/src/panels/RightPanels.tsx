@@ -12,7 +12,7 @@ import type { LumetriParams } from '../util/color'
 import { ticksToSeconds } from '../util/time'
 import { current, KeyframeRow, NumberScrub, setProp, useSelectedClip } from './PropertyControls'
 import { GraphicLayers } from './GraphicLayers'
-import { DRAG_MIME } from './ProjectPanel'
+import { DRAG_MIME, setDraggedItems } from './ProjectPanel'
 import { placeAsset } from '../actions/extra'
 
 function Section({ title, children, reset }: { title: string; children: React.ReactNode; reset?: () => void }) {
@@ -304,7 +304,9 @@ export function GraphicTemplatesPanel() {
               onDragStart={(e) => {
                 e.dataTransfer.setData(DRAG_MIME, JSON.stringify([a.id]))
                 e.dataTransfer.effectAllowed = 'copy'
+                setDraggedItems([a.id])
               }}
+              onDragEnd={() => setDraggedItems([])}
               onDoubleClick={() => void placeAsset(a.id)}
             >
               {a.name}

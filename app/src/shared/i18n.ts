@@ -6,6 +6,11 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
+  'New Caption Track': '새 캡션 트랙',
+  'Track Name': '트랙 이름',
+  'captions will be placed at': '개의 캡션이 다음 위치에 배치됩니다:',
+  'Subtitles': '자막',
+  // captions, track effects, frame hold, media, analysis
   'New Item > Adjustment Layer': '새 항목 > 조정 레이어',
   'Adjustment Layer': '조정 레이어',
   'Place on a Caption Track': '캡션 트랙에 배치',

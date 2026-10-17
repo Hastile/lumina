@@ -428,3 +428,8 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-project-row .busy.offline { background: #6a2626; color: #ffb3b3; }
 .lm-clip.adjustment { background: color-mix(in srgb, var(--clip-color) 45%, #222); background-image: repeating-linear-gradient(45deg, rgba(255,255,255,0.06) 0 6px, transparent 6px 12px); }
 .lm-templates .lm-tree .node { cursor: grab; }
+
+/* captions dragged in from the Project panel: their cues where they will land */
+.lm-cue-ghosts { position: absolute; inset: 0; pointer-events: none; z-index: 30; }
+.lm-clip.ghost.caption { opacity: 0.75; outline: 1px dashed rgba(255, 230, 120, 0.9); }
+.lm-cue-newtrack { position: absolute; left: 0; right: 0; background: rgba(138, 116, 37, 0.35); border-bottom: 1px dashed #c9a84a; color: #f3e3a0; font-size: 11px; padding: 2px 8px; text-align: right; }

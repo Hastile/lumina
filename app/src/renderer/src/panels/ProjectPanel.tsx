@@ -12,6 +12,14 @@ import { timecode } from '../util/time'
 
 export const DRAG_MIME = 'application/x-lumina-item'
 
+/** The project items being dragged right now: a drop target can preview them during dragover,
+ * when the browser does not let it read the drag's data yet. */
+let dragging: string[] = []
+export const draggedItems = (): string[] => dragging
+export function setDraggedItems(ids: string[]): void {
+  dragging = ids
+}
+
 type Row =
   | { kind: 'bin'; id: string; name: string }
   | { kind: 'media'; id: string; name: string; item: MediaItem }
@@ -107,6 +115,7 @@ export function ProjectPanel() {
     const ids = selected.includes(r.id) ? selected : [r.id]
     e.dataTransfer.setData(DRAG_MIME, JSON.stringify(ids))
     e.dataTransfer.effectAllowed = 'copyMove'
+    setDraggedItems(ids)
   }
 
   const onDrop = async (e: React.DragEvent, targetBin?: string) => {
@@ -197,6 +206,7 @@ export function ProjectPanel() {
               className={`lm-project-row ${selected.includes(r.id) ? 'selected' : ''}`}
               draggable
               onDragStart={(e) => onDragStart(e, r)}
+              onDragEnd={() => setDraggedItems([])}
               onDragOver={(e) => r.kind === 'bin' && e.preventDefault()}
               onDrop={(e) => {
                 if (r.kind === 'bin') {
@@ -232,6 +242,7 @@ export function ProjectPanel() {
               className={`lm-tile ${selected.includes(r.id) ? 'selected' : ''}`}
               draggable
               onDragStart={(e) => onDragStart(e, r)}
+              onDragEnd={() => setDraggedItems([])}
               onMouseDown={(e) => select(e, r.id)}
               onDoubleClick={() => openRow(r)}
               onContextMenu={(e) => rowMenu(e, r)}

@@ -142,16 +142,43 @@ export async function newAdjustmentLayer(): Promise<void> {
   if (r) set({ selectedItems: [r.asset_id] })
 }
 
+/** Captions from a captions project item onto a caption track: the given one, else the topmost; with
+ * no caption track in the sequence, the New Caption Track dialog asks for one first (Premiere). */
+export function placeCaptions(assetId: string, at = 0, trackId?: string): void {
+  const seq = seqOrToast()
+  const a = get().doc?.assets?.[assetId]
+  if (!seq || !a) return
+  const place = async (tid: string) => {
+    await exec('asset.place', { sequence_id: seq.id, asset_id: assetId, at, track_id: tid }, t('Place Captions'))
+  }
+  const tid = trackId ?? [...seq.video_tracks].reverse().find((id) => seq.tracks[id].caption_style)
+  if (tid) {
+    void place(tid)
+    return
+  }
+  openDialog({
+    title: t('New Caption Track'),
+    okLabel: t('OK'),
+    fields: [
+      { key: 'name', label: t('Track Name'), type: 'text', value: a.name.replace(/\.[^.]+$/, '') || t('Subtitles') },
+      { key: 'note', label: '', type: 'note', value: `${a.cues?.length ?? 0} ${t('captions will be placed at')} ${(at / 254016000000).toFixed(2)}s` }
+    ],
+    onSubmit: async (v) => {
+      const r = await exec<{ track_id: string }>('caption.add_track', { sequence_id: seq.id, name: String(v.name) || null }, t('Add Caption Track'))
+      if (r) await place(r.track_id)
+    }
+  })
+}
+
 /** Put a project item on the timeline (double-click / drop): captions -> a caption track at the
  * sequence start, templates and adjustment layers -> the playhead (or ``at`` / ``trackId``). */
 export async function placeAsset(assetId: string, at?: number, trackId?: string): Promise<void> {
   const seq = seqOrToast()
   const a = get().doc?.assets?.[assetId]
   if (!seq || !a) return
-  const label = a.kind === 'captions' ? t('Place Captions') : a.kind === 'template' ? t('Place Motion Graphics Template') : t('Adjustment Layer')
-  const r = await exec<{ clip_id?: string; clip_ids?: string[] }>('asset.place', {
-    sequence_id: seq.id, asset_id: assetId, at: at ?? (a.kind === 'captions' ? null : get().programTime), track_id: trackId ?? null
-  }, label)
+  if (a.kind === 'captions') return placeCaptions(assetId, at ?? 0, trackId)
+  const label = a.kind === 'template' ? t('Place Motion Graphics Template') : t('Adjustment Layer')
+  const r = await exec<{ clip_id?: string }>('asset.place', { sequence_id: seq.id, asset_id: assetId, at: at ?? get().programTime, track_id: trackId ?? null }, label)
   if (r?.clip_id) set({ selectedClips: [r.clip_id] })
 }
 

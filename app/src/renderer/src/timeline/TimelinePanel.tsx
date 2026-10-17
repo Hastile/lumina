@@ -5,12 +5,12 @@ import { transitionDurationDialog } from './transitionDialog'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t as tx } from '@shared/i18n'
 import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X } from 'lucide-react'
-import type { Clip, MediaItem, Sequence, Track } from '../engine/document'
+import type { Asset, Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
 import { runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
-import { DRAG_MIME } from '../panels/ProjectPanel'
+import { DRAG_MIME, draggedItems } from '../panels/ProjectPanel'
 import { activeSequence, closeSequence, exec, findClip, get, openSequence, sequenceEnd, set, toast, useStore } from '../state/store'
 import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
@@ -28,6 +28,8 @@ const SECTION_GAP = 6
 const MIN_TRACK_H = 22
 const MAX_TRACK_H = 320
 const VBAR_W = 10
+// captions dragged in hold on to 0 s until the pointer is this far from it (they were timed to the sequence start)
+const CAPTION_SNAP_PX = 60
 
 function loadJson<T>(key: string, fallback: T): T {
   try {
@@ -339,6 +341,18 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return best
   }
 
+  /** A captions project item being dragged in (previewed cue by cue, snapping hard to 0 s). */
+  const captionDrag = (): Asset | null => {
+    const ids = draggedItems()
+    const a = ids.length === 1 ? get().doc?.assets?.[ids[0]] : undefined
+    return a?.kind === 'captions' ? a : null
+  }
+  const dropTime = (x: number, captions: boolean): number => {
+    const raw = snapToFrame(toT(x), st)
+    if (captions && toX(raw) - toX(0) < CAPTION_SNAP_PX) return 0
+    return raw + snapDelta([raw], new Set())
+  }
+
   // the part of a row inside its own track area
   const shown = (r: Row): [number, number] =>
     r.area === 'caption' ? [Math.max(0, r.top), Math.min(layout.capH, r.top + r.height)]
@@ -594,10 +608,10 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     const assets = ids.filter((id) => doc.assets?.[id])
     if (assets.length) {
       const { x, y } = laneXY(e)
-      const at = snapToFrame(toT(x), st)
       const r = rows[rowAt(y)]
       for (const id of assets) {
         const a = doc.assets![id]
+        const at = dropTime(x, a.kind === 'captions')
         const onTrack = r && r.kind === 'video' && (a.kind === 'captions' ? !!r.track.caption_style : !r.track.caption_style) ? r.track.id : undefined
         await placeAsset(id, at, onTrack)
       }
@@ -913,7 +927,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           onDragOver={(e) => {
             e.preventDefault()
             const { x, y } = laneXY(e)
-            setDropTarget({ row: rowAt(y), t: snapToFrame(toT(x), st) })
+            const t = dropTime(x, !!captionDrag())
+            setDropTarget((d) => (d && d.row === rowAt(y) && d.t === t ? d : { row: rowAt(y), t }))
           }}
           onDragLeave={() => setDropTarget(null)}
           onDrop={dropOnLanes}
@@ -933,6 +948,32 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             <div className="lm-tl-marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
           )}
           {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
+          {dropTarget && (() => {
+            // the captions being dragged, split at their SRT cues, where they will land
+            const cap = captionDrag()
+            if (!cap) return null
+            const hovered = rows[dropTarget.row]
+            const row = hovered?.area === 'caption' ? hovered : rows.find((r) => r.area === 'caption')
+            const top = row ? row.top + 1 : 0
+            const h = row ? row.height - 2 : 30
+            const at = dropTarget.t
+            return (
+              <div className="lm-cue-ghosts" data-cue-ghosts={cap.cues?.length ?? 0}>
+                {!row && <div className="lm-cue-newtrack" style={{ top: 0, height: h + 2 }}>{tx('New Caption Track')}</div>}
+                {(cap.cues ?? []).map((c, i) => {
+                  const x0 = toX(at + c.start)
+                  const x1 = toX(at + c.end)
+                  if (x1 < -20 || x0 > width + 20) return null
+                  return (
+                    <div key={i} className="lm-clip video graphic caption ghost" data-cue-ghost={i} style={{ left: x0, width: Math.max(2, x1 - x0 - 1), top, height: h, ['--clip-color' as string]: 'var(--label-yellow)' }}>
+                      <span className="name">{c.text.split('\n')[0]}</span>
+                    </div>
+                  )
+                })}
+                <div className="lm-tooltip-tc" style={{ left: toX(at) + 4, top: top + h + 2 }}>{timecode(at, st)}</div>
+              </div>
+            )
+          })()}
         </div>
         <div className="lm-tl-vbars" style={{ width: VBAR_W }}>
           <VZoomBar kind="video" top={layout.videoTop} pane={layout.videoH} max={layout.vMax} content={layout.vContent} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
