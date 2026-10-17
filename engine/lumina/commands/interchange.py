@@ -71,7 +71,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         ctx.m.set(["media", mid], {
             "id": mid, "name": m["name"], "path": m["path"], "bin_id": bin_map.get(m["bin"], top),
             "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None, "filmstrip_path": None,
-            "in_point": None, "out_point": None,
+            "in_point": None, "out_point": None, "offline": False,
             "kind": info["kind"], "duration": info["duration"], "video": info["video"], "audio": info["audio"],
         })
 
@@ -133,14 +133,21 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
                         "keyframes": it.get("keyframes", {}),
                         "graphic": graphic,
+                        "caption": None,
                         "effects": [{"id": new_id(), **e} for e in it.get("effects", [])],
+                        "freeze": None,
                     }
                     if clip["start"] != it["start"]:
                         clip["source_in"] += round((clip["start"] - it["start"]) * clip["speed"])
                     limit = None if item is None or item["kind"] == "image" else item["duration"]
-                    if limit and source_at(clip, clip["end"]) > limit:
+                    if limit and clip["speed"] > 0 and source_at(clip, clip["end"]) > limit:
                         # project-file durations and ffprobe can disagree by a frame or two
                         clip["end"] = clip["start"] + int((limit - clip["source_in"]) / clip["speed"])
+                        clamped += 1
+                    elif limit and clip["speed"] < 0 and clip["source_in"] > limit:
+                        # reversed: the clip starts past the media end; trim its head to the last frame that exists
+                        clip["start"] += int(round((clip["source_in"] - limit) / -clip["speed"]))
+                        clip["source_in"] = limit
                         clamped += 1
                     if clip["end"] <= clip["start"] or clip["source_in"] < 0:
                         continue

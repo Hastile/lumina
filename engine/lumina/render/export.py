@@ -129,9 +129,12 @@ def _atempo(speed: float) -> list[str]:
 
 def decode_audio(path: str, src_start: int, src_dur: int, speed: float, rate: int, filters: list[str] | None = None,
                  channels: int = 2) -> np.ndarray:
+    """``src_start`` is the earliest source time of the range; a negative ``speed``
+    (Reverse Speed) plays it back to front."""
     # mono plays at full level on both sides, as in the preview (ffmpeg's -ac 2 would mix it 3 dB down)
     up = ["pan=stereo|c0=c0|c1=c0"] if channels == 1 else []
-    af = ",".join(up + _atempo(speed) + [f"aresample={rate}"] + list(filters or []))
+    rev = ["areverse"] if speed < 0 else []
+    af = ",".join(up + _atempo(abs(speed)) + rev + [f"aresample={rate}"] + list(filters or []))
     cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{max(0, src_start) / TPS:.6f}", "-t", f"{src_dur / TPS:.6f}",
            "-i", path, "-vn", "-af", af, "-ac", "2", "-ar", str(rate), "-f", "f32le", "-"]
     proc = subprocess.run(cmd, capture_output=True, timeout=3600, **NO_WINDOW)
@@ -194,7 +197,9 @@ def _clip_pcm(doc: dict, c: dict, s: int, e: int, rate: int, warn: Callable[[str
     if path is None:
         warn(f"media offline, audio silent: {media['name']}")
         return None
-    return decode_audio(path, src, round((e - s) * c["speed"]), c["speed"], rate, pre, (media["audio"] or {}).get("channels", 2))
+    span = round((e - s) * abs(c["speed"]))
+    low = src if c["speed"] >= 0 else src - span
+    return decode_audio(path, low, span, c["speed"], rate, pre, (media["audio"] or {}).get("channels", 2))
 
 
 def _mix_into(doc: dict, seq: dict, a: int, b: int, buf: np.ndarray, rate: int, cancelled: Callable[[], bool] = lambda: False,
@@ -218,14 +223,22 @@ def _mix_into(doc: dict, seq: dict, a: int, b: int, buf: np.ndarray, rate: int, 
             if c["enabled"] and not c.get("muted") and e0 > a and s0 < b:
                 jobs.append((c, s0, e0, fades.get(c["id"], []), track))
     master = 10 ** (seq.get("master_volume_db", 0.0) / 20)
+    # tracks with track effects (Audio Track Mixer effect inserts) are summed on their own
+    # bus, run through the effects, then faded/panned; the others mix straight into buf
+    buses: dict[str, np.ndarray] = {t["id"]: np.zeros((total, 2), np.float32) for t in _audible_tracks(seq)
+                                    if [x for x in t.get("effects") or [] if x.get("enabled", True)] and any(j[4] is t for j in jobs)}
     for i, (c, s0, e0, fades, track) in enumerate(jobs):
         if cancelled():
             return False
         progress(i / max(1, len(jobs)))
         s, e = max(s0, a), min(e0, b)
         src = c["source_in"] + round((s - c["start"]) * c["speed"])
-        if src < 0:  # transition reaches before the media starts: silence until it does
+        if src < 0 and c["speed"] > 0:  # transition reaches before the media starts: silence until it does
             s -= round(src / c["speed"])
+            if s >= e:
+                continue
+        elif c["speed"] < 0 and c["source_in"] + round((e - c["start"]) * c["speed"]) < 0:
+            e = c["start"] + int(c["source_in"] / -c["speed"])  # a reversed clip runs out of media at the start
             if s >= e:
                 continue
         pcm = _clip_pcm(doc, c, s, e, rate, warn, depth)
@@ -254,12 +267,20 @@ def _mix_into(doc: dict, seq: dict, a: int, b: int, buf: np.ndarray, rate: int, 
             pcm = pcm * gain[:, None]
         elif c["volume_db"] != 0:
             pcm = pcm * np.float32(10 ** (c["volume_db"] / 20))
+        if track["id"] in buses:
+            buses[track["id"]][off:off + n] += pcm
+            continue
         # the track fader and the Mix fader are plain gains; then the track's pan
         g = 10 ** (track.get("volume_db", 0.0) / 20) * master
         if g != 1:
             pcm = pcm * np.float32(g)
         pcm = stereo_pan(pcm, track.get("pan", 0.0))
         buf[off:off + n] += pcm
+    for tid, bus in buses.items():
+        track = seq["tracks"][tid]
+        bus = filter_pcm(bus, rate, ffmpeg_filters([x for x in track["effects"] if x.get("enabled", True)], rate))
+        g = 10 ** (track.get("volume_db", 0.0) / 20) * master
+        buf[:len(bus)] += stereo_pan(bus * np.float32(g), track.get("pan", 0.0))
     return True
 
 

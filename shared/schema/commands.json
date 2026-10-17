@@ -664,7 +664,7 @@
   },
   {
     "name": "track.add",
-    "description": "Add a video or audio track.",
+    "description": "Add a video, audio or caption track.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -682,9 +682,11 @@
           "title": "Sequence Id"
         },
         "kind": {
+          "description": "caption: a video track for caption cues (see caption.*)",
           "enum": [
             "video",
-            "audio"
+            "audio",
+            "caption"
           ],
           "title": "Kind",
           "type": "string"
@@ -929,6 +931,73 @@
         "volume_db"
       ],
       "title": "SetMaster",
+      "type": "object"
+    }
+  },
+  {
+    "name": "sequence.set_patch",
+    "description": "Source patching (the V1/A1 source indicators): which tracks Insert/Overwrite put source video and\naudio on, independent of track targeting (which drives paste, Match Frame and edit-point navigation).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "video_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "track that source video is patched to",
+          "title": "Video Track Id"
+        },
+        "audio_track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "track that source audio is patched to",
+          "title": "Audio Track Id"
+        },
+        "clear_video": {
+          "default": false,
+          "description": "unpatch video: Insert/Overwrite places no video",
+          "title": "Clear Video",
+          "type": "boolean"
+        },
+        "clear_audio": {
+          "default": false,
+          "title": "Clear Audio",
+          "type": "boolean"
+        },
+        "auto": {
+          "default": false,
+          "description": "back to following targeting (the first targeted track)",
+          "title": "Auto",
+          "type": "boolean"
+        }
+      },
+      "title": "SetPatch",
       "type": "object"
     }
   },
@@ -1394,11 +1463,24 @@
           "type": "string"
         },
         "speed": {
-          "description": "1.0 = 100%",
+          "description": "1.0 = 100% (the magnitude; see reverse)",
           "exclusiveMinimum": 0,
           "maximum": 100,
           "title": "Speed",
           "type": "number"
+        },
+        "reverse": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Reverse Speed: play the same frames back to front; default keeps the direction",
+          "title": "Reverse"
         },
         "ripple": {
           "default": true,
@@ -1416,6 +1498,105 @@
         "speed"
       ],
       "title": "SetSpeed",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.frame_hold",
+    "description": "Frame Hold (Premiere's Frame Hold Options / Add Frame Hold / Insert Frame Hold Segment) on a video clip.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "mode": {
+          "default": "hold",
+          "description": "hold: Frame Hold Options (the whole clip shows one frame); add: Add Frame Hold (split at the playhead, hold from there); insert: Insert Frame Hold Segment (a held segment of `duration` at the playhead, later clips ripple); clear: remove the hold",
+          "enum": [
+            "hold",
+            "add",
+            "insert",
+            "clear"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "hold_on": {
+          "default": "playhead",
+          "description": "mode hold: which frame",
+          "enum": [
+            "playhead",
+            "in",
+            "out",
+            "source"
+          ],
+          "title": "Hold On",
+          "type": "string"
+        },
+        "source_time": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "hold_on source: the source time to hold",
+          "title": "Source Time"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "2s",
+          "title": "Duration"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "FrameHold",
       "type": "object"
     }
   },
@@ -2118,6 +2299,467 @@
         "clip_ids"
       ],
       "title": "ResetMatch",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.add_track",
+    "description": "New caption (subtitle) track: a video track whose cues are text in one track style.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "style": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "CaptionStyle fields to set (font_family, font_size, color, stroke_color, stroke_width, background, align, position, ...)",
+          "title": "Style",
+          "type": "object"
+        }
+      },
+      "title": "AddCaptionTrack",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.set_style",
+    "description": "Change a caption track's style (Premiere's track style): restyles every cue at once.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        },
+        "style": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "CaptionStyle fields to change; every cue on the track follows",
+          "title": "Style",
+          "type": "object"
+        }
+      },
+      "required": [
+        "track_id",
+        "style"
+      ],
+      "title": "SetCaptionStyle",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.add",
+    "description": "Add a caption cue (it overwrites whatever cue it lands on).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "caption track; default the topmost one (created if there is none)",
+          "title": "Track Id"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "3s",
+          "title": "Duration"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "AddCaption",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.set",
+    "description": "Edit a cue's text and/or its per-cue style overrides.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Text"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "per-cue overrides to merge (null values remove an override)",
+          "title": "Style"
+        },
+        "clear_style": {
+          "default": false,
+          "description": "drop every per-cue override (back to the track style)",
+          "title": "Clear Style",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "SetCaption",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.import_srt",
+    "description": "Import an .srt file as caption cues (frame-snapped; overlapping cues are trimmed to follow each other).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "caption track to fill; default a new one named after the file",
+          "title": "Track Id"
+        },
+        "offset": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": 0,
+          "description": "added to every cue time",
+          "title": "Offset"
+        },
+        "replace": {
+          "default": false,
+          "description": "with track_id: delete the track's cues first",
+          "title": "Replace",
+          "type": "boolean"
+        },
+        "style": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": "new track: CaptionStyle fields",
+          "title": "Style",
+          "type": "object"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ImportSrt",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.from_graphics",
+    "description": "Turn a track of one-line text graphics (e.g. imported subtitles) into a caption track: the first\ngraphic's text style becomes the track style, each graphic becomes a cue (differences from the track\nstyle are kept as per-cue overrides). Timing, Motion, keyframes and effects stay as they are.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track_id"
+      ],
+      "title": "TrackRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.to_graphics",
+    "description": "Upgrade Caption to Graphic: cues become ordinary text graphic clips (editable layer by layer).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "every cue of this caption track ...",
+          "title": "Track Id"
+        },
+        "clip_ids": {
+          "description": "... or just these cues",
+          "items": {
+            "type": "string"
+          },
+          "title": "Clip Ids",
+          "type": "array"
+        }
+      },
+      "title": "ToGraphics",
       "type": "object"
     }
   },
@@ -3302,6 +3944,87 @@
         }
       },
       "title": "CreateText",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.place_mogrt",
+    "description": "Place a Motion Graphics Template: its text layers become an editable graphic clip (styling is\nbest effort; animation in the template is not reproduced).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "path": {
+          "description": "a .mogrt (or .aegraphic) Motion Graphics Template made in After Effects",
+          "title": "Path",
+          "type": "string"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "5s",
+          "title": "Duration"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: the first free video track above what is there",
+          "title": "Track Id"
+        },
+        "texts": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "template text fields by layer name -> new text",
+          "title": "Texts",
+          "type": "object"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "PlaceMogrt",
       "type": "object"
     }
   },
@@ -4863,7 +5586,7 @@
   },
   {
     "name": "effect.add",
-    "description": "Apply an effect (drag from the Effects panel). Video effects run in stack order before Motion;\naudio effects after Audio Gain and before Volume.",
+    "description": "Apply an effect (drag from the Effects panel) to clips or whole tracks. Video effects run in stack\norder before Motion; audio effects after Audio Gain and before Volume. Track effects apply to every\nclip of the track without changing the clips (caption tracks included).",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -4881,11 +5604,19 @@
           "title": "Sequence Id"
         },
         "clip_ids": {
+          "description": "clips to apply to",
           "items": {
             "type": "string"
           },
-          "minItems": 1,
           "title": "Clip Ids",
+          "type": "array"
+        },
+        "track_ids": {
+          "description": "or tracks: a track effect applies to every clip of the track (video: after the clip's Motion; audio: on the track bus)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Track Ids",
           "type": "array"
         },
         "type": {
@@ -4932,10 +5663,20 @@
           "default": null,
           "description": "position in the effect stack; default last",
           "title": "Index"
+        },
+        "anchor": {
+          "default": "in",
+          "description": "track effects: keyframe times count from each clip's In / Out, or stretch over it",
+          "enum": [
+            "in",
+            "out",
+            "stretch"
+          ],
+          "title": "Anchor",
+          "type": "string"
         }
       },
       "required": [
-        "clip_ids",
         "type"
       ],
       "title": "AddEffect",
@@ -4944,7 +5685,7 @@
   },
   {
     "name": "effect.apply_preset",
-    "description": "Apply an effect preset: its effects are appended with keyframes fitted to each clip\n(anchored to the clip's in or out point, or scaled to its length, as saved).",
+    "description": "Apply an effect preset: its effects are appended with keyframes fitted to each clip\n(anchored to the clip's in or out point, or scaled to its length, as saved). On a track, the\neffects become track effects that fit every clip of the track the same way.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -4965,8 +5706,15 @@
           "items": {
             "type": "string"
           },
-          "minItems": 1,
           "title": "Clip Ids",
+          "type": "array"
+        },
+        "track_ids": {
+          "description": "or tracks: the preset becomes track effects, its keyframes fitted to every clip of the track (each cue animates on its own)",
+          "items": {
+            "type": "string"
+          },
+          "title": "Track Ids",
           "type": "array"
         },
         "preset_id": {
@@ -4976,7 +5724,6 @@
         }
       },
       "required": [
-        "clip_ids",
         "preset_id"
       ],
       "title": "ApplyPreset",
@@ -4985,7 +5732,7 @@
   },
   {
     "name": "effect.remove",
-    "description": "Delete an effect from a clip.",
+    "description": "Delete an effect from a clip or track.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -5003,8 +5750,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5012,7 +5781,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id"
       ],
       "title": "EffectRef",
@@ -5021,7 +5789,7 @@
   },
   {
     "name": "effect.set",
-    "description": "Toggle an effect on/off or reorder it in the stack.",
+    "description": "Toggle an effect on/off, reorder it in the stack, or (track effects) change its anchor.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -5039,8 +5807,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5071,10 +5861,27 @@
           "default": null,
           "description": "move to this stack position",
           "title": "Index"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "enum": [
+                "in",
+                "out",
+                "stretch"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "track effects: what keyframe times count from",
+          "title": "Anchor"
         }
       },
       "required": [
-        "clip_id",
         "effect_id"
       ],
       "title": "SetEffect",
@@ -5101,8 +5908,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5147,7 +5976,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id",
         "param",
         "value"
@@ -5176,8 +6004,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5204,7 +6054,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id",
         "param"
       ],
@@ -5232,8 +6081,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5285,7 +6156,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id",
         "param",
         "t",
@@ -5317,8 +6187,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5375,7 +6267,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id",
         "param"
       ],
@@ -5403,8 +6294,30 @@
           "title": "Sequence Id"
         },
         "clip_id": {
-          "title": "Clip Id",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "the clip whose effect it is; with track_id: the clip used as time reference",
+          "title": "Clip Id"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a track effect: the effect is on this track",
+          "title": "Track Id"
         },
         "effect_id": {
           "title": "Effect Id",
@@ -5415,7 +6328,7 @@
           "type": "string"
         },
         "keyframes": {
-          "description": "[{t: clip-relative time, v, interp}] - replaces all; [] stops animating",
+          "description": "[{t: clip-relative time, v, interp}] - replaces all; [] stops animating. Track effects: t counts from each clip's In (anchor in) or Out (anchor out, negative)",
           "items": {
             "additionalProperties": true,
             "type": "object"
@@ -5425,7 +6338,6 @@
         }
       },
       "required": [
-        "clip_id",
         "effect_id",
         "param",
         "keyframes"
@@ -5695,6 +6607,99 @@
         "transition_id"
       ],
       "title": "TransitionRef",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.relink",
+    "description": "Link Media: point a media item (and every clip using it) at another file.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_id": {
+          "title": "Media Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "force": {
+          "default": false,
+          "description": "relink even if the new file is a different kind or shorter",
+          "title": "Force",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "media_id",
+        "path"
+      ],
+      "title": "Relink",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.locate",
+    "description": "Locate missing media: search a folder for files with the same names and relink them (Premiere's\nLink Media > Search).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "folder": {
+          "description": "searched recursively",
+          "title": "Folder",
+          "type": "string"
+        },
+        "media_ids": {
+          "description": "default: every offline media item",
+          "items": {
+            "type": "string"
+          },
+          "title": "Media Ids",
+          "type": "array"
+        },
+        "match": {
+          "default": "name",
+          "description": "name: same file name; stem: same name ignoring the extension",
+          "title": "Match",
+          "type": "string"
+        }
+      },
+      "required": [
+        "folder"
+      ],
+      "title": "Locate",
+      "type": "object"
+    }
+  },
+  {
+    "name": "media.make_offline",
+    "description": "Make Offline: the media renders as missing (the file is kept); offline=false undoes it.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Media Ids",
+          "type": "array"
+        },
+        "offline": {
+          "default": true,
+          "description": "false brings it back online (if the file exists)",
+          "title": "Offline",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "media_ids"
+      ],
+      "title": "MakeOffline",
       "type": "object"
     }
   },

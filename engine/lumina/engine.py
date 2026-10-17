@@ -78,6 +78,11 @@ class Engine:
             "export.cancel": lambda p: self.exports.cancel(p["job_id"]),
             "export.frame": self._export_frame,
             "time.convert": self._convert_time,
+            "caption.export_srt": self._export_srt,
+            "media.scan": lambda p: self._media_scan(),
+            "analysis.detect": self._analysis_detect,
+            "analysis.plan_cuts": self._analysis_plan_cuts,
+            "analysis.plan_scene_cuts": self._analysis_plan_scene,
         }
 
     # ------------------------------------------------------------ dispatch
@@ -185,3 +190,67 @@ class Engine:
         return {"ticks": ticks, "seconds": timebase.ticks_to_seconds(ticks),
                 "frame": timebase.ticks_to_frames(ticks, st["fps_num"], st["fps_den"]),
                 "timecode": timebase.timecode(ticks, st["fps_num"], st["fps_den"])}
+
+    # ------------------------------------------------------------ captions / media / analysis
+
+    def _export_srt(self, p: dict) -> dict:
+        from .commands.captions import export_srt
+
+        if not p.get("path"):
+            raise CommandError("BAD_PARAMS", "caption.export_srt needs 'path'")
+        return export_srt(self.session.doc, p.get("sequence_id"), p.get("track_id"), p["path"])
+
+    def _media_scan(self) -> dict:
+        from .commands.media import scan
+
+        return scan(self.session.doc)
+
+    _ANALYSIS_OPTS = ("silence_db", "min_silence", "scene_threshold", "black_min", "black_pixel", "black_ratio")
+
+    def _analysis_detect(self, p: dict) -> dict:
+        from . import analysis
+
+        opts = {k: p[k] for k in self._ANALYSIS_OPTS if p.get(k) is not None}
+        return analysis.detect(self.session.doc, p.get("kind", "silence"), media_id=p.get("media_id"), clip_id=p.get("clip_id"),
+                               sequence_id=p.get("sequence_id"), **opts)
+
+    def _analysis_plan_cuts(self, p: dict) -> dict:
+        """Plan silence/black removal; apply: true executes it (Extract, or Lift with ripple false) as one undo step."""
+        from . import analysis
+
+        keys = ("track_ids", "clip_ids", "padding_before", "padding_after", "min_duration", "protect_markers", "marker_padding")
+        opts = {k: p[k] for k in keys + self._ANALYSIS_OPTS if p.get(k) is not None}
+        plan = analysis.plan_cuts(self.session.doc, p.get("kind", "silence"), sequence_id=p.get("sequence_id"), **opts)
+        if p.get("apply") and plan["ranges"]:
+            label = "Remove Silence" if plan["kind"] == "silence" else "Remove Black"
+            plan["applied"] = self.session.execute("sequence.remove_ranges", {"sequence_id": p.get("sequence_id"), "ranges": plan["ranges"],
+                                                                               "ripple": p.get("ripple", True)}, label)["result"]
+        return plan
+
+    def _analysis_plan_scene(self, p: dict) -> dict:
+        """Plan razor points at shot changes; apply: true razors there (one undo step)."""
+        from . import analysis
+
+        opts = {k: p[k] for k in ("track_ids", "clip_ids", "scene_threshold", "min_shot") if p.get(k) is not None}
+        plan = analysis.plan_scene_cuts(self.session.doc, sequence_id=p.get("sequence_id"), **opts)
+        if p.get("apply") and plan["points"]:
+            self.session.begin("Scene Edit Detection")
+            try:
+                from .commands.project import seq_of
+                from .commands.timeline import find_clip, linked_ids
+
+                for pt in plan["points"]:
+                    # the shot's clip and its linked audio, at the time the clip is cut (Premiere's Scene Edit Detection)
+                    seq = seq_of(self.session.doc, p.get("sequence_id"))
+                    track = seq["tracks"][find_clip(seq, pt["clip_id"])[0]]  # the left part keeps the clip's id
+                    at_clip = next((c for c in track["clips"].values() if c["start"] < pt["time"] < c["end"]), None)
+                    if at_clip is None:
+                        continue
+                    tids = sorted({find_clip(seq, cid)[0] for cid in linked_ids(seq, [at_clip["id"]])})
+                    self.session.execute("clip.razor", {"sequence_id": seq["id"], "at": pt["time"], "track_ids": tids})
+                self.session.commit()
+            except Exception:
+                self.session.rollback()
+                raise
+            plan["applied"] = True
+        return plan

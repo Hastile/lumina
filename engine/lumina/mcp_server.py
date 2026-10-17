@@ -73,6 +73,39 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
     "convert_time": ("time.convert", "Convert a time value to ticks/seconds/frame/timecode in a sequence's frame rate.",
                      {"type": "object", "properties": {"time": {"type": ["string", "integer"]}, "sequence_id": {"type": "string"}},
                       "required": ["time"]}, None),
+    "caption_export_srt": ("caption.export_srt", "Write a caption track's cues to an .srt file (default: the topmost caption track).",
+                           {"type": "object", "properties": {"path": {"type": "string"}, "track_id": {"type": "string"},
+                                                             "sequence_id": {"type": "string"}}, "required": ["path"]}, None),
+    "media_scan": ("media.scan", "Offline media (missing file / Made Offline), duplicate imports and unused media.", _OBJ, None),
+    "analyze_media": ("analysis.detect",
+                      "Analyse a media item, or the source range a clip uses: silence / black / freeze intervals, scene changes, "
+                      "loudness (EBU R128) or peak/RMS. With clip_id, results also carry sequence ticks.",
+                      {"type": "object", "properties": {
+                          "kind": {"type": "string", "enum": ["silence", "black", "freeze", "scene", "loudness", "peak_rms"]},
+                          "media_id": {"type": "string"}, "clip_id": {"type": "string"}, "sequence_id": {"type": "string"},
+                          "silence_db": {"type": "number", "default": -40}, "min_silence": {"type": "number", "default": 0.5},
+                          "scene_threshold": {"type": "number", "default": 0.4}, "black_min": {"type": "number", "default": 0.1}},
+                       "required": ["kind"]}, None),
+    "plan_cuts": ("analysis.plan_cuts",
+                  "Plan removing silence (audio tracks) or black (video tracks): sequence ranges silent/black on every chosen "
+                  "track that has a clip there, padded, frame-snapped, clear of markers. apply=true removes them in one undo "
+                  "step (ripple=false lifts instead of extracting).",
+                  {"type": "object", "properties": {
+                      "kind": {"type": "string", "enum": ["silence", "black"]}, "sequence_id": {"type": "string"},
+                      "track_ids": {"type": "array", "items": {"type": "string"}}, "clip_ids": {"type": "array", "items": {"type": "string"}},
+                      "silence_db": {"type": "number", "default": -40}, "min_duration": {"type": "number", "default": 0.5},
+                      "padding_before": {"type": "number", "default": 0.1}, "padding_after": {"type": "number", "default": 0.1},
+                      "protect_markers": {"type": "boolean", "default": True}, "apply": {"type": "boolean", "default": False},
+                      "ripple": {"type": "boolean", "default": True}},
+                   "required": ["kind"]}, None),
+    "plan_scene_cuts": ("analysis.plan_scene_cuts",
+                        "Scene Edit Detection: razor points where a clip's picture cuts to a new shot. apply=true razors there "
+                        "(one undo step).",
+                        {"type": "object", "properties": {
+                            "sequence_id": {"type": "string"}, "track_ids": {"type": "array", "items": {"type": "string"}},
+                            "clip_ids": {"type": "array", "items": {"type": "string"}},
+                            "scene_threshold": {"type": "number", "default": 0.4}, "min_shot": {"type": "number", "default": 0.5},
+                            "apply": {"type": "boolean", "default": False}}}, None),
 }
 
 

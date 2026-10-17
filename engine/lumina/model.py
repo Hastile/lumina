@@ -64,6 +64,7 @@ class MediaItem(_Model):
     filmstrip_path: str | None = Field(default=None, description="timeline thumbnails: JSON {image, interval, count, width, height}")
     in_point: int | None = Field(default=None, description="source monitor In mark, ticks")
     out_point: int | None = Field(default=None, description="source monitor Out mark, ticks")
+    offline: bool = Field(default=False, description="Make Offline: shown as missing media even if the file exists")
 
 
 class Bin(_Model):
@@ -184,6 +185,36 @@ class ShapeLayer(_Model):
 GraphicLayer = Annotated[TextLayer | ShapeLayer, Field(discriminator="type")]
 
 
+class CaptionStyle(_Model):
+    """A caption track's style (Premiere's track style): every cue on the track is
+    drawn as one text layer with these settings and the cue's text."""
+    font_family: str = "Pretendard"
+    font_size: float = 60.0
+    bold: bool = False
+    italic: bool = False
+    color: str = "#ffffff"
+    stroke_color: str | None = "#000000"
+    stroke_width: float = 4.0
+    background: str | None = None
+    align: Literal["left", "center", "right"] = "center"
+    position: list[float] = Field(default_factory=lambda: [960.0, 950.0],
+                                  description="sequence pixels; point text: the block's alignment point at its vertical center")
+    box: list[float] | None = Field(default=None, description="area text box [w, h]; null = point text")
+    vertical_align: Literal["top", "center", "bottom"] = "center"
+    tracking: float = 0.0
+    shadow: TextShadow | None = None
+    scale: float = 100.0
+    rotation: float = 0.0
+    opacity: float = 100.0
+
+
+class Caption(_Model):
+    """A caption cue: its text, drawn with the track's style (overrides apply to this cue only)."""
+    text: str
+    style: dict[str, str | float | bool | list[float] | None] | None = Field(
+        default=None, description="per-cue overrides of CaptionStyle fields")
+
+
 class Graphic(_Model):
     layers: list[GraphicLayer] = Field(default_factory=list, description="bottom to top")
     source: str | None = Field(default=None, description="origin, e.g. 'mogrt:Title' for imported Premiere graphics")
@@ -196,12 +227,19 @@ TransitionType = Literal["cross_dissolve", "dip_to_black", "dip_to_white", "cons
 class Effect(_Model):
     """A standard effect, applied in order before the intrinsic Motion/Opacity
     (Premiere's render order). Params and keyframes are keyed by the names in
-    ``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's."""
+    ``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.
+
+    On a track (Track.effects) an effect applies to every clip of the track, after
+    the clip's own effects and Motion, in sequence pixels; its keyframe times are
+    then relative to each clip: from its In point (anchor "in"), from its Out point
+    (anchor "out", negative), or 0..ref_duration stretched over the clip ("stretch")."""
     id: str
     type: EffectType
     enabled: bool = True
     params: dict[str, float | bool | list[float]] = Field(default_factory=dict)
     keyframes: dict[str, list[Keyframe]] = Field(default_factory=dict)
+    anchor: Literal["in", "out", "stretch"] | None = Field(default=None, description="track effects: what keyframe times count from")
+    ref_duration: int | None = Field(default=None, description="track effects, anchor stretch: the length keyframe times span")
 
 
 class Transition(_Model):
@@ -245,7 +283,9 @@ class Clip(_Model):
     motion: Motion = Field(default_factory=Motion)
     keyframes: dict[KeyframeProp, list[Keyframe]] = Field(default_factory=dict)
     graphic: Graphic | None = None
+    caption: Caption | None = Field(default=None, description="a cue on a caption track")
     effects: list[Effect] = Field(default_factory=list)
+    freeze: int | None = Field(default=None, description="Frame Hold: the source time shown for the whole clip (ticks)")
 
 
 class Track(_Model):
@@ -262,6 +302,8 @@ class Track(_Model):
     pan: float = Field(default=0.0, ge=-100, le=100, description="audio: track pan / balance, -100 left .. 100 right")
     clips: dict[str, Clip] = Field(default_factory=dict)
     transitions: dict[str, Transition] = Field(default_factory=dict)
+    effects: list[Effect] = Field(default_factory=list, description="video: track effects, applied to every clip of the track")
+    caption_style: CaptionStyle | None = Field(default=None, description="set on a caption track (its cues are Clip.caption)")
 
 
 class Marker(_Model):
@@ -294,6 +336,9 @@ class Sequence(_Model):
     in_point: int | None = None
     out_point: int | None = None
     master_volume_db: float = Field(default=0.0, description="Audio Track Mixer's Mix fader")
+    source_video_track: str | None = Field(default=None, description="source patching: the track source video goes to "
+                                           "(Insert/Overwrite); null = the first targeted video track; '' = none")
+    source_audio_track: str | None = Field(default=None, description="source patching for audio; null = first targeted audio track; '' = none")
 
 
 class Project(_Model):

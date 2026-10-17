@@ -57,6 +57,10 @@ export type InPoint = number | null;
  * source monitor Out mark, ticks
  */
 export type OutPoint = number | null;
+/**
+ * Make Offline: shown as missing media even if the file exists
+ */
+export type Offline = boolean;
 export type Id3 = string;
 export type Name3 = string;
 export type BinId1 = string;
@@ -316,10 +320,29 @@ export type Layers = (TextLayer | ShapeLayer)[];
  * origin, e.g. 'mogrt:Title' for imported Premiere graphics
  */
 export type Source = string | null;
+export type Text2 = string;
+/**
+ * per-cue overrides of CaptionStyle fields
+ */
+export type Style = {
+  [k: string]: string | number | boolean | number[] | null;
+} | null;
 export type Id8 = string;
 export type Type2 = "transform" | "gaussian_blur" | "lumetri" | "parametric_eq" | "compressor" | "hard_limiter";
 export type Enabled1 = boolean;
+/**
+ * track effects: what keyframe times count from
+ */
+export type Anchor2 = ("in" | "out" | "stretch") | null;
+/**
+ * track effects, anchor stretch: the length keyframe times span
+ */
+export type RefDuration = number | null;
 export type Effects = Effect[];
+/**
+ * Frame Hold: the source time shown for the whole clip (ticks)
+ */
+export type Freeze = number | null;
 export type Id9 = string;
 export type Type3 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
 /**
@@ -339,6 +362,32 @@ export type Duration1 = number;
  */
 export type Alignment = "center" | "start" | "end";
 /**
+ * video: track effects, applied to every clip of the track
+ */
+export type Effects1 = Effect[];
+export type FontFamily2 = string;
+export type FontSize2 = number;
+export type Bold2 = boolean;
+export type Italic2 = boolean;
+export type Color3 = string;
+export type StrokeColor3 = string | null;
+export type StrokeWidth3 = number;
+export type Background1 = string | null;
+export type Align1 = "left" | "center" | "right";
+/**
+ * sequence pixels; point text: the block's alignment point at its vertical center
+ */
+export type Position3 = number[];
+/**
+ * area text box [w, h]; null = point text
+ */
+export type Box1 = number[] | null;
+export type VerticalAlign1 = "top" | "center" | "bottom";
+export type Tracking2 = number;
+export type Scale3 = number;
+export type Rotation3 = number;
+export type Opacity4 = number;
+/**
  * bottom (V1) to top
  */
 export type VideoTracks = string[];
@@ -351,7 +400,7 @@ export type Start1 = number;
 export type Duration2 = number;
 export type Name6 = string;
 export type Comment = string;
-export type Color3 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
+export type Color4 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
 export type Playhead = number;
 export type InPoint1 = number | null;
 export type OutPoint1 = number | null;
@@ -359,6 +408,14 @@ export type OutPoint1 = number | null;
  * Audio Track Mixer's Mix fader
  */
 export type MasterVolumeDb = number;
+/**
+ * source patching: the track source video goes to (Insert/Overwrite); null = the first targeted video track; '' = none
+ */
+export type SourceVideoTrack = string | null;
+/**
+ * source patching for audio; null = first targeted audio track; '' = none
+ */
+export type SourceAudioTrack = string | null;
 export type ActiveSequenceId = string | null;
 
 export interface Project {
@@ -406,6 +463,7 @@ export interface MediaItem {
   filmstrip_path: FilmstripPath;
   in_point: InPoint;
   out_point: OutPoint;
+  offline: Offline;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -448,6 +506,8 @@ export interface Sequence {
   in_point: InPoint1;
   out_point: OutPoint1;
   master_volume_db: MasterVolumeDb;
+  source_video_track: SourceVideoTrack;
+  source_audio_track: SourceAudioTrack;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -481,6 +541,11 @@ export interface Track {
   pan: Pan;
   clips: Clips;
   transitions: Transitions;
+  effects: Effects1;
+  /**
+   * set on a caption track (its cues are Clip.caption)
+   */
+  caption_style: CaptionStyle | null;
 }
 export interface Clips {
   [k: string]: Clip;
@@ -513,7 +578,12 @@ export interface Clip {
   motion: Motion;
   keyframes: Keyframes;
   graphic: Graphic | null;
+  /**
+   * a cue on a caption track
+   */
+  caption: Caption | null;
   effects: Effects;
+  freeze: Freeze;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -661,9 +731,24 @@ export interface ShapeLayer {
   blend: Blend;
 }
 /**
+ * A caption cue: its text, drawn with the track's style (overrides apply to this cue only).
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Caption".
+ */
+export interface Caption {
+  text: Text2;
+  style: Style;
+}
+/**
  * A standard effect, applied in order before the intrinsic Motion/Opacity
  * (Premiere's render order). Params and keyframes are keyed by the names in
  * ``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.
+ *
+ * On a track (Track.effects) an effect applies to every clip of the track, after
+ * the clip's own effects and Motion, in sequence pixels; its keyframe times are
+ * then relative to each clip: from its In point (anchor "in"), from its Out point
+ * (anchor "out", negative), or 0..ref_duration stretched over the clip ("stretch").
  *
  * This interface was referenced by `Project`'s JSON-Schema
  * via the `definition` "Effect".
@@ -674,6 +759,8 @@ export interface Effect {
   enabled: Enabled1;
   params: Params;
   keyframes: Keyframes1;
+  anchor: Anchor2;
+  ref_duration: RefDuration;
 }
 export interface Params {
   [k: string]: number | boolean | number[];
@@ -699,6 +786,32 @@ export interface Transition {
   duration: Duration1;
   alignment: Alignment;
 }
+/**
+ * A caption track's style (Premiere's track style): every cue on the track is
+ * drawn as one text layer with these settings and the cue's text.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "CaptionStyle".
+ */
+export interface CaptionStyle {
+  font_family: FontFamily2;
+  font_size: FontSize2;
+  bold: Bold2;
+  italic: Italic2;
+  color: Color3;
+  stroke_color: StrokeColor3;
+  stroke_width: StrokeWidth3;
+  background: Background1;
+  align: Align1;
+  position: Position3;
+  box: Box1;
+  vertical_align: VerticalAlign1;
+  tracking: Tracking2;
+  shadow: TextShadow | null;
+  scale: Scale3;
+  rotation: Rotation3;
+  opacity: Opacity4;
+}
 export interface Markers {
   [k: string]: Marker;
 }
@@ -712,5 +825,5 @@ export interface Marker {
   duration: Duration2;
   name: Name6;
   comment: Comment;
-  color: Color3;
+  color: Color4;
 }

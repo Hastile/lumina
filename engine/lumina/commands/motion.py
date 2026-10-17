@@ -378,7 +378,7 @@ def graphic_clip(name: str, start: int, end: int, layers: list[dict], source: st
         "enabled": True, "link_id": None, "label": label, "opacity": 100.0, "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": None, "muted": False, "auto_match": None,
         "motion": {"position": None, "scale": 100.0, "scale_width": 100.0, "uniform": True, "rotation": 0.0, "anchor": None,
                    "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0},
-        "keyframes": {}, "graphic": {"layers": layers, "source": source}, "effects": [],
+        "keyframes": {}, "graphic": {"layers": layers, "source": source}, "caption": None, "effects": [], "freeze": None,
     }
 
 
@@ -431,6 +431,44 @@ def graphic_create_text(ctx: Context, p: CreateText):
     clip = graphic_clip(p.text.splitlines()[0][:40] or "Graphic", start, end, [layer])
     write_clip(ctx, seq, tid, clip)
     return {"clip_id": clip["id"], "layer_id": layer["id"], "track_id": tid}
+
+
+class PlaceMogrt(Params):
+    sequence_id: str | None = None
+    path: str = Field(description="a .mogrt (or .aegraphic) Motion Graphics Template made in After Effects")
+    at: TimeValue | None = Field(default=None, description="default playhead")
+    duration: TimeValue = "5s"
+    track_id: str | None = Field(default=None, description="default: the first free video track above what is there")
+    texts: dict[str, str] = Field(default_factory=dict, description="template text fields by layer name -> new text")
+
+
+@command("graphic.place_mogrt", PlaceMogrt)
+def graphic_place_mogrt(ctx: Context, p: PlaceMogrt):
+    """Place a Motion Graphics Template: its text layers become an editable graphic clip (styling is
+    best effort; animation in the template is not reproduced)."""
+    from ..io.aep import read_mogrt
+    from ..io.prproj import _mogrt_layers
+
+    ae = read_mogrt(p.path)
+    if not ae or not ae.get("layers"):
+        raise CommandError("BAD_MOGRT", f"no text layers could be read from {p.path}")
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
+    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video":
+        raise CommandError("BAD_TRACK", "graphics go on a video track")
+    require_unlocked(seq, tid)
+    fields = {k: {"textEditValue": v} for k, v in p.texts.items()}
+    layers = [dict(l, id=new_id(), approximate=True) for l in _mogrt_layers(ae, fields, st["width"], st["height"])]
+    from .timeline import clear_range
+    clear_range(ctx, seq, tid, start, end)
+    from pathlib import Path as _P
+    clip = graphic_clip(_P(p.path).stem, start, end, layers, source=f"mogrt:{_P(p.path).stem}")
+    write_clip(ctx, seq, tid, clip)
+    return {"clip_id": clip["id"], "track_id": tid, "layer_ids": [l["id"] for l in layers],
+            "fields": [l.get("name") for l in ae["layers"]]}
 
 
 def _free_track_above(ctx: Context, seq: dict, start: int, end: int) -> str:

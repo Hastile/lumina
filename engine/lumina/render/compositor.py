@@ -35,6 +35,7 @@ from ..media.probe import ffmpeg_bin, ffprobe_bin
 from .. import effects as fx_
 from .. import shapes
 from ..motion import transform_at
+from .. import tracks as tracks_
 from . import fonts
 from . import text as text_
 
@@ -125,10 +126,11 @@ def place(canvas: Image.Image, img: Image.Image, origin: tuple[float, float], tr
     warp(canvas, img, fx_.mul(motion, fx_.mul(pre, img2src)), opacity)
 
 
-def apply_effects(clip: dict, img: Image.Image, origin, prescale, t: int, src_w: float, src_h: float):
-    """Run the clip's standard effects -> (img, origin, pre affine, pre opacity)."""
+def apply_effects(clip: dict, img: Image.Image, origin, prescale, t: int, src_w: float, src_h: float, chain=None):
+    """Run the clip's standard effects -> (img, origin, pre affine, pre opacity).
+    ``chain``: explicit [(effect, timing clip)] instead (track effects)."""
     pre, pre_op = fx_.IDENTITY, 1.0
-    for effect in clip.get("effects") or []:
+    for effect, clip in chain if chain is not None else [(e, clip) for e in clip.get("effects") or []]:
         if not effect.get("enabled", True):
             continue
         if effect["type"] == "transform":
@@ -159,6 +161,21 @@ def apply_effects(clip: dict, img: Image.Image, origin, prescale, t: int, src_w:
                 img = _premultiplied_blur(padded, (sx, sy))
                 origin = (origin[0] - px / prescale[0], origin[1] - py / prescale[1])
     return img, origin, pre, pre_op
+
+
+IDENTITY_TR = {"position": [0.0, 0.0], "anchor": [0.0, 0.0], "scale_x": 100.0, "scale_y": 100.0, "rotation": 0.0, "opacity": 100.0,
+               "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0}
+
+
+def apply_track_effects(target: Image.Image, layer: Image.Image, clip: dict, track: dict, t: int) -> None:
+    """Composite a clip's finished layer (sequence pixels) through its track's effects."""
+    chain = [(e, tracks_.timing_clip(e, clip)) for e in tracks_.active_track_effects(track)]
+    box = layer.getbbox()
+    if box is None:
+        return
+    w, h = layer.size
+    img, origin, pre, pre_op = apply_effects(clip, layer, (0.0, 0.0), (1.0, 1.0), t, w, h, chain)
+    place(target, img, origin, {**IDENTITY_TR, "src_w": w, "src_h": h}, (1.0, 1.0), pre, pre_op)
 
 
 def param_bool(effect: dict, name: str) -> bool:
@@ -329,6 +346,8 @@ def blend_multiply(target: Image.Image, src: Image.Image) -> None:
 
 
 def media_path(media: dict) -> str | None:
+    if media.get("offline"):
+        return None
     if Path(media["path"]).exists():
         return media["path"]
     if media.get("proxy_path") and Path(media["proxy_path"]).exists():
@@ -415,6 +434,70 @@ class VideoDecoder:
             pass
 
 
+class ReverseDecoder:
+    """Frames of a reversed clip (negative speed): decoded forward in chunks and
+    handed out back to front. Same interface as VideoDecoder."""
+
+    CHUNK = 24
+
+    def __init__(self, path: str, start_src: int, speed: float, fps: tuple[int, int], size: tuple[int, int], max_frames: int, src_height: int = 1080):
+        self.path, self.speed, self.fps, self.size, self.src_height = path, abs(speed), fps, size, src_height
+        self.tpf = timebase.ticks_per_frame(*fps)
+        self.next_src = start_src  # source time of the next frame handed out
+        self.left = max_frames
+        self.pending: list[Image.Image] = []
+        self.last: Image.Image | None = None
+        self.done = False
+
+    def _fill(self) -> None:
+        n = min(self.CHUNK, self.left)
+        if n <= 0:
+            self.done = True
+            return
+        step = self.tpf * self.speed
+        low = self.next_src - (n - 1) * step  # the chunk's earliest source time
+        first = 0
+        if low < 0:  # the clip runs into the media start: only what exists
+            first = math.ceil(-low / step)
+            low += first * step
+        dec = VideoDecoder(self.path, round(low), self.speed, self.fps, self.size, n - first, self.src_height)
+        frames = []
+        try:
+            for _ in range(n - first):
+                img = dec.next()
+                if img is None:
+                    break
+                frames.append(img.copy())
+        finally:
+            dec.close()
+        self.pending = list(reversed(frames))
+        self.next_src -= n * step
+        self.left -= n
+
+    def next(self) -> Image.Image | None:
+        if not self.pending and not self.done:
+            self._fill()
+        if self.pending:
+            self.last = self.pending.pop(0)
+        return self.last
+
+    def close(self) -> None:
+        self.pending = []
+
+
+def grab_frame(path: str, t: int, size: tuple[int, int] | None = None, src_height: int = 1080) -> Image.Image | None:
+    """One frame of a video at source time ``t`` (Frame Hold)."""
+    matrix, rng = color_matrix(path, src_height)
+    vf = f"scale={size[0]}:{size[1]}:flags=bicubic:in_color_matrix={matrix}:in_range={rng}," if size else ""
+    proc = subprocess.run([ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{max(0, t) / TPS:.6f}", "-i", path, "-frames:v", "1",
+                           "-vf", vf + "format=rgba", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, timeout=120, **NO_WINDOW)
+    if proc.returncode != 0 or not proc.stdout:
+        return None
+    import io
+
+    return Image.open(io.BytesIO(proc.stdout)).convert("RGBA")
+
+
 def decode_still(path: str) -> Image.Image:
     try:
         with Image.open(path) as im:
@@ -463,7 +546,7 @@ class ActiveClip:
     src_w: float
     src_h: float
     prescale: tuple[float, float] = (1.0, 1.0)
-    decoder: VideoDecoder | None = None
+    decoder: "VideoDecoder | ReverseDecoder | None" = None
     still: Image.Image | None = None
     origin: tuple[float, float] = (0.0, 0.0)
     groups: list | None = None  # graphics with blend modes: [(blend, image, origin)]
@@ -491,10 +574,13 @@ class Compositor:
         # transitions extend their clips into the handles: clip id -> (start, end) actually shown
         self.tracks: list[tuple[dict, list]] = []
         self.extent: dict[str, tuple[int, int]] = {}
+        self.track_of: dict[str, dict] = {}
         for tid in self.seq["video_tracks"]:
             track = self.seq["tracks"][tid]
             trans = fx_.track_transitions(track)
             self.tracks.append((track, trans))
+            for cid in track["clips"]:
+                self.track_of[cid] = track
             for ws, we, _, a, b in trans:
                 for c in (a, b):
                     if c is not None:
@@ -531,12 +617,13 @@ class Compositor:
         return out
 
     def _open(self, clip: dict, t: int) -> ActiveClip | None:
-        if clip.get("graphic") is not None:
-            key = json.dumps(clip["graphic"], sort_keys=True)
+        graphic = tracks_.clip_graphic(clip, self.track_of.get(clip["id"]))
+        if graphic is not None:
+            key = json.dumps(graphic, sort_keys=True)
             cached = self._graphics.get(clip["id"])
             if not cached or cached[0] != key:
                 groups = []
-                for blend, img in render_graphic_groups(clip["graphic"], self.w, self.h):
+                for blend, img in render_graphic_groups(graphic, self.w, self.h):
                     box = img.getbbox()
                     if box:
                         groups.append((blend, img.crop(box), (float(box[0]), float(box[1]))))
@@ -566,12 +653,17 @@ class Compositor:
         w, h = media["video"]["width"], media["video"]["height"]
         if media["kind"] == "image":
             return ActiveClip(clip, media, w, h, still=decode_still(path))
+        if clip.get("freeze") is not None:
+            # Frame Hold: one frame for the whole clip
+            img = grab_frame(path, clip["freeze"], None, h)
+            return ActiveClip(clip, media, w, h, still=img) if img is not None else None
         # decode no larger than the clip is ever shown (saves 4K -> 1080p work)
         m = clip["motion"]
         sy = _max_scale(clip, "scale") / 100
         sx = sy if m["uniform"] else _max_scale(clip, "scale_width") / 100
         kfs = clip.get("keyframes", {})
-        if not any(kfs.get(k) for k in ("scale", "scale_width", "rotation")) and m["rotation"] % 360 == 0 and not clip.get("effects"):
+        if (not any(kfs.get(k) for k in ("scale", "scale_width", "rotation")) and m["rotation"] % 360 == 0 and not clip.get("effects")
+                and not tracks_.active_track_effects(self.track_of.get(clip["id"]))):
             # static, unrotated: let ffmpeg scale to the exact displayed size so compositing is a paste
             limit = 2 * max(self.w, self.h) / max(w, h)
             sx, sy = min(limit, max(sx, 0.01)), min(limit, max(sy, 0.01))
@@ -580,10 +672,23 @@ class Compositor:
         dw, dh = max(2, round(w * sx / 2) * 2), max(2, round(h * sy / 2) * 2)
         frames_left = -(-(self.extent.get(clip["id"], (0, clip["end"]))[1] - t) // self.tpf)
         src = clip["source_in"] + round((t - clip["start"]) * clip["speed"])
-        dec = VideoDecoder(path, src, clip["speed"], self.fps, (dw, dh), frames_left, h)
+        if clip["speed"] < 0:
+            dec = ReverseDecoder(path, tracks_.media_time(clip, src), clip["speed"], self.fps, (dw, dh), frames_left, h)
+        else:
+            dec = VideoDecoder(path, src, clip["speed"], self.fps, (dw, dh), frames_left, h)
         return ActiveClip(clip, media, w, h, prescale=(dw / w, dh / h), decoder=dec)
 
     def _draw(self, target: Image.Image, clip: dict, t: int) -> None:
+        track = self.track_of.get(clip["id"])
+        if tracks_.active_track_effects(track):
+            # track effects work on the clip's finished picture, in sequence pixels
+            layer = Image.new("RGBA", target.size, (0, 0, 0, 0))
+            self._draw_clip(layer, clip, t)
+            apply_track_effects(target, layer, clip, track, t)
+            return
+        self._draw_clip(target, clip, t)
+
+    def _draw_clip(self, target: Image.Image, clip: dict, t: int) -> None:
         ac = self.active.get(clip["id"])
         if ac and ac.decoder and self.expected.get(clip["id"]) != t:
             ac.decoder.close()  # random access: restart at the new time

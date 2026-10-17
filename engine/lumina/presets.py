@@ -127,3 +127,21 @@ def fit(preset: dict, clip: dict, frame_w: float, frame_h: float) -> list[dict]:
         fx["keyframes"] = kfs
         out.append(fx)
     return out
+
+
+def fit_track(preset: dict, frame_w: float, frame_h: float) -> list[dict]:
+    """The preset's effects as track effects: keyframe times relative to each clip
+    (from its In, from its Out, or stretched over it, as the preset was saved)."""
+    a_in, a_out = preset.get("anchor_in", 0), preset.get("anchor_out", 0)
+    kind = preset.get("type", "anchor_in")
+    if kind == "scale" and a_out > a_in:
+        ref = {"source_in": 0, "start": 0, "end": a_out - a_in, "speed": 1.0}
+        anchor, ref_duration = "stretch", a_out - a_in
+    else:
+        # a zero-length clip at 0: when(t) becomes the sequence offset from the anchor
+        ref = {"source_in": 0, "start": 0, "end": 0, "speed": 1.0}
+        anchor, ref_duration = ("out" if kind == "anchor_out" else "in"), None
+    out = fit(preset, ref, frame_w, frame_h)
+    for fx in out:
+        fx["anchor"], fx["ref_duration"] = anchor, ref_duration
+    return out

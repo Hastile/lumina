@@ -13,7 +13,7 @@ from pydantic import Field
 from .. import timebase
 from .project import seq_of
 from .registry import CommandError, Context, Params, command
-from .timeline import clips_sorted, find_clip, is_free, linked_ids, media_limit, require_unlocked, source_at, write_clip
+from .timeline import clips_sorted, find_clip, is_free, linked_ids, media_limit, require_unlocked, source_at, source_problem, write_clip
 
 
 class ToolEdit(Params):
@@ -40,11 +40,9 @@ def _targets(seq: dict, p: ToolEdit) -> list[tuple[str, dict]]:
 def _check_source(doc: dict, c: dict) -> None:
     if c["end"] <= c["start"]:
         raise CommandError("TRIM_TOO_FAR", f"the edit would make {c['name']} empty")
-    if c["source_in"] < 0:
-        raise CommandError("TRIM_PAST_MEDIA", f"no more source media before the In point of {c['name']}")
-    limit = media_limit(doc, c)
-    if limit is not None and source_at(c, c["end"]) > limit + 1:
-        raise CommandError("TRIM_PAST_MEDIA", f"no more source media after the Out point of {c['name']}")
+    problem = source_problem(doc, c)
+    if problem:
+        raise CommandError("TRIM_PAST_MEDIA", f"{problem} of {c['name']}")
 
 
 def _neighbor(track: dict, c: dict, side: Literal["before", "after"]) -> dict | None:
@@ -149,7 +147,7 @@ def clip_rate_stretch(ctx: Context, p: EdgeEdit):
         if end - start < tpf:
             raise CommandError("TRIM_TOO_FAR", "a clip needs at least one frame")
         speed = src_len / (end - start)
-        if not 0.01 <= speed <= 100:
+        if not 0.01 <= abs(speed) <= 100:
             raise CommandError("BAD_SPEED", "speed must stay between 1% and 10000%")
         n = dict(c, start=start, end=end, speed=round(speed, 6))
         if n["start"] < 0 or not is_free(seq["tracks"][tid], start, end, exclude={c["id"]}):

@@ -89,6 +89,213 @@
       "title": "Bin",
       "type": "object"
     },
+    "Caption": {
+      "additionalProperties": false,
+      "description": "A caption cue: its text, drawn with the track's style (overrides apply to this cue only).",
+      "properties": {
+        "text": {
+          "title": "Text",
+          "type": "string"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "items": {
+                      "type": "number"
+                    },
+                    "type": "array"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "per-cue overrides of CaptionStyle fields",
+          "title": "Style"
+        }
+      },
+      "required": [
+        "text",
+        "style"
+      ],
+      "title": "Caption",
+      "type": "object"
+    },
+    "CaptionStyle": {
+      "additionalProperties": false,
+      "description": "A caption track's style (Premiere's track style): every cue on the track is\ndrawn as one text layer with these settings and the cue's text.",
+      "properties": {
+        "font_family": {
+          "default": "Pretendard",
+          "title": "Font Family",
+          "type": "string"
+        },
+        "font_size": {
+          "default": 60.0,
+          "title": "Font Size",
+          "type": "number"
+        },
+        "bold": {
+          "default": false,
+          "title": "Bold",
+          "type": "boolean"
+        },
+        "italic": {
+          "default": false,
+          "title": "Italic",
+          "type": "boolean"
+        },
+        "color": {
+          "default": "#ffffff",
+          "title": "Color",
+          "type": "string"
+        },
+        "stroke_color": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "#000000",
+          "title": "Stroke Color"
+        },
+        "stroke_width": {
+          "default": 4.0,
+          "title": "Stroke Width",
+          "type": "number"
+        },
+        "background": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Background"
+        },
+        "align": {
+          "default": "center",
+          "enum": [
+            "left",
+            "center",
+            "right"
+          ],
+          "title": "Align",
+          "type": "string"
+        },
+        "position": {
+          "description": "sequence pixels; point text: the block's alignment point at its vertical center",
+          "items": {
+            "type": "number"
+          },
+          "title": "Position",
+          "type": "array"
+        },
+        "box": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "area text box [w, h]; null = point text",
+          "title": "Box"
+        },
+        "vertical_align": {
+          "default": "center",
+          "enum": [
+            "top",
+            "center",
+            "bottom"
+          ],
+          "title": "Vertical Align",
+          "type": "string"
+        },
+        "tracking": {
+          "default": 0.0,
+          "title": "Tracking",
+          "type": "number"
+        },
+        "shadow": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TextShadow"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "scale": {
+          "default": 100.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "rotation": {
+          "default": 0.0,
+          "title": "Rotation",
+          "type": "number"
+        },
+        "opacity": {
+          "default": 100.0,
+          "title": "Opacity",
+          "type": "number"
+        }
+      },
+      "required": [
+        "font_family",
+        "font_size",
+        "bold",
+        "italic",
+        "color",
+        "stroke_color",
+        "stroke_width",
+        "background",
+        "align",
+        "position",
+        "box",
+        "vertical_align",
+        "tracking",
+        "shadow",
+        "scale",
+        "rotation",
+        "opacity"
+      ],
+      "title": "CaptionStyle",
+      "type": "object"
+    },
     "Clip": {
       "additionalProperties": false,
       "properties": {
@@ -278,12 +485,37 @@
           ],
           "default": null
         },
+        "caption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Caption"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "a cue on a caption track"
+        },
         "effects": {
           "items": {
             "$ref": "#/$defs/Effect"
           },
           "title": "Effects",
           "type": "array"
+        },
+        "freeze": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Frame Hold: the source time shown for the whole clip (ticks)",
+          "title": "Freeze"
         }
       },
       "required": [
@@ -307,14 +539,16 @@
         "motion",
         "keyframes",
         "graphic",
-        "effects"
+        "caption",
+        "effects",
+        "freeze"
       ],
       "title": "Clip",
       "type": "object"
     },
     "Effect": {
       "additionalProperties": false,
-      "description": "A standard effect, applied in order before the intrinsic Motion/Opacity\n(Premiere's render order). Params and keyframes are keyed by the names in\n``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.",
+      "description": "A standard effect, applied in order before the intrinsic Motion/Opacity\n(Premiere's render order). Params and keyframes are keyed by the names in\n``lumina.effects.EFFECTS``; keyframe times are source ticks, like Motion's.\n\nOn a track (Track.effects) an effect applies to every clip of the track, after\nthe clip's own effects and Motion, in sequence pixels; its keyframe times are\nthen relative to each clip: from its In point (anchor \"in\"), from its Out point\n(anchor \"out\", negative), or 0..ref_duration stretched over the clip (\"stretch\").",
       "properties": {
         "id": {
           "title": "Id",
@@ -366,6 +600,37 @@
           },
           "title": "Keyframes",
           "type": "object"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "enum": [
+                "in",
+                "out",
+                "stretch"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "track effects: what keyframe times count from",
+          "title": "Anchor"
+        },
+        "ref_duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "track effects, anchor stretch: the length keyframe times span",
+          "title": "Ref Duration"
         }
       },
       "required": [
@@ -373,7 +638,9 @@
         "type",
         "enabled",
         "params",
-        "keyframes"
+        "keyframes",
+        "anchor",
+        "ref_duration"
       ],
       "title": "Effect",
       "type": "object"
@@ -742,6 +1009,12 @@
           "default": null,
           "description": "source monitor Out mark, ticks",
           "title": "Out Point"
+        },
+        "offline": {
+          "default": false,
+          "description": "Make Offline: shown as missing media even if the file exists",
+          "title": "Offline",
+          "type": "boolean"
         }
       },
       "required": [
@@ -759,7 +1032,8 @@
         "waveform_path",
         "filmstrip_path",
         "in_point",
-        "out_point"
+        "out_point",
+        "offline"
       ],
       "title": "MediaItem",
       "type": "object"
@@ -940,6 +1214,32 @@
           "description": "Audio Track Mixer's Mix fader",
           "title": "Master Volume Db",
           "type": "number"
+        },
+        "source_video_track": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source patching: the track source video goes to (Insert/Overwrite); null = the first targeted video track; '' = none",
+          "title": "Source Video Track"
+        },
+        "source_audio_track": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "source patching for audio; null = first targeted audio track; '' = none",
+          "title": "Source Audio Track"
         }
       },
       "required": [
@@ -954,7 +1254,9 @@
         "playhead",
         "in_point",
         "out_point",
-        "master_volume_db"
+        "master_volume_db",
+        "source_video_track",
+        "source_audio_track"
       ],
       "title": "Sequence",
       "type": "object"
@@ -1592,6 +1894,26 @@
           },
           "title": "Transitions",
           "type": "object"
+        },
+        "effects": {
+          "description": "video: track effects, applied to every clip of the track",
+          "items": {
+            "$ref": "#/$defs/Effect"
+          },
+          "title": "Effects",
+          "type": "array"
+        },
+        "caption_style": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CaptionStyle"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "set on a caption track (its cues are Clip.caption)"
         }
       },
       "required": [
@@ -1607,7 +1929,9 @@
         "volume_db",
         "pan",
         "clips",
-        "transitions"
+        "transitions",
+        "effects",
+        "caption_style"
       ],
       "title": "Track",
       "type": "object"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import Field
@@ -11,6 +12,7 @@ from .. import timebase
 from ..effects import ANIMATABLE, EFFECTS, LEVEL_RANGES, TRANSITIONS, default_params, media_of, param, transition_window
 from ..model import EffectType, TransitionType, new_id
 from ..motion import source_size, source_time
+from .. import tracks as tracks_
 from .motion import INTERPS, _at, _ctx, _interp_near, handles_of, with_ease, with_interp
 from .project import seq_of
 from .registry import CommandError, Context, Params, TimeValue, command, resolve_time
@@ -23,7 +25,7 @@ def _effect(clip: dict, effect_id: str) -> tuple[int, dict]:
     for i, e in enumerate(clip.get("effects") or []):
         if e["id"] == effect_id:
             return i, e
-    raise CommandError("NO_EFFECT", f"effect not found on clip: {effect_id}")
+    raise CommandError("NO_EFFECT", f"effect not found: {effect_id}")
 
 
 def _check_param(kind: str, name: str, v: ParamValue) -> ParamValue:
@@ -60,110 +62,206 @@ def _effects_path(seq: dict, tid: str, clip: dict) -> list:
     return clip_path(seq, tid, clip["id"]) + ["effects"]
 
 
-def _update(ctx: Context, seq: dict, tid: str, clip: dict, i: int, fn) -> None:
+@dataclass
+class Host:
+    """Where an effect stack lives: a clip, or a track (track effects). For a track,
+    ``clip`` is the clip used as the time reference (its In/Out anchor the keyframes)."""
+    seq: dict
+    tid: str
+    clip: dict | None
+    track: bool
+    effects: list
+    path: list
+    w: float
+    h: float
+    kind: str
+
+    def timing(self, effect: dict) -> dict:
+        if not self.track:
+            return self.clip
+        if self.clip is None:
+            return {"start": 0, "end": 1, "source_in": 0, "speed": 1.0}
+        return tracks_.timing_clip(effect, self.clip)
+
+    def at(self, at: TimeValue | None) -> int:
+        if self.clip is None:
+            return self.seq["playhead"] if at is None else resolve_time(at, self.seq["settings"])
+        return _at(self.seq, self.clip, at)
+
+
+def _host(ctx: Context, sequence_id: str | None, clip_id: str | None, track_id: str | None) -> Host:
+    if track_id is None:
+        if clip_id is None:
+            raise CommandError("BAD_PARAMS", "give clip_id (clip effects) or track_id (track effects)")
+        seq, tid, clip, media = _ctx(ctx, sequence_id, clip_id)
+        w, h = source_size(clip, seq, media)
+        return Host(seq, tid, clip, False, list(clip.get("effects") or []), _effects_path(seq, tid, clip), w, h,
+                    seq["tracks"][tid]["kind"])
+    seq = seq_of(ctx.doc, sequence_id)
+    track = seq["tracks"].get(track_id)
+    if track is None:
+        raise CommandError("NO_TRACK", f"track not found: {track_id}")
+    require_unlocked(seq, track_id)
+    if clip_id is not None:
+        ref = track["clips"].get(clip_id)
+        if ref is None:
+            raise CommandError("NO_CLIP", f"clip {clip_id} is not on track {track['name']}")
+    else:
+        ph = seq["playhead"]
+        ordered = clips_sorted(track)
+        ref = next((c for c in ordered if c["start"] <= ph < c["end"]), ordered[0] if ordered else None)
+    st = seq["settings"]
+    return Host(seq, track_id, ref, True, list(track.get("effects") or []), ["sequences", seq["id"], "tracks", track_id, "effects"],
+                st["width"], st["height"], track["kind"])
+
+
+def _update(ctx: Context, host: Host, i: int, fn) -> None:
     """Patch one effect (lists are replaced wholesale in the patch model)."""
-    e = copy.deepcopy(clip["effects"][i])
+    e = copy.deepcopy(host.effects[i])
     e.setdefault("keyframes", {})
     fn(e)
-    stack = list(clip["effects"])
+    stack = list(host.effects)
     stack[i] = e
-    ctx.m.set(_effects_path(seq, tid, clip), stack)
+    ctx.m.set(host.path, stack)
+    host.effects = stack
+
+
+def seq_time_of(timing: dict, src: int) -> float:
+    return timing["start"] + (src - timing["source_in"]) / (timing["speed"] or 1.0)
 
 
 class AddEffect(Params):
     sequence_id: str | None = None
-    clip_ids: list[str] = Field(min_length=1)
+    clip_ids: list[str] = Field(default_factory=list, description="clips to apply to")
+    track_ids: list[str] = Field(default_factory=list, description="or tracks: a track effect applies to every clip of the track "
+                                                                  "(video: after the clip's Motion; audio: on the track bus)")
     type: EffectType
     params: dict[str, ParamValue] = Field(default_factory=dict)
     index: int | None = Field(default=None, description="position in the effect stack; default last")
+    anchor: Literal["in", "out", "stretch"] = Field(default="in", description="track effects: keyframe times count from each "
+                                                                              "clip's In / Out, or stretch over it")
 
 
 @command("effect.add", AddEffect)
 def effect_add(ctx: Context, p: AddEffect):
-    """Apply an effect (drag from the Effects panel). Video effects run in stack order before Motion;
-    audio effects after Audio Gain and before Volume."""
+    """Apply an effect (drag from the Effects panel) to clips or whole tracks. Video effects run in stack
+    order before Motion; audio effects after Audio Gain and before Volume. Track effects apply to every
+    clip of the track without changing the clips (caption tracks included)."""
+    if not p.clip_ids and not p.track_ids:
+        raise CommandError("BAD_PARAMS", "give clip_ids or track_ids")
     ids = []
     kind = media_of(p.type)
-    for cid in p.clip_ids:
-        seq, tid, clip, media = _ctx(ctx, p.sequence_id, cid)
-        if seq["tracks"][tid]["kind"] != kind:
-            raise CommandError("NOT_VIDEO" if kind == "video" else "NOT_AUDIO", f"{kind} effects go on {kind} clips")
-        w, h = source_size(clip, seq, media)
-        params = default_params(p.type, w, h)
+    hosts = [_host(ctx, p.sequence_id, cid, None) for cid in p.clip_ids]
+    hosts += [_host(ctx, p.sequence_id, None, tid) for tid in p.track_ids]
+    for host in hosts:
+        if host.kind != kind:
+            raise CommandError("NOT_VIDEO" if kind == "video" else "NOT_AUDIO", f"{kind} effects go on {kind} clips and tracks")
+        params = default_params(p.type, host.w, host.h)
         for k, v in p.params.items():
             params[k] = _check_param(p.type, k, v)
         effect = {"id": new_id(), "type": p.type, "enabled": True, "params": params, "keyframes": {}}
-        stack = list(clip.get("effects") or [])
+        if host.track:
+            effect["anchor"], effect["ref_duration"] = p.anchor, None
+        stack = list(host.effects)
         stack.insert(len(stack) if p.index is None else max(0, min(p.index, len(stack))), effect)
-        ctx.m.set(_effects_path(seq, tid, clip), stack)
+        ctx.m.set(host.path, stack)
         ids.append(effect["id"])
     return {"effect_ids": ids}
 
 
 class ApplyPreset(Params):
     sequence_id: str | None = None
-    clip_ids: list[str] = Field(min_length=1)
+    clip_ids: list[str] = Field(default_factory=list)
+    track_ids: list[str] = Field(default_factory=list, description="or tracks: the preset becomes track effects, its keyframes "
+                                                                  "fitted to every clip of the track (each cue animates on its own)")
     preset_id: str = Field(description="an id from presets.list (the Effects panel's Presets folder)")
 
 
 @command("effect.apply_preset", ApplyPreset)
 def effect_apply_preset(ctx: Context, p: ApplyPreset):
     """Apply an effect preset: its effects are appended with keyframes fitted to each clip
-    (anchored to the clip's in or out point, or scaled to its length, as saved)."""
+    (anchored to the clip's in or out point, or scaled to its length, as saved). On a track, the
+    effects become track effects that fit every clip of the track the same way."""
     from .. import presets
 
     preset = presets.get(p.preset_id)
     if preset is None:
         raise CommandError("NO_PRESET", f"preset not found: {p.preset_id}")
+    if not p.clip_ids and not p.track_ids:
+        raise CommandError("BAD_PARAMS", "give clip_ids or track_ids")
     ids = []
     for cid in p.clip_ids:
-        seq, tid, clip, media = _ctx(ctx, p.sequence_id, cid)
-        if seq["tracks"][tid]["kind"] != "video":
+        host = _host(ctx, p.sequence_id, cid, None)
+        if host.kind != "video":
             raise CommandError("NOT_VIDEO", "effect presets go on video clips")
-        w, h = source_size(clip, seq, media)
         added = []
-        for fx in presets.fit(preset, clip, w, h):
-            fx["params"] = {**default_params(fx["type"], w, h), **fx["params"]}
+        for fx in presets.fit(preset, host.clip, host.w, host.h):
+            fx["params"] = {**default_params(fx["type"], host.w, host.h), **fx["params"]}
             added.append(fx)
-        ctx.m.set(_effects_path(seq, tid, clip), list(clip.get("effects") or []) + added)
+        ctx.m.set(host.path, host.effects + added)
+        ids += [fx["id"] for fx in added]
+    for tid in p.track_ids:
+        host = _host(ctx, p.sequence_id, None, tid)
+        if host.kind != "video":
+            raise CommandError("NOT_VIDEO", "effect presets go on video tracks")
+        added = []
+        for fx in presets.fit_track(preset, host.w, host.h):
+            fx["params"] = {**default_params(fx["type"], host.w, host.h), **fx["params"]}
+            added.append(fx)
+        ctx.m.set(host.path, host.effects + added)
         ids += [fx["id"] for fx in added]
     return {"effect_ids": ids}
 
 
 class EffectRef(Params):
     sequence_id: str | None = None
-    clip_id: str
+    clip_id: str | None = Field(default=None, description="the clip whose effect it is; with track_id: the clip used as time reference")
+    track_id: str | None = Field(default=None, description="a track effect: the effect is on this track")
     effect_id: str
 
 
 @command("effect.remove", EffectRef)
 def effect_remove(ctx: Context, p: EffectRef):
-    """Delete an effect from a clip."""
-    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, _e = _effect(clip, p.effect_id)
-    stack = list(clip["effects"])
+    """Delete an effect from a clip or track."""
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, _e = _effect({"effects": host.effects}, p.effect_id)
+    stack = list(host.effects)
     del stack[i]
-    ctx.m.set(_effects_path(seq, tid, clip), stack)
+    ctx.m.set(host.path, stack)
 
 
 class SetEffect(EffectRef):
     enabled: bool | None = Field(default=None, description="the fx toggle")
     index: int | None = Field(default=None, description="move to this stack position")
+    anchor: Literal["in", "out", "stretch"] | None = Field(default=None, description="track effects: what keyframe times count from")
 
 
 @command("effect.set", SetEffect)
 def effect_set(ctx: Context, p: SetEffect):
-    """Toggle an effect on/off or reorder it in the stack."""
-    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    """Toggle an effect on/off, reorder it in the stack, or (track effects) change its anchor."""
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     if p.enabled is not None and e["enabled"] != p.enabled:
-        _update(ctx, seq, tid, clip, i, lambda x: x.update(enabled=p.enabled))
+        _update(ctx, host, i, lambda x: x.update(enabled=p.enabled))
+    if p.anchor is not None and host.track and e.get("anchor") != p.anchor:
+        ref = host.clip
+
+        def re_anchor(x):
+            # keep the keyframes where they are on the reference clip
+            old_t = host.timing(x)
+            x["anchor"] = p.anchor
+            if p.anchor == "stretch" and ref is not None:
+                x["ref_duration"] = ref["end"] - ref["start"]
+            new_t = host.timing(x)
+            for name, kfs in x["keyframes"].items():
+                x["keyframes"][name] = [dict(k, t=source_time(new_t, round(seq_time_of(old_t, k["t"])))) for k in kfs]
+        _update(ctx, host, i, re_anchor)
     if p.index is not None:
-        stack = list(clip["effects"])
+        stack = list(host.effects)
         item = stack.pop(i)
         stack.insert(max(0, min(p.index, len(stack))), item)
-        if [x["id"] for x in stack] != [x["id"] for x in clip["effects"]]:
-            ctx.m.set(_effects_path(seq, tid, clip), stack)
+        if [x["id"] for x in stack] != [x["id"] for x in host.effects]:
+            ctx.m.set(host.path, stack)
 
 
 class SetParam(EffectRef):
@@ -175,17 +273,18 @@ class SetParam(EffectRef):
 @command("effect.set_param", SetParam)
 def effect_set_param(ctx: Context, p: SetParam):
     """Set an effect parameter; if it is animated, adds or updates the keyframe at `at`."""
-    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     v = _check_param(e["type"], p.param, p.value)
     kfs = e.get("keyframes", {}).get(p.param)
     if not kfs:
-        _update(ctx, seq, tid, clip, i, lambda x: x["params"].__setitem__(p.param, v))
+        _update(ctx, host, i, lambda x: x["params"].__setitem__(p.param, v))
         return {"animated": False}
-    t = source_time(clip, _at(seq, clip, p.at))
+    t = source_time(host.timing(e), host.at(p.at))
     old = next((k for k in kfs if k["t"] == t), None)
-    new = sorted([k for k in kfs if k["t"] != t] + [{**old, "v": v} if old else {"t": t, "v": v, "interp": _interp_near(kfs, t)}], key=lambda k: k["t"])
-    _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, new))
+    new = sorted([k for k in kfs if k["t"] != t] + [{**old, "v": v} if old else {"t": t, "v": v, "interp": _interp_near(kfs, t)}],
+                 key=lambda k: k["t"])
+    _update(ctx, host, i, lambda x: x["keyframes"].__setitem__(p.param, new))
     return {"animated": True, "keyframe_t": t}
 
 
@@ -203,20 +302,20 @@ def _require_animatable(e: dict, name: str) -> None:
 @command("effect.toggle_animation", ParamRef)
 def effect_toggle_animation(ctx: Context, p: ParamRef):
     """The stopwatch for an effect parameter."""
-    seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     _require_animatable(e, p.param)
-    at = _at(seq, clip, p.at)
-    w, h = source_size(clip, seq, media)
-    current = param(e, p.param, clip, at, w, h)
+    at = host.at(p.at)
+    timing = host.timing(e)
+    current = param(e, p.param, timing, at, host.w, host.h)
     if e.get("keyframes", {}).get(p.param):
         def stop(x):
             del x["keyframes"][p.param]
             x["params"][p.param] = current
-        _update(ctx, seq, tid, clip, i, stop)
+        _update(ctx, host, i, stop)
         return {"animated": False}
-    first = [{"t": source_time(clip, at), "v": current, "interp": "linear"}]
-    _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, first))
+    first = [{"t": source_time(timing, at), "v": current, "interp": "linear"}]
+    _update(ctx, host, i, lambda x: x["keyframes"].__setitem__(p.param, first))
     return {"animated": True}
 
 
@@ -235,26 +334,29 @@ class ParamEase(ParamRef):
 @command("effect.set_keyframe_ease", ParamEase)
 def effect_set_keyframe_ease(ctx: Context, p: ParamEase):
     """Bezier handle of an effect-parameter keyframe: speed and influence on one side."""
-    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     kfs = e.get("keyframes", {}).get(p.param)
     if not kfs:
         raise CommandError("NOT_ANIMATED", f"{p.param} has no keyframes")
     new = with_ease(kfs, p.t, p.side, p.speed, p.influence)
-    _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, new))
+    _update(ctx, host, i, lambda x: x["keyframes"].__setitem__(p.param, new))
 
 
 @command("effect.keyframe", ParamKeyframe)
 def effect_keyframe(ctx: Context, p: ParamKeyframe):
     """Add / remove / toggle an effect-parameter keyframe at a time, or change its interpolation."""
-    seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     _require_animatable(e, p.param)
-    at = _at(seq, clip, p.at)
-    t = source_time(clip, at)
-    tol = round(timebase.ticks_per_frame(seq["settings"]["fps_num"], seq["settings"]["fps_den"]) * clip["speed"] / 2)
+    at = host.at(p.at)
+    timing = host.timing(e)
+    t = source_time(timing, at)
+    seq = host.seq
+    tol = round(timebase.ticks_per_frame(seq["settings"]["fps_num"], seq["settings"]["fps_den"]) * abs(timing["speed"]) / 2)
     kfs = list(e.get("keyframes", {}).get(p.param) or [])
     hit = next((k for k in kfs if abs(k["t"] - t) <= tol), None)
+
     def put(new):
         def fn(x):
             if new:
@@ -262,7 +364,7 @@ def effect_keyframe(ctx: Context, p: ParamKeyframe):
             else:
                 x["keyframes"].pop(p.param, None)
                 x["params"][p.param] = hit["v"]
-        _update(ctx, seq, tid, clip, i, fn)
+        _update(ctx, host, i, fn)
 
     if hit and p.op in ("remove", "toggle") and p.interp is None:
         kfs.remove(hit)
@@ -273,43 +375,46 @@ def effect_keyframe(ctx: Context, p: ParamKeyframe):
         return {"interp": p.interp}
     if p.op == "remove":
         raise CommandError("NO_KEYFRAME", "no keyframe at that time")
-    w, h = source_size(clip, seq, media)
-    kfs.append({"t": t, "v": param(e, p.param, clip, at, w, h), "interp": p.interp or _interp_near(kfs, t)})
+    kfs.append({"t": t, "v": param(e, p.param, timing, at, host.w, host.h), "interp": p.interp or _interp_near(kfs, t)})
     put(sorted(kfs, key=lambda k: k["t"]))
     return {"added": True, "t": t}
 
 
 class SetParamKeyframes(EffectRef):
     param: str
-    keyframes: list[dict] = Field(description="[{t: clip-relative time, v, interp}] - replaces all; [] stops animating")
+    keyframes: list[dict] = Field(description="[{t: clip-relative time, v, interp}] - replaces all; [] stops animating. "
+                                              "Track effects: t counts from each clip's In (anchor in) or Out (anchor out, negative)")
 
 
 @command("effect.set_keyframes", SetParamKeyframes)
 def effect_set_keyframes(ctx: Context, p: SetParamKeyframes):
     """Replace an effect parameter's keyframes (times relative to the clip start)."""
-    seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
-    i, e = _effect(clip, p.effect_id)
+    host = _host(ctx, p.sequence_id, p.clip_id, p.track_id)
+    i, e = _effect({"effects": host.effects}, p.effect_id)
     _require_animatable(e, p.param)
+    seq = host.seq
     if not p.keyframes:
         if e.get("keyframes", {}).get(p.param):
-            w, h = source_size(clip, seq, media)
-            v0 = param(e, p.param, clip, clip["start"], w, h)
+            timing = host.timing(e)
+            v0 = param(e, p.param, timing, timing["start"], host.w, host.h)
 
             def stop(x):
                 del x["keyframes"][p.param]
                 x["params"][p.param] = v0
-            _update(ctx, seq, tid, clip, i, stop)
+            _update(ctx, host, i, stop)
         return {"count": 0}
     out = []
     for k in p.keyframes:
-        rel = resolve_time(k["t"], seq["settings"])
+        raw = k["t"]
+        neg = isinstance(raw, str) and raw.strip().startswith("-")
+        rel = resolve_time(raw.strip()[1:] if neg else raw, seq["settings"]) * (-1 if neg else 1)
         interp = k.get("interp", "linear")
         if interp not in INTERPS:
             raise CommandError("BAD_VALUE", "interp is linear | ease | hold | bezier | auto_bezier | continuous_bezier")
-        out.append({"t": source_time(clip, clip["start"] + rel), "v": _check_param(e["type"], p.param, k["v"]), "interp": interp,
-                    **handles_of(k)})
+        t = rel if host.track else source_time(host.clip, host.clip["start"] + rel)
+        out.append({"t": t, "v": _check_param(e["type"], p.param, k["v"]), "interp": interp, **handles_of(k)})
     out.sort(key=lambda k: k["t"])
-    _update(ctx, seq, tid, clip, i, lambda x: x["keyframes"].__setitem__(p.param, out))
+    _update(ctx, host, i, lambda x: x["keyframes"].__setitem__(p.param, out))
     return {"count": len(out)}
 
 

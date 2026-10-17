@@ -342,6 +342,7 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                         continue
                 speed_txt = _text(clip_el, "Clip/PlaybackSpeed")
                 speed = float(speed_txt) if speed_txt else 1.0
+                reverse = speed < 0 and src_kind == "media"
                 if speed < 0:
                     stats["reversed"] += 1
                     speed = -speed
@@ -356,8 +357,10 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                     "name": _text(sub, "Name") or (graphic["name"] if graphic else media["name"] if media else "Nested Sequence"),
                     "start": start,
                     "end": end,
-                    "source_in": max(0, _int(clip_el, "Clip/InPoint", 0)),
-                    "speed": speed or 1.0,
+                    # a reversed clip covers the same source range played back to front: Lumina keeps
+                    # its source_in at the range's (exclusive) end and a negative speed
+                    "source_in": max(0, _int(clip_el, "Clip/InPoint", 0)) + (round((end - start) * (speed or 1.0)) if reverse else 0),
+                    "speed": -(speed or 1.0) if reverse else (speed or 1.0),
                     "label": _label(_text(clip_el, "Clip/Node/Properties/asl.clip.label.name"),
                                     "rose" if graphic else ("iris" if kind == "video" else "caribbean")),
                     "link": links.get(item.get("ObjectID")),
@@ -382,7 +385,7 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
     if stats["graphics"]:
         parts.append(f"{stats['graphics']} graphics/synthetic clip(s)")
     if stats["reversed"]:
-        parts.append(f"{stats['reversed']} reversed clip(s) imported forward")
+        parts.append(f"{stats['reversed']} reversed clip(s) (nested ones imported forward)")
     if stats["effects"]:
         names = ", ".join(sorted(stats.get("effect_names", ())))
         parts.append(f"{stats['effects']} unsupported effect(s) ({names})")

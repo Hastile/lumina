@@ -39,7 +39,7 @@ def nested_clip(inner: dict, start: int, end: int, source_in: int = 0, link_id: 
         "id": new_id(), "media_id": None, "sequence_id": inner["id"], "name": inner["name"], "start": start, "end": end,
         "source_in": source_in, "speed": 1.0, "enabled": True, "link_id": link_id, "label": "rose", "opacity": 100.0,
         "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "muted": False, "auto_match": None, "motion": dict(DEFAULT_MOTION), "keyframes": {}, "graphic": None,
-        "effects": [],
+        "caption": None, "effects": [], "freeze": None,
     }
 
 

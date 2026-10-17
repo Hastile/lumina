@@ -155,6 +155,7 @@ def media_import(ctx: Context, p: ImportMedia):
             "filmstrip_path": None,
             "in_point": None,
             "out_point": None,
+            "offline": False,
             **info,
         }
         ctx.m.set(["media", mid], item)
@@ -282,6 +283,8 @@ def _make_track(kind: str, index: int) -> dict:
         "pan": 0.0,
         "clips": {},
         "transitions": {},
+        "effects": [],
+        "caption_style": None,
     }
 
 
@@ -305,6 +308,8 @@ def build_sequence(name: str, bin_id: str, settings: dict, video_tracks: int, au
         "in_point": None,
         "out_point": None,
         "master_volume_db": 0.0,
+        "source_video_track": None,
+        "source_audio_track": None,
     }
 
 
@@ -470,19 +475,24 @@ def sequence_set_in_out(ctx: Context, p: SetSequenceInOut):
 
 class AddTrack(Params):
     sequence_id: str | None = None
-    kind: Literal["video", "audio"]
+    kind: Literal["video", "audio", "caption"] = Field(description="caption: a video track for caption cues (see caption.*)")
     index: int | None = Field(default=None, description="position in the track list; default appends (top video / bottom audio)")
     name: str | None = None
 
 
 @command("track.add", AddTrack)
 def track_add(ctx: Context, p: AddTrack):
-    """Add a video or audio track."""
+    """Add a video, audio or caption track."""
     seq = seq_of(ctx.doc, p.sequence_id)
-    key = "video_tracks" if p.kind == "video" else "audio_tracks"
+    key = "audio_tracks" if p.kind == "audio" else "video_tracks"
     order = list(seq[key])
-    track = _make_track(p.kind, len(order) + 1)
+    track = _make_track("audio" if p.kind == "audio" else "video", len(order) + 1)
     track["targeted"] = False
+    if p.kind == "caption":
+        from ..tracks import default_caption_style
+
+        track["caption_style"] = default_caption_style(seq["settings"])
+        track["name"] = "Subtitles"
     if p.name:
         track["name"] = p.name
     idx = len(order) if p.index is None else max(0, min(p.index, len(order)))
@@ -509,6 +519,9 @@ def track_remove(ctx: Context, p: RemoveTrack):
         raise CommandError("LAST_TRACK", "a sequence needs at least one track of each kind")
     ctx.m.set(["sequences", seq["id"], key], [t for t in seq[key] if t != p.track_id])
     ctx.m.delete(["sequences", seq["id"], "tracks", p.track_id])
+    for k in ("source_video_track", "source_audio_track"):
+        if seq.get(k) == p.track_id:
+            ctx.m.set(["sequences", seq["id"], k], None)
 
 
 class SetTrack(Params):
@@ -555,3 +568,36 @@ def sequence_set_master(ctx: Context, p: SetMaster):
     seq = seq_of(ctx.doc, p.sequence_id)
     if seq.get("master_volume_db", 0.0) != p.volume_db:
         ctx.m.set(["sequences", seq["id"], "master_volume_db"], p.volume_db)
+
+
+class SetPatch(Params):
+    sequence_id: str | None = None
+    video_track_id: str | None = Field(default=None, description="track that source video is patched to")
+    audio_track_id: str | None = Field(default=None, description="track that source audio is patched to")
+    clear_video: bool = Field(default=False, description="unpatch video: Insert/Overwrite places no video")
+    clear_audio: bool = False
+    auto: bool = Field(default=False, description="back to following targeting (the first targeted track)")
+
+
+@command("sequence.set_patch", SetPatch)
+def sequence_set_patch(ctx: Context, p: SetPatch):
+    """Source patching (the V1/A1 source indicators): which tracks Insert/Overwrite put source video and
+    audio on, independent of track targeting (which drives paste, Match Frame and edit-point navigation)."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    base = ["sequences", seq["id"]]
+    for key, tid, clear, kind in (("source_video_track", p.video_track_id, p.clear_video, "video"),
+                                  ("source_audio_track", p.audio_track_id, p.clear_audio, "audio")):
+        if p.auto:
+            value = None
+        elif clear:
+            value = ""
+        elif tid is not None:
+            t = seq["tracks"].get(tid)
+            if t is None or t["kind"] != kind:
+                raise CommandError("BAD_TRACK", f"{tid} is not a {kind} track")
+            value = tid
+        else:
+            continue
+        if seq.get(key) != value:
+            ctx.m.set(base + [key], value)
+    return {"video": seq.get("source_video_track"), "audio": seq.get("source_audio_track")}

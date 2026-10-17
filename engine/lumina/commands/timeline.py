@@ -50,6 +50,25 @@ def media_limit(doc: dict, clip: dict) -> int | None:
     return item["duration"]
 
 
+def source_problem(doc: dict, clip: dict) -> str | None:
+    """Why a clip's source range is invalid (None if fine). Works for reversed clips
+    (negative speed: source time runs down from source_in) and Frame Hold clips
+    (only the held frame must exist)."""
+    limit = media_limit(doc, clip)
+    if clip.get("freeze") is not None:
+        if clip["freeze"] < 0 or (limit is not None and clip["freeze"] > limit):
+            return "the held frame is outside the media"
+        return None
+    # forward covers [source_in, source_at(end)); reversed covers [source_at(end), source_in)
+    a, b = clip["source_in"], source_at(clip, clip["end"])
+    lo, hi = min(a, b), max(a, b)
+    if lo < 0:
+        return "no more source media before the In point"
+    if limit is not None and hi > limit + 1:
+        return "no more source media after the Out point"
+    return None
+
+
 def find_clip(seq: dict, clip_id: str) -> tuple[str, dict]:
     for tid, t in seq["tracks"].items():
         if clip_id in t["clips"]:
@@ -149,12 +168,12 @@ def razor_track(ctx: Context, seq: dict, track_id: str, at: int, link_map: dict[
 
 def default_track(seq: dict, kind: str) -> str:
     key = "video_tracks" if kind == "video" else "audio_tracks"
-    for tid in seq[key]:
-        if seq["tracks"][tid]["targeted"] and not seq["tracks"][tid]["locked"]:
+    usable = [t for t in seq[key] if not seq["tracks"][t]["locked"] and seq["tracks"][t].get("caption_style") is None]
+    for tid in usable:
+        if seq["tracks"][tid]["targeted"]:
             return tid
-    for tid in seq[key]:
-        if not seq["tracks"][tid]["locked"]:
-            return tid
+    for tid in usable:
+        return tid
     raise CommandError("NO_TRACK", f"no unlocked {kind} track")
 
 
@@ -173,8 +192,7 @@ def check_sequence(doc: dict, seq: dict) -> None:
             assert c["start"] < c["end"], f"empty clip {c['id']}"
             assert c["source_in"] >= 0, f"negative source_in {c['id']}"
             assert prev_end is None or c["start"] >= prev_end, f"overlap on {t['name']} at {c['start']}"
-            limit = media_limit(doc, c)
-            assert limit is None or source_at(c, c["end"]) <= limit + 1, f"clip {c['id']} exceeds media"
+            assert source_problem(doc, c) is None, f"clip {c['id']}: {source_problem(doc, c)}"
             prev_end = c["end"]
 
 
@@ -223,10 +241,18 @@ def clip_place(ctx: Context, p: PlaceMedia):
             raise CommandError("BAD_RANGE", "source range is shorter than one frame")
 
     targets: list[tuple[str, str]] = []
-    if p.take_video and item.get("video") is not None:
-        targets.append(("video", p.video_track_id or default_track(seq, "video")))
-    if p.take_audio and item.get("audio") is not None:
-        targets.append(("audio", p.audio_track_id or default_track(seq, "audio")))
+    for kind, take, explicit in (("video", p.take_video, p.video_track_id), ("audio", p.take_audio, p.audio_track_id)):
+        if not take or item.get(kind) is None:
+            continue
+        patched = seq.get(f"source_{kind}_track")
+        if explicit:
+            targets.append((kind, explicit))
+        elif patched == "":
+            continue  # source patching turned this kind off
+        elif patched and patched in seq["tracks"]:
+            targets.append((kind, patched))
+        else:
+            targets.append((kind, default_track(seq, kind)))
     if not targets:
         raise CommandError("NOTHING_TO_PLACE", "media has no selected video/audio")
     for kind, tid in targets:
@@ -271,7 +297,9 @@ def clip_place(ctx: Context, p: PlaceMedia):
             "motion": dict(DEFAULT_MOTION),
             "keyframes": {},
             "graphic": None,
+            "caption": None,
             "effects": [],
+            "freeze": None,
         }
         write_clip(ctx, seq, tid, clip)
         created[f"{kind}_clip_id"] = clip["id"]
@@ -483,10 +511,11 @@ def clip_trim(ctx: Context, p: TrimClip):
                 ripple_at = ripple_delta = None
         if new["end"] <= new["start"]:
             raise CommandError("TRIM_TOO_FAR", "trim would make the clip empty")
-        if new["source_in"] < 0 or new["start"] < 0:
+        if new["start"] < 0:
             raise CommandError("TRIM_PAST_MEDIA", "no more source media before the In point")
-        if limit is not None and source_at(new, new["end"]) > limit:
-            raise CommandError("TRIM_PAST_MEDIA", "no more source media after the Out point")
+        problem = source_problem(doc, new)
+        if problem or (new.get("freeze") is None and limit is not None and max(new["source_in"], source_at(new, new["end"])) > limit):
+            raise CommandError("TRIM_PAST_MEDIA", problem or "no more source media after the Out point")
         edits.append((tid, c, new, ripple_at, ripple_delta))
 
     trimmed = {c["id"] for _, c, _, _, _ in edits}
@@ -517,7 +546,8 @@ def clip_trim(ctx: Context, p: TrimClip):
 class SetSpeed(Params):
     sequence_id: str | None = None
     clip_id: str
-    speed: float = Field(gt=0, le=100, description="1.0 = 100%")
+    speed: float = Field(gt=0, le=100, description="1.0 = 100% (the magnitude; see reverse)")
+    reverse: bool | None = Field(default=None, description="Reverse Speed: play the same frames back to front; default keeps the direction")
     ripple: bool = True
     include_linked: bool = True
 
@@ -530,16 +560,25 @@ def clip_set_speed(ctx: Context, p: SetSpeed):
     st = seq["settings"]
     ids = linked_ids(seq, [p.clip_id]) if p.include_linked else [p.clip_id]
     edits = []
+    tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
     for cid in ids:
         tid, c = find_clip(seq, cid)
         require_unlocked(seq, tid)
-        src_len = round((c["end"] - c["start"]) * c["speed"])
-        new_len = timebase.snap_to_frame(round(src_len / p.speed), st["fps_num"], st["fps_den"])
-        new_len = max(new_len, timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
-        new = dict(c, speed=p.speed, end=c["start"] + new_len)
+        reverse = (c["speed"] < 0) if p.reverse is None else p.reverse
+        if reverse and c.get("sequence_id"):
+            raise CommandError("NOT_SUPPORTED", "a nested sequence clip cannot be reversed")
+        # the source range the clip covers, whichever way it plays
+        a, b = c["source_in"], source_at(c, c["end"])
+        lo, hi = min(a, b), max(a, b)
+        new_len = timebase.snap_to_frame(round((hi - lo) / p.speed), st["fps_num"], st["fps_den"])
+        new_len = max(new_len, tpf)
+        speed = -p.speed if reverse else p.speed
+        # the same [lo, hi) range either way: a reversed clip starts at its exclusive end and
+        # shows the frame just before each source time (tracks.media_time)
+        new = dict(c, speed=speed, source_in=lo if not reverse else lo + round(new_len * p.speed), end=c["start"] + new_len)
         limit = media_limit(doc, c)
-        if limit is not None and source_at(new, new["end"]) > limit:
-            new["end"] -= timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+        while source_problem(doc, new) and new["end"] - new["start"] > tpf:
+            new["end"] -= tpf
         edits.append((tid, c, new))
     changed = {c["id"] for _, c, _ in edits}
     delta = edits[0][2]["end"] - edits[0][1]["end"]
@@ -565,6 +604,75 @@ def clip_set_speed(ctx: Context, p: SetSpeed):
                 raise CommandError("TRIM_COLLISION", "new duration overlaps the next clip; enable ripple")
             write_clip(ctx, seq, tid, new)
     return {"clip_ids": ids, "duration": edits[0][2]["end"] - edits[0][2]["start"]}
+
+
+class FrameHold(Params):
+    sequence_id: str | None = None
+    clip_id: str
+    mode: Literal["hold", "add", "insert", "clear"] = Field(
+        default="hold", description="hold: Frame Hold Options (the whole clip shows one frame); add: Add Frame Hold (split at "
+                                    "the playhead, hold from there); insert: Insert Frame Hold Segment (a held segment of "
+                                    "`duration` at the playhead, later clips ripple); clear: remove the hold")
+    hold_on: Literal["playhead", "in", "out", "source"] = Field(default="playhead", description="mode hold: which frame")
+    source_time: TimeValue | None = Field(default=None, description="hold_on source: the source time to hold")
+    at: TimeValue | None = Field(default=None, description="default playhead")
+    duration: TimeValue = "2s"
+
+
+@command("clip.frame_hold", FrameHold)
+def clip_frame_hold(ctx: Context, p: FrameHold):
+    """Frame Hold (Premiere's Frame Hold Options / Add Frame Hold / Insert Frame Hold Segment) on a video clip."""
+    doc = ctx.doc
+    seq = seq_of(doc, p.sequence_id)
+    st = seq["settings"]
+    tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+    tid, c = find_clip(seq, p.clip_id)
+    require_unlocked(seq, tid)
+    item = doc["media"].get(c.get("media_id") or "")
+    if seq["tracks"][tid]["kind"] != "video" or item is None or item["kind"] != "video":
+        raise CommandError("NOT_VIDEO", "Frame Hold works on video clips")
+    from ..tracks import media_time
+
+    at = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    at = min(max(timebase.snap_to_frame(at, st["fps_num"], st["fps_den"]), c["start"]), c["end"] - tpf)
+    path = clip_path(seq, tid, c["id"])
+    if p.mode == "clear":
+        if c.get("freeze") is not None:
+            ctx.m.set(path + ["freeze"], None)
+        return {"freeze": None}
+    held = media_time(c, source_at(c, at))
+    if p.mode == "hold":
+        if p.hold_on == "in":
+            held = media_time(c, c["source_in"])
+        elif p.hold_on == "out":
+            held = media_time(c, source_at(c, c["end"] - tpf))
+        elif p.hold_on == "source":
+            if p.source_time is None:
+                raise CommandError("BAD_PARAMS", "hold_on source needs source_time")
+            held = resolve_time(p.source_time, st)
+        if not 0 <= held <= item["duration"]:
+            raise CommandError("BAD_TIME", "that frame is outside the media")
+        ctx.m.set(path + ["freeze"], held)
+        return {"freeze": held}
+    if p.mode == "add":
+        if at <= c["start"]:
+            ctx.m.set(path + ["freeze"], held)
+            return {"freeze": held, "clip_id": c["id"]}
+        right = split_clip(ctx, seq, tid, c, at, None)  # the audio keeps playing: only the video is split
+        ctx.m.set(clip_path(seq, tid, right) + ["freeze"], held)
+        return {"freeze": held, "clip_id": right}
+    # insert: split everything at the playhead, open a gap and fill it with the held frame
+    dur = max(tpf, timebase.snap_to_frame(resolve_time(p.duration, st), st["fps_num"], st["fps_den"]))
+    link_map: dict[str, str] = {}
+    affected = sync_tracks(seq, {tid})
+    for t_ in affected:
+        razor_track(ctx, seq, t_, at, link_map)
+    for t_ in affected:
+        shift_from(ctx, seq, t_, at, dur)
+    hold = dict(c, id=new_id(), start=at, end=at + dur, source_in=source_at(c, at), link_id=None, freeze=held, keyframes={},
+                effects=list(c.get("effects") or []))
+    write_clip(ctx, seq, tid, hold)
+    return {"freeze": held, "clip_id": hold["id"]}
 
 
 # ---------------------------------------------------------------- properties / links

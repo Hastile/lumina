@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from ..effects import EFFECTS, param as effect_param
 from ..model import KeyframeProp
 from ..motion import source_size, value_at
+from .. import tracks as tracks_
 from .effects import _effect, _effects_path
 from .motion import MENU_INTERPS, _ctx, _write_static, set_interp
 from .registry import CommandError, Context, Params, command
@@ -33,12 +34,19 @@ class KeyframeSelection(Params):
     targets: list[KeyframeTarget] = Field(min_length=1)
 
 
+def _copy_stack(effects: list) -> list:
+    return [dict(e, keyframes=dict(e.get("keyframes", {})), params=dict(e["params"])) for e in effects]
+
+
 def _apply(ctx: Context, p: KeyframeSelection, fn) -> int:
-    """Run ``fn(kfs, times) -> new kfs | None`` on every target and write the results in one patch
-    per property / effect stack. Returns how many keyframes were selected."""
+    """Run ``fn(kfs, times, timing) -> new kfs | None`` on every target and write the results in one
+    patch per property / effect stack. ``timing`` is what the keyframe times are measured against: the
+    clip, or for a track effect (an effect_id found on the clip's track) its per-clip timing.
+    Returns how many keyframes were selected."""
     seq, tid, clip, media = _ctx(ctx, p.sequence_id, p.clip_id)
+    track = seq["tracks"][tid]
     path = clip_path(seq, tid, clip["id"])
-    stack = None
+    stack = tstack = None
     n = 0
     for tg in p.targets:
         times = set(tg.times)
@@ -47,31 +55,42 @@ def _apply(ctx: Context, p: KeyframeSelection, fn) -> int:
             if not kfs:
                 raise CommandError("NOT_ANIMATED", f"{tg.prop} has no keyframes")
             n += sum(1 for k in kfs if k["t"] in times)
-            new = fn(kfs, times)
+            new = fn(kfs, times, clip)
             if new:
                 ctx.m.set(path + ["keyframes", tg.prop], new)
             else:
                 _write_static(ctx, seq, tid, clip, tg.prop, value_at(clip, tg.prop, seq["playhead"], seq, media))
                 ctx.m.delete(path + ["keyframes", tg.prop])
         elif tg.effect_id and tg.param:
-            if stack is None:
-                stack = [dict(e, keyframes=dict(e.get("keyframes", {})), params=dict(e["params"])) for e in clip["effects"]]
-            i, e = _effect(clip, tg.effect_id)
-            kfs = stack[i]["keyframes"].get(tg.param)
+            on_clip = any(e["id"] == tg.effect_id for e in clip.get("effects") or [])
+            if on_clip:
+                if stack is None:
+                    stack = _copy_stack(clip["effects"])
+                i, e = _effect(clip, tg.effect_id)
+                target, timing = stack, clip
+                w, h = source_size(clip, seq, media)
+            else:
+                if tstack is None:
+                    tstack = _copy_stack(track.get("effects") or [])
+                i, e = _effect(track, tg.effect_id)
+                target, timing = tstack, tracks_.timing_clip(e, clip)
+                w, h = seq["settings"]["width"], seq["settings"]["height"]
+            kfs = target[i]["keyframes"].get(tg.param)
             if not kfs:
                 raise CommandError("NOT_ANIMATED", f"{tg.param} has no keyframes")
             n += sum(1 for k in kfs if k["t"] in times)
-            new = fn(kfs, times)
+            new = fn(kfs, times, timing)
             if new:
-                stack[i]["keyframes"][tg.param] = new
+                target[i]["keyframes"][tg.param] = new
             else:
-                w, h = source_size(clip, seq, media)
-                stack[i]["params"][tg.param] = effect_param(e, tg.param, clip, seq["playhead"], w, h)
-                del stack[i]["keyframes"][tg.param]
+                target[i]["params"][tg.param] = effect_param(e, tg.param, timing, seq["playhead"], w, h)
+                del target[i]["keyframes"][tg.param]
         else:
             raise CommandError("BAD_TARGET", "a target needs prop, or effect_id and param")
     if stack is not None:
         ctx.m.set(_effects_path(seq, tid, clip), stack)
+    if tstack is not None:
+        ctx.m.set(["sequences", seq["id"], "tracks", tid, "effects"], tstack)
     if not n:
         raise CommandError("NO_KEYFRAME", "no keyframes at those times")
     return n
@@ -87,7 +106,7 @@ def keyframes_set_interp(ctx: Context, p: SetInterp):
     """Temporal interpolation of selected keyframes (Linear, Bezier, Auto Bezier, Continuous Bezier,
     Hold, Ease In, Ease Out), keeping the curve's shape where the new type has handles."""
     assert p.interp in MENU_INTERPS
-    n = _apply(ctx, p, lambda kfs, times: set_interp(kfs, times, p.interp))
+    n = _apply(ctx, p, lambda kfs, times, _t: set_interp(kfs, times, p.interp))
     return {"count": n, "interp": p.interp}
 
 
@@ -99,21 +118,21 @@ class MoveKeyframes(KeyframeSelection):
 def keyframes_move(ctx: Context, p: MoveKeyframes):
     """Drag selected keyframes in time; a keyframe they land on is replaced (as in Premiere)."""
     _, _, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
-    d = round(p.delta * clip["speed"])
 
-    def move(kfs, times):
+    def move(kfs, times, timing):
+        d = round(p.delta * timing["speed"])
         moved = {k["t"] + d: dict(k, t=k["t"] + d) for k in kfs if k["t"] in times}
         kept = [k for k in kfs if k["t"] not in times and k["t"] not in moved]
         return sorted(kept + list(moved.values()), key=lambda k: k["t"])
 
     n = _apply(ctx, p, move)
-    return {"count": n, "delta_source": d}
+    return {"count": n, "delta_source": round(p.delta * clip["speed"])}
 
 
 @command("keyframes.delete", KeyframeSelection)
 def keyframes_delete(ctx: Context, p: KeyframeSelection):
     """Delete selected keyframes; a property left without keyframes keeps the value at the playhead."""
-    n = _apply(ctx, p, lambda kfs, times: [k for k in kfs if k["t"] not in times])
+    n = _apply(ctx, p, lambda kfs, times, _t: [k for k in kfs if k["t"] not in times])
     return {"count": n}
 
 
@@ -130,16 +149,16 @@ def keyframes_scale(ctx: Context, p: ScaleKeyframes):
     from .. import timebase
 
     tpf = timebase.ticks_per_frame(seq["settings"]["fps_num"], seq["settings"]["fps_den"])
-    pivot = clip["source_in"] + (p.pivot - clip["start"]) * clip["speed"]
-    step = tpf * clip["speed"]
 
-    def scale(kfs, times):
+    def scale(kfs, times, timing):
+        pivot = timing["source_in"] + (p.pivot - timing["start"]) * timing["speed"]
+        step = tpf * timing["speed"]
         moved = {}
         for k in kfs:
             if k["t"] not in times:
                 continue
             nt = pivot + (k["t"] - pivot) * p.factor
-            nt = round(clip["source_in"] + round((nt - clip["source_in"]) / step) * step)
+            nt = round(timing["source_in"] + round((nt - timing["source_in"]) / step) * step)
             nk = dict(k, t=nt)
             for side in ("ease_in", "ease_out"):
                 if nk.get(side):
