@@ -6,7 +6,7 @@ import {
   StepBack, StepForward, Upload, Import as InsertIcon, Replace
 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { Clip, MediaItem, Sequence } from '../engine/document'
+import type { Clip, Effect, MediaItem, Sequence } from '../engine/document'
 import { mediaUrl } from '../engine/client'
 import { runAction } from '../actions/actions'
 import { DRAG_MIME } from './ProjectPanel'
@@ -21,6 +21,7 @@ import { FrameCanvas } from '../playback/FrameCanvas'
 import { GLStage } from '../playback/GLStage'
 import { audioEngine } from '../playback/AudioEngine'
 import { GraphicView } from './GraphicView'
+import { activeTrackEffects, clipGraphic, mediaTime, timingClip } from '../util/tracks'
 
 export function mediaSrc(m: MediaItem): string {
   return mediaUrl(m.proxy_path ?? m.path)
@@ -181,6 +182,7 @@ type VisualLayer = {
   preroll?: boolean // upcoming clip: mounted hidden, paused on its first frame
   ctx?: { seq: Sequence; at: number } // inside a nested sequence: its sequence and time
   nested?: { seq: Sequence; at: number; layers: VisualLayer[] } // a nested sequence clip
+  trackFx?: Effect[] // the track's enabled effects (applied to this clip after its Motion)
 }
 type AudioLayer = { key: string; clip: Clip; media: MediaItem; time: number; volume: number; span: [number, number]; track: string; preroll?: boolean }
 
@@ -202,9 +204,13 @@ export function activeLayers(
     const it = clip.source_in + Math.round((Math.max(clip.start, Math.min(clip.end - 1, t)) - clip.start) * clip.speed)
     return { seq: s, at: it, ...activeLayers(s, media, it, lookahead * clip.speed, sequences, depth + 1, `${prefix}${clip.id}/`) }
   }
-  const clipLayer = (_tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
-    const ctx = depth ? { ctx: { seq, at } } : {}
-    if (clip.graphic) return { key: `${prefix}g-${clip.id}`, clip, media: null, z, ...ctx, ...extra }
+  const clipLayer = (tid: string, clip: Clip, z: number, extra: Partial<VisualLayer> = {}, suffix = ''): VisualLayer | null => {
+    const track = seq.tracks[tid]
+    const fx = activeTrackEffects(track)
+    const ctx = { ...(depth ? { ctx: { seq, at } } : {}), ...(fx.length ? { trackFx: fx } : {}) }
+    const g = clipGraphic(clip, track)
+    // a caption cue is drawn as the text graphic its track style makes
+    if (g) return { key: `${prefix}g-${clip.id}`, clip: g === clip.graphic ? clip : { ...clip, graphic: g }, media: null, z, ...ctx, ...extra }
     if (clip.sequence_id) {
       const n = inner(clip, at)
       if (!n) return null
@@ -249,7 +255,7 @@ export function activeLayers(
     if (lookahead !== 0) {
       // forward: clips starting soon; reverse (negative lookahead): clips that just ended behind us
       for (const clip of Object.values(track.clips)) {
-        if (!clip.enabled || clip.graphic) continue
+        if (!clip.enabled || clip.graphic || clip.caption) continue
         const soon = lookahead > 0
           ? clip.start > at && clip.start - at <= lookahead
           : clip.end <= at && at - clip.end <= -lookahead
@@ -351,7 +357,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const sequences = useStore((s) => s.doc?.sequences) ?? {}
   const { visual, audio } = activeLayers(seq, media, at, playing ? (rate < 0 ? -PREROLL : PREROLL) : 0, sequences)
   const voices = audio
-    .filter((a) => a.clip.speed > 0 && audioEngine.status(mediaSrc(a.media)) === 'ok')
+    .filter((a) => a.clip.speed !== 0 && audioEngine.status(mediaSrc(a.media)) === 'ok')
     .map((a) => ({
       key: a.key, url: mediaSrc(a.media), start: a.clip.start, sourceIn: a.clip.source_in, speed: a.clip.speed, span: a.span, track: a.track,
       pre: dbToGain(a.clip.gain_db ?? 0), gain: a.volume,
@@ -361,7 +367,10 @@ function Stage({ seq, media, at, playing, rate, scale }: {
   const scrubOn = useStore((s) => s.audioScrub)
   useEffect(() => {
     audioEngine.mix({
-      tracks: seq.audio_tracks.map((id) => ({ id, gain: dbToGain(seq.tracks[id].volume_db ?? 0), pan: (seq.tracks[id].pan ?? 0) / 100 })),
+      tracks: seq.audio_tracks.map((id) => ({
+        id, gain: dbToGain(seq.tracks[id].volume_db ?? 0), pan: (seq.tracks[id].pan ?? 0) / 100,
+        fx: activeTrackEffects(seq.tracks[id]).filter((e) => effectMedia(e.type) === 'audio').map((e) => ({ type: e.type, params: e.params as Record<string, number> }))
+      })),
       master: dbToGain(seq.master_volume_db ?? 0)
     })
     audioEngine.sync(voices)
@@ -464,8 +473,8 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         url={mediaUrl(l.media!.path)}
         fallbackUrl={l.media!.proxy_path ? mediaUrl(l.media!.proxy_path) : undefined}
         // a prerolled clip waits on its first frame (forward) or its last frame (reverse)
-        time={ticksToSeconds(sourceTime(clip, !l.preroll ? at : rate < 0 ? clip.end - ticksPerFrame(seq.settings) : clip.start))}
-        playing={playing}
+        time={ticksToSeconds(mediaTime(clip, sourceTime(clip, !l.preroll ? at : rate < 0 ? clip.end - ticksPerFrame(seq.settings) : clip.start)))}
+        playing={playing && clip.freeze == null}
         hold={l.preroll}
         rate={rate * clip.speed}
         style={{ width: '100%', height: '100%' }}
@@ -476,7 +485,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       const css = effectCss(fx, clip, at, w, h)
       if (css) content = <div className="lm-fx" data-fx={fx.id} style={{ width: w, height: h, ...css }}>{content}</div>
     }
-    return (
+    let layer = (
       <div
         key={l.key}
         data-clip={l.preroll ? undefined : clip.id}
@@ -487,6 +496,12 @@ function Stage({ seq, media, at, playing, rate, scale }: {
         {isSel && <div className="lm-layer-box" style={{ borderWidth: 1 / scale }} />}
       </div>
     )
+    // track effects wrap the finished clip, in sequence pixels (the GPU path draws them for real)
+    for (const fx of l.trackFx ?? []) {
+      const css = effectCss(fx, timingClip(fx, clip) as Clip, at, W, H)
+      if (css) layer = <div key={`${l.key}-${fx.id}`} className="lm-fx" style={{ position: 'absolute', inset: 0, width: W, height: H, ...css }}>{layer}</div>
+    }
+    return layer
   }
 
   return (
@@ -523,7 +538,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
           }}
         />
       )}
-      {audio.filter((a) => audioEngine.status(mediaSrc(a.media)) === 'fail' || a.clip.speed <= 0).map((a) => (
+      {audio.filter((a) => audioEngine.status(mediaSrc(a.media)) === 'fail').map((a) => (
         <MediaLayer key={a.key} url={mediaSrc(a.media)} kind="audio" time={a.time} playing={playing && !a.preroll} rate={rate * a.clip.speed} volume={a.preroll ? 0 : a.volume * dbToGain(a.clip.gain_db ?? 0)} />
       ))}
     </div>

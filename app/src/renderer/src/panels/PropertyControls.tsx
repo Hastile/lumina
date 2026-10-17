@@ -158,7 +158,7 @@ export function KfRow({ c, kfs, label, children, onToggle, onKey, animatable = t
 }) {
   const [open, setOpen] = useState(false)
   const at = clipTime(c)
-  const tol = (ticksPerFrame(c.seq.settings) * c.clip.speed) / 2
+  const tol = (ticksPerFrame(c.seq.settings) * Math.abs(c.clip.speed)) / 2
   const src = sourceTime(c.clip, at)
   const has = !!kfs && kfs.length > 0
   const onKeyNow = !!kfs?.some((k) => Math.abs(k.t - src) <= tol)

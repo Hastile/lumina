@@ -5,7 +5,7 @@
 
 import { gradeUniforms, isIdentity, LUMETRI_KEYS, type LumetriParams } from '../util/color'
 import { useEffect, useLayoutEffect, useRef } from 'react'
-import type { Clip, MediaItem, Sequence } from '../engine/document'
+import type { Clip, Effect, MediaItem, Sequence } from '../engine/document'
 import { engine, mediaUrl } from '../engine/client'
 import { useStore } from '../state/store'
 import { BLUR_SIGMA_PER_UNIT, effectParam, transformEffectAt, trs } from '../util/effects'
@@ -13,6 +13,7 @@ import { sourceTime, transformAt, type Resolved } from '../util/motion'
 import { ticksPerFrame, ticksToSeconds } from '../util/time'
 import { FrameSource, openMedia } from './FrameSource'
 import { GLCompositor, IDENTITY, mul, type Affine, type Blend, type Placed, type Target } from './GLCompositor'
+import { mediaTime, timingClip, type Timing } from '../util/tracks'
 
 export type GLLayer = {
   key: string
@@ -26,6 +27,8 @@ export type GLLayer = {
   ctx?: { seq: Sequence; at: number }
   /** a nested sequence clip: what it shows */
   nested?: { seq: Sequence; at: number; layers: GLLayer[] }
+  /** the track's enabled effects: applied to the finished clip, in sequence pixels */
+  trackFx?: Effect[]
 }
 
 type Props = {
@@ -189,7 +192,17 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
     let sources: { placed: Placed; ps: number; blend: Blend }[] = []
     let w = W
     let h = H
-    if (l.nested) {
+    // track effects: the clip drawn on its own at sequence size, then through the track's effects
+    let chain: [Effect, Timing][] = (clip.effects ?? []).map((fx) => [fx, clip])
+    let identity = false
+    if (l.trackFx?.length) {
+      c.beginSub(W, H)
+      drawClip(c, c.frameTarget, { ...l, trackFx: undefined }, 1, 'normal')
+      const placed = c.endSub()
+      sources = [{ placed: { ...placed, w: W, h: H }, ps: c.seqToFrame[0], blend }]
+      chain = l.trackFx.map((fx) => [fx, timingClip(fx, clip)])
+      identity = true
+    } else if (l.nested) {
       // the nested sequence composited on its own, transparent where empty, shown at this sequence's size
       const { seq: inner } = l.nested
       c.beginSub(inner.settings.width, inner.settings.height)
@@ -209,7 +222,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
       w = l.media.video.width
       h = l.media.video.height
       const v = videos.current.get(l.key)
-      const f = v?.src?.frame(ticksToSeconds(sourceTime(clip, t)))
+      const f = v?.src?.frame(ticksToSeconds(mediaTime(clip, sourceTime(clip, t))))
       stats.videos++
       if (f?.exact) stats.exact++
       if (f) stats.frames.push(f.sample.timestamp)
@@ -223,17 +236,18 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
       }
     }
     if (!sources.length) return
-    const r = l.ctx ? transformAt(clip, t, sq, l.media) : props.current.resolve(l)
-    const motion = trs(r.position, r.anchor, r.scaleX / 100, r.scaleY / 100, r.rotation) as Affine
-    const opacity = Math.max(0, Math.min(1, r.opacity / 100)) * fade
-    const [cl, ct, cr, cb] = r.crop
+    const r = identity ? null : l.ctx ? transformAt(clip, t, sq, l.media) : props.current.resolve(l)
+    const motion = (r ? trs(r.position, r.anchor, r.scaleX / 100, r.scaleY / 100, r.rotation) : IDENTITY) as Affine
+    const opacity = Math.max(0, Math.min(1, (r?.opacity ?? 100) / 100)) * fade
+    const [cl, ct, cr, cb] = r?.crop ?? [0, 0, 0, 0]
     const crop: [number, number, number, number] | null = cl || ct || cr || cb ? [(cl / 100) * w, (ct / 100) * h, w - (cr / 100) * w, h - (cb / 100) * h] : null
     for (const s of sources) {
       // standard effects in source space, in stack order (compositor.apply_effects)
       let placed = s.placed
       let pre: Affine = IDENTITY
       let preOp = 1
-      for (const fx of clip.effects ?? []) {
+      for (const [fx, timing] of chain) {
+        const clip = timing as Clip
         if (!fx.enabled) continue
         if (fx.type === 'transform') {
           const { m, opacity: op } = transformEffectAt(fx, clip, t, w, h)
@@ -309,7 +323,8 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
         live.add(l.key)
         const v = videoSlot(l.key, l.media)
         const t = l.preroll ? (rate < 0 ? l.clip.end - tpf : l.clip.start) : at
-        v.src?.update(ticksToSeconds(sourceTime(l.clip, t)), playingNow, playingNow ? rate * l.clip.speed : 0)
+        const held = l.clip.freeze != null // Frame Hold: one frame, never "playing"
+        v.src?.update(ticksToSeconds(mediaTime(l.clip, sourceTime(l.clip, t))), playingNow && !held, playingNow && !held ? rate * l.clip.speed : 0)
       }
     }
     drive(p.layers, p.seq, p.at, p.rate)

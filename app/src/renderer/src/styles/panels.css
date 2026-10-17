@@ -75,7 +75,11 @@
 .lm-dropline { position: absolute; top: 0; width: 2px; margin-left: -1px; background: #fff; pointer-events: none; z-index: 6; }
 
 .lm-th { position: absolute; left: 0; right: 0; display: flex; align-items: center; gap: 2px; padding: 0 4px; background: var(--bg-track-header); border-bottom: 1px solid #1b1b1b; }
-.lm-th .patch { width: 22px; height: 18px; font-size: 10px; display: grid; place-items: center; border: 1px solid #555; border-radius: 2px; color: var(--text-dim); flex: none; }
+.lm-th .patch { width: 22px; height: 18px; font-size: 10px; display: grid; place-items: center; border: 1px solid #555; border-radius: 2px; color: var(--text-dim); flex: none; background: transparent; padding: 0; }
+.lm-th button.patch.on { background: #2f6fd1; border-color: #2f6fd1; color: #fff; }
+.lm-th .patch.cc { background: #6b5a1e; border-color: #8a7425; color: #f3e3a0; font-weight: 600; }
+.lm-th.caption { background: color-mix(in srgb, var(--bg-track-header) 85%, #8a7425); }
+.lm-th .tfx { margin-left: auto; font-size: 9.5px; font-weight: 700; color: #f2c14e; border: 1px solid #8a6d1c; border-radius: 2px; padding: 0 3px; flex: none; }
 .lm-th .target { width: 26px; height: 18px; font-size: 10.5px; border-radius: 2px; border: 1px solid #555; background: transparent; padding: 0; flex: none; color: var(--text-dim); }
 .lm-th .target.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 .lm-th .lm-iconbtn { width: 22px; height: 20px; }
@@ -177,6 +181,8 @@
 .lm-text-layer .warn { display: flex; gap: 6px; align-items: center; color: #e3b341; font-size: 11px; }
 .lm-btn.small { padding: 2px 10px; margin: 6px 10px; display: inline-flex; gap: 4px; align-items: center; font-size: 11px; }
 .lm-clip.graphic { background: color-mix(in srgb, var(--clip-color) 70%, #000); }
+.lm-clip.caption { background: color-mix(in srgb, var(--clip-color) 55%, #1c1a10); border-top: 2px solid color-mix(in srgb, var(--clip-color) 90%, #fff); }
+.lm-clip.held { background-image: repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 4px, transparent 4px 8px); }
 
 /* graphic layer stack */
 .lm-glayers { display: flex; flex-direction: column; }
@@ -414,3 +420,9 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-th-resize { position: absolute; left: 0; right: 0; height: 5px; cursor: row-resize; z-index: 2; }
 .lm-th-resize.video { top: -2px; }
 .lm-th-resize.audio { bottom: -2px; }
+
+/* captions and track effects in Effect Controls */
+.lm-caption-text { width: 100%; resize: vertical; min-height: 34px; background: #1b1b1b; color: var(--text); border: 1px solid #444; border-radius: 2px; font: inherit; padding: 2px 4px; }
+.lm-btn.small { padding: 1px 8px; font-size: 11px; }
+.lm-ec-section[data-track-effects] { color: #f2c14e; }
+.lm-project-row .busy.offline { background: #6a2626; color: #ffb3b3; }

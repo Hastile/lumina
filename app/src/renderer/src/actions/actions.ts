@@ -17,7 +17,7 @@ export type Action = { id: string; label: string; run: () => void | Promise<void
 
 const actions = new Map<string, Action>()
 
-function def(id: string, label: string, run: () => void | Promise<void>): void {
+export function def(id: string, label: string, run: () => void | Promise<void>): void {
   actions.set(id, { id, label, run })
 }
 
@@ -100,14 +100,24 @@ async function importFiles(paths?: string[]): Promise<void> {
       title: 'Import',
       properties: ['openFile', 'multiSelections'],
       filters: [
-        { name: 'All Supported Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mxf', 'mts', 'wav', 'mp3', 'm4a', 'aac', 'flac', 'png', 'jpg', 'jpeg', 'psd', 'tif', 'tiff', 'webp', 'gif', 'prproj'] },
+        { name: 'All Supported Media', extensions: ['mp4', 'mov', 'm4v', 'mkv', 'webm', 'avi', 'mxf', 'mts', 'wav', 'mp3', 'm4a', 'aac', 'flac', 'png', 'jpg', 'jpeg', 'psd', 'tif', 'tiff', 'webp', 'gif', 'prproj', 'srt', 'mogrt'] },
         { name: 'Adobe Premiere Pro Projects', extensions: ['prproj'] },
+        { name: 'Captions (.srt)', extensions: ['srt'] },
+        { name: 'Motion Graphics Templates (.mogrt)', extensions: ['mogrt'] },
         { name: 'All Files', extensions: ['*'] }
       ]
     }, 'import'))
   if (!files.length) return
   for (const p of files.filter(isPremiere)) await importPremiere(p)
-  const media = files.filter((p) => !isPremiere(p))
+  // captions go onto a caption track of the open sequence, templates onto the timeline at the playhead
+  const srt = files.filter((p) => /\.srt$/i.test(p))
+  if (srt.length) await import('./extra').then((m) => m.importCaptions(srt))
+  for (const p of files.filter((x) => /\.(mogrt|aegraphic)$/i.test(x))) {
+    const seq = activeSequence()
+    if (!seq) toast(t('No sequence is open'), 'info')
+    else await exec('graphic.place_mogrt', { sequence_id: seq.id, path: p, at: get().programTime }, t('Place Motion Graphics Template'))
+  }
+  const media = files.filter((p) => !isPremiere(p) && !/\.(srt|mogrt|aegraphic)$/i.test(p))
   if (!media.length) return
   const res = await exec<{ media_ids: string[]; errors: { path: string; error: string }[] }>('media.import', { paths: media, bin_id: get().currentBin })
   for (const e of res?.errors ?? []) toast(`${e.path}: ${e.error}`)

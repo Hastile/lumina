@@ -5,7 +5,10 @@ import { exec, get, set } from '../state/store'
 import { ticksPerFrame, timecode } from '../util/time'
 import { clipTime, current, KeyframeRow, KfRow, laneSpan, NumberScrub, setProp, useSelectedClip, type ClipCtx } from './PropertyControls'
 import { EFFECTS, effectMedia, effectParam } from '../util/effects'
-import type { Effect } from '../engine/document'
+import type { Clip, Effect } from '../engine/document'
+import { timingClip } from '../util/tracks'
+import { captionStyleDialog } from '../actions/extra'
+import { findClip, useStore } from '../state/store'
 import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
 import { GraphicLayers } from './GraphicLayers'
@@ -167,6 +170,7 @@ export function EffectControlsPanel() {
                 <GraphicLayers c={c} compact />
               </Group>
             )}
+            {clip.caption && <CaptionGroup c={c} />}
             <Group title={t('Motion')} onReset={reset}>
               <MotionControls c={c} />
             </Group>
@@ -181,9 +185,16 @@ export function EffectControlsPanel() {
             {(clip.effects ?? []).map((fx) => (
               <EffectGroup key={fx.id} c={c} fx={fx} />
             ))}
+            <TrackEffects c={c} />
             <Group title={t('Time Remapping')}>
               <Plain name={t('Speed')}>
-                <NumberScrub value={clip.speed * 100} min={1} max={10000} digits={2} suffix=" %" onChange={(v) => void exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: v / 100 }, t('Speed'))} />
+                <NumberScrub value={Math.abs(clip.speed) * 100} min={1} max={10000} digits={2} suffix={clip.speed < 0 ? ' % ◂' : ' %'} onChange={(v) => void exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: v / 100 }, t('Speed'))} />
+              </Plain>
+              <Plain name="">
+                <label className="check">
+                  <input type="checkbox" checked={clip.speed < 0} disabled={!clip.media_id} onChange={(e) => void exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: Math.abs(clip.speed), reverse: e.target.checked }, t('Reverse Speed'))} />
+                  {t('Reverse Speed')}
+                </label>
               </Plain>
             </Group>
           </>
@@ -201,6 +212,7 @@ export function EffectControlsPanel() {
             {(clip.effects ?? []).map((fx) => (
               <EffectGroup key={fx.id} c={c} fx={fx} />
             ))}
+            <TrackEffects c={c} />
           </>
         )}
       </div>
@@ -214,11 +226,87 @@ export function EffectControlsPanel() {
 
 const DIMENSIONS = ['Horizontal and Vertical', 'Horizontal', 'Vertical']
 
-function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
+/** The track effects of the selected clip's track: edited like the clip's own effects, their keyframes
+ * shown relative to this clip (they apply to every clip of the track, each from its own In/Out). */
+function TrackEffects({ c }: { c: ClipCtx }) {
+  const track = useStore((s) => (s.doc ? findClip(c.seq, c.clip.id)?.track ?? null : null))
+  const fxs = track?.effects ?? []
+  if (!track || !fxs.length) return null
+  return (
+    <>
+      <div className="lm-ec-section" data-track-effects={track.id} title={t('Applies to every clip on {track}; keyframes shown on this clip').replace('{track}', track.name)}>
+        {t('Track Effects')} · {track.name}
+      </div>
+      {fxs.map((fx) => {
+        // a clip whose source time is the effect's keyframe time, over this clip's span
+        const tm = timingClip(fx, c.clip)
+        const clip: Clip = { ...c.clip, source_in: tm.source_in - (tm.start - c.clip.start) * tm.speed, speed: tm.speed, effects: fxs }
+        return <EffectGroup key={fx.id} c={{ ...c, clip, media: null }} fx={fx} trackId={track.id} />
+      })}
+    </>
+  )
+}
+
+const ANCHORS: { value: NonNullable<Effect['anchor']>; label: string }[] = [
+  { value: 'in', label: "From each clip's In" },
+  { value: 'out', label: "From each clip's Out" },
+  { value: 'stretch', label: 'Stretched over each clip' }
+]
+
+function CaptionGroup({ c }: { c: ClipCtx }) {
+  const cap = c.clip.caption!
+  const track = findClip(c.seq, c.clip.id)?.track
+  const style = track?.caption_style
+  const [text, setText] = useState<string | null>(null)
+  const setStyle = (s: Record<string, unknown>, label: string) => track && void exec('caption.set_style', { sequence_id: c.seq.id, track_id: track.id, style: s }, label)
+  return (
+    <Group title={t('Caption')}>
+      <div className="lm-ec-prop">
+        <span />
+        <span className="pname">{t('Text')}</span>
+        <span className="pval">
+          <textarea
+            className="lm-caption-text"
+            rows={2}
+            value={text ?? cap.text}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={() => {
+              if (text !== null && text !== cap.text) void exec('caption.set', { sequence_id: c.seq.id, clip_id: c.clip.id, text }, t('Edit Caption'))
+              setText(null)
+            }}
+          />
+        </span>
+        <span />
+        <span />
+      </div>
+      {style && (
+        <>
+          <Plain name={t('Font Size')}>
+            <NumberScrub value={style.font_size} min={1} max={2000} onChange={(v) => setStyle({ font_size: v }, t('Caption Track Style'))} />
+          </Plain>
+          <Plain name={t('Position')}>
+            <NumberScrub value={style.position[0]} onChange={(v) => setStyle({ position: [v, style.position[1]] }, t('Caption Track Style'))} />
+            <NumberScrub value={style.position[1]} onChange={(v) => setStyle({ position: [style.position[0], v] }, t('Caption Track Style'))} />
+          </Plain>
+          <Plain name={t('Fill')}>
+            <input type="color" value={style.color.slice(0, 7)} onChange={(e) => setStyle({ color: e.target.value }, t('Caption Track Style'))} />
+          </Plain>
+          <Plain name={t('Track Style')}>
+            <button className="lm-btn small" onClick={() => track && captionStyleDialog(track.id)}>
+              {t('Caption Track Style...')}
+            </button>
+          </Plain>
+        </>
+      )}
+    </Group>
+  )
+}
+
+function EffectGroup({ c, fx, trackId }: { c: ClipCtx; fx: Effect; trackId?: string }) {
   const def = EFFECTS[fx.type]
   const at = clipTime(c)
   const [w, h] = c.media?.video ? [c.media.video.width, c.media.video.height] : [c.seq.settings.width, c.seq.settings.height]
-  const base = { sequence_id: c.seq.id, clip_id: c.clip.id, effect_id: fx.id }
+  const base = { sequence_id: c.seq.id, clip_id: c.clip.id, effect_id: fx.id, ...(trackId ? { track_id: trackId } : {}) }
   const val = (n: string) => effectParam(fx, n, c.clip, at, w, h)
   const set = (param: string, value: number | boolean | number[], label: string) =>
     void exec('effect.set_param', { ...base, param, value, at }, label)
@@ -231,6 +319,23 @@ function EffectGroup({ c, fx }: { c: ClipCtx; fx: Effect }) {
       onToggleEnabled={() => void exec('effect.set', { ...base, enabled: !fx.enabled }, t('Toggle effect on/off'))}
       onDelete={() => void exec('effect.remove', base, t('Delete Effect'))}
     >
+      {trackId && (
+        <div className="lm-ec-prop">
+          <span />
+          <span className="pname">{t('Anchor')}</span>
+          <span className="pval">
+            <select value={fx.anchor ?? 'in'} onChange={(e) => void exec('effect.set', { ...base, anchor: e.target.value }, t('Anchor'))} data-fx-anchor="">
+              {ANCHORS.map((a) => (
+                <option key={a.value} value={a.value}>
+                  {t(a.label)}
+                </option>
+              ))}
+            </select>
+          </span>
+          <span />
+          <span />
+        </div>
+      )}
       {def.params.map((p) => {
         const label = t(p.label)
         if (p.kind === 'bool') {

@@ -488,9 +488,11 @@ class ReverseDecoder:
 def grab_frame(path: str, t: int, size: tuple[int, int] | None = None, src_height: int = 1080) -> Image.Image | None:
     """One frame of a video at source time ``t`` (Frame Hold)."""
     matrix, rng = color_matrix(path, src_height)
-    vf = f"scale={size[0]}:{size[1]}:flags=bicubic:in_color_matrix={matrix}:in_range={rng}," if size else ""
+    # the same colour conversion as VideoDecoder (ffmpeg's default would be Rec.601)
+    w, h = size if size else ("iw", "ih")
+    vf = f"scale={w}:{h}:flags=bicubic:in_color_matrix={matrix}:in_range={rng},format=rgba"
     proc = subprocess.run([ffmpeg_bin(), "-v", "error", "-nostdin", "-ss", f"{max(0, t) / TPS:.6f}", "-i", path, "-frames:v", "1",
-                           "-vf", vf + "format=rgba", "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, timeout=120, **NO_WINDOW)
+                           "-vf", vf, "-f", "image2pipe", "-vcodec", "png", "-"], capture_output=True, timeout=120, **NO_WINDOW)
     if proc.returncode != 0 or not proc.stdout:
         return None
     import io

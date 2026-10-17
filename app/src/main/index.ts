@@ -159,8 +159,13 @@ const MENU: Record<string, Item[]> = {
     { label: 'Save As...', action: 'file.saveAs', accel: 'Ctrl+Shift+S' },
     'sep',
     { label: 'Import...', action: 'file.import', accel: 'Ctrl+I' },
+    { label: 'Import Captions...', action: 'file.importCaptions' },
     { label: 'Export Media...', action: 'file.export', accel: 'Ctrl+M' },
     { label: 'Export Frame...', action: 'file.exportFrame', accel: 'Ctrl+Shift+E' },
+    { label: 'Export Captions (SRT)...', action: 'file.exportCaptions' },
+    'sep',
+    { label: 'Search for Missing Media...', action: 'project.locateMedia' },
+    { label: 'Scan Media (Offline / Duplicates)...', action: 'project.scanMedia' },
     'sep',
     { label: 'Exit', action: 'app.quit', accel: 'Ctrl+Q' }
   ],
@@ -186,7 +191,13 @@ const MENU: Record<string, Item[]> = {
     { label: 'Nest...', action: 'clip.nest' },
     { label: 'Un-nest', action: 'clip.unnest' },
     { label: 'Speed/Duration...', action: 'clip.speed', accel: 'Ctrl+R' },
+    { label: 'Reverse Speed', action: 'clip.reverse' },
     { label: 'Audio Gain...', action: 'clip.audioGain', accel: 'G' },
+    'sep',
+    { label: 'Frame Hold Options...', action: 'clip.frameHoldOptions' },
+    { label: 'Add Frame Hold', action: 'clip.addFrameHold' },
+    { label: 'Insert Frame Hold Segment', action: 'clip.insertFrameHold' },
+    { label: 'Scene Edit Detection', action: 'clip.sceneEditDetection' },
     'sep',
     { label: 'Insert', action: 'clip.insert', accel: ',' },
     { label: 'Overwrite', action: 'clip.overwrite', accel: '.' },
@@ -210,7 +221,11 @@ const MENU: Record<string, Item[]> = {
     'sep',
     { label: 'Snap in Timeline', action: 'sequence.toggleSnap', accel: 'S' },
     'sep',
-    { label: 'Add Tracks...', action: 'sequence.addTracks' }
+    { label: 'Remove Silence...', action: 'sequence.removeSilence' },
+    { label: 'Remove Black Frames...', action: 'sequence.removeBlack' },
+    'sep',
+    { label: 'Add Tracks...', action: 'sequence.addTracks' },
+    { label: 'Add Caption Track', action: 'sequence.addCaptionTrack' }
   ],
   Markers: [
     { label: 'Mark In', action: 'markers.markIn', accel: 'I' },
@@ -227,7 +242,11 @@ const MENU: Record<string, Item[]> = {
   'Graphics and Titles': [
     { label: 'New Layer > Text', action: 'graphics.newText', accel: 'Ctrl+T' },
     { label: 'New Layer > Rectangle', action: 'graphics.newRectangle', accel: 'Ctrl+Alt+R' },
-    { label: 'New Layer > Ellipse', action: 'graphics.newEllipse', accel: 'Ctrl+Alt+E' }
+    { label: 'New Layer > Ellipse', action: 'graphics.newEllipse', accel: 'Ctrl+Alt+E' },
+    'sep',
+    { label: 'Add Caption', action: 'sequence.addCaption' },
+    { label: 'Caption Track Style...', action: 'caption.style' },
+    { label: 'Upgrade Caption to Graphic', action: 'caption.upgrade' }
   ],
   View: [
     { label: 'Zoom In', action: 'view.zoomIn', accel: '=' },

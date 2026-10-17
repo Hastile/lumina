@@ -7,6 +7,7 @@ import { importFiles, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { focusPanel } from '../layout/dock'
 import { exec, get, openSequence, set, useStore } from '../state/store'
+import { linkMedia, makeOffline } from '../actions/extra'
 import { timecode } from '../util/time'
 
 export const DRAG_MIME = 'application/x-lumina-item'
@@ -126,7 +127,20 @@ export function ProjectPanel() {
         disabled: !r || r.kind !== 'media',
         run: () => r && r.kind === 'media' && void exec('sequence.create_from_media', { media_id: r.id }).then(() => focusPanel('timeline'))
       },
-      { label: t('Duplicate'), disabled: !r || r.kind !== 'sequence', run: () => r && void exec('sequence.duplicate', { sequence_id: r.id }) }
+      { label: t('Duplicate'), disabled: !r || r.kind !== 'sequence', run: () => r && void exec('sequence.duplicate', { sequence_id: r.id }) },
+      'sep',
+      { label: t('Link Media...'), disabled: !r || r.kind !== 'media', run: () => r && r.kind === 'media' && linkMedia(r.id) },
+      {
+        label: r && r.kind === 'media' && r.item.offline ? t('Make Online') : t('Make Offline'),
+        disabled: !r || r.kind !== 'media',
+        run: () => {
+          const ids = get().selectedItems.filter((id) => get().doc?.media[id])
+          const offline = !(r && r.kind === 'media' && r.item.offline)
+          void makeOffline(ids, offline)
+        }
+      },
+      { label: t('Search for Missing Media...'), action: 'project.locateMedia' },
+      { label: t('Scan Media (Offline / Duplicates)...'), action: 'project.scanMedia' }
     ])
   }
 
@@ -186,6 +200,7 @@ export function ProjectPanel() {
                 <RowIcon r={r} />
                 <span className="text">{r.name}</span>
                 {r.kind === 'media' && busy.has(r.id) && <span className="busy">{t('processing')}</span>}
+                {r.kind === 'media' && r.item.offline && <span className="busy offline">{t('offline')}</span>}
               </span>
               <span>{r.kind === 'media' ? rateLabel(r.item.video?.fps_num, r.item.video?.fps_den) : r.kind === 'sequence' ? rateLabel(r.seq.settings.fps_num, r.seq.settings.fps_den) : ''}</span>
               <span>{durationLabel(r)}</span>

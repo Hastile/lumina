@@ -22,7 +22,7 @@ type Plan = { clip: Clip; track: string; newLen: number; delta: number; blocked:
 function plan(seq: Sequence, clips: { clip: Clip; track: string }[], speed: number, ripple: boolean): Plan[] {
   const tpf = ticksPerFrame(seq.settings)
   return clips.map(({ clip, track }) => {
-    const src = (clip.end - clip.start) * clip.speed
+    const src = (clip.end - clip.start) * Math.abs(clip.speed)
     const newLen = Math.max(tpf, Math.round(src / speed / tpf) * tpf)
     const delta = newLen - (clip.end - clip.start)
     const others = Object.values(seq.tracks[track].clips).filter((c) => c.id !== clip.id && c.start >= clip.end)
@@ -42,13 +42,15 @@ export function SpeedDialog() {
   const [dur, setDur] = useState('')
   const [linked, setLinked] = useState(true)
   const [ripple, setRipple] = useState(true)
+  const [reverse, setReverse] = useState(false)
   const clips = (seq && ids ? ids.map((id) => findClip(seq, id)).filter(Boolean).map((f) => ({ clip: f!.clip, track: f!.track.id })) : [])
     // linked partners follow their clip in the engine: one entry per link group
     .filter((x, i, all) => !x.clip.link_id || all.findIndex((y) => y.clip.link_id === x.clip.link_id) === i)
   const first = clips[0]?.clip
   useEffect(() => {
     if (!first || !seq) return
-    setSpeed(Math.round(first.speed * 10000) / 100)
+    setSpeed(Math.round(Math.abs(first.speed) * 10000) / 100)
+    setReverse(first.speed < 0)
     setDur(timecode(first.end - first.start, seq.settings))
     setRipple(true)
     setLinked(true)
@@ -57,7 +59,7 @@ export function SpeedDialog() {
   if (!ids || !seq || !first) return null
   const close = () => useSpeed.setState({ ids: null })
   const st = seq.settings
-  const srcLen = (first.end - first.start) * first.speed
+  const srcLen = (first.end - first.start) * Math.abs(first.speed)
   const onSpeed = (v: number) => {
     setSpeed(v)
     if (linked && v > 0) setDur(timecode(Math.round(srcLen / (v / 100) / ticksPerFrame(st)) * ticksPerFrame(st), st))
@@ -84,7 +86,8 @@ export function SpeedDialog() {
     close()
     await engine.call('transaction.begin', { label: t('Speed/Duration') })
     try {
-      for (const { clip } of clips) await engine.exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: s, ripple })
+      // Reverse Speed applies to clips with media (a nested sequence plays forward)
+      for (const { clip } of clips) await engine.exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: s, ripple, reverse: clip.sequence_id ? false : reverse })
       await engine.call('transaction.commit')
     } catch (err) {
       await engine.call('transaction.rollback').catch(() => undefined)
@@ -117,6 +120,8 @@ export function SpeedDialog() {
           </span>
           <label>{t('Duration')}</label>
           <input className="lm-tc" value={dur} onChange={(e) => onDur(e.target.value)} data-field="duration" />
+          <label>{t('Reverse Speed')}</label>
+          <input type="checkbox" checked={reverse} onChange={(e) => setReverse(e.target.checked)} data-field="reverse" />
           <label>{t('Ripple Edit, Shifting Trailing Clips')}</label>
           <input type="checkbox" checked={ripple} onChange={(e) => setRipple(e.target.checked)} data-field="ripple" />
           <div className={`note ${blocked ? 'bad' : ''}`} data-speed-note="">{note}</div>

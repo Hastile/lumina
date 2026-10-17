@@ -16,6 +16,9 @@ import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
 import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
 import { mediaUrl } from '../engine/client'
+import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, upgradeCaptions } from '../actions/extra'
+import { effectMedia } from '../util/effects'
+import { isCaptionTrack } from '../util/tracks'
 
 const HEADER_W = 190
 const RULER_H = 30
@@ -646,7 +649,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       <div
         key={clip.id}
         data-clip={clip.id}
-        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
+        className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.caption ? 'graphic caption' : ''} ${clip.freeze != null ? 'held' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
         onMouseDown={(e) => clipMouseDown(e, clip, rowIdx)}
         onDoubleClick={() => {
@@ -655,6 +658,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             const inner = clip.sequence_id
             const t = clip.source_in + Math.round((Math.max(clip.start, Math.min(clip.end - 1, get().programTime)) - clip.start) * clip.speed)
             void exec('sequence.set_active', { sequence_id: inner }).then(() => goTo('program', t))
+          } else if (clip.caption) {
+            editCaptionText(clip.id)
           } else if (m) {
             set({ sourceMediaId: m.id, sourceTime: clip.source_in })
           }
@@ -666,6 +671,22 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             { label: clip.link_id ? 'Unlink' : 'Link', action: 'clip.link' },
             'sep',
             { label: tx('Speed/Duration...'), action: 'clip.speed' },
+            ...(m && row.kind === 'video' && m.kind === 'video'
+              ? [
+                  { label: tx('Reverse Speed'), action: 'clip.reverse' },
+                  'sep' as const,
+                  { label: tx('Frame Hold Options...'), action: 'clip.frameHoldOptions' },
+                  { label: tx('Add Frame Hold'), action: 'clip.addFrameHold' },
+                  { label: tx('Insert Frame Hold Segment'), action: 'clip.insertFrameHold' },
+                  ...(clip.freeze != null ? [{ label: tx('Remove Frame Hold'), action: 'clip.removeFrameHold' }] : []),
+                  { label: tx('Scene Edit Detection'), action: 'clip.sceneEditDetection' }
+                ]
+              : m && m.kind !== 'image'
+                ? [{ label: tx('Reverse Speed'), action: 'clip.reverse' }]
+                : []),
+            ...(clip.caption
+              ? ['sep' as const, { label: tx('Edit Caption'), action: 'caption.edit' }, { label: tx('Caption Track Style...'), action: 'caption.style' }, { label: tx('Upgrade Caption to Graphic'), action: 'caption.upgrade' }]
+              : []),
             'sep',
             { label: tx('Nest...'), action: 'clip.nest' },
             ...(clip.sequence_id ? [{ label: tx('Un-nest'), action: 'clip.unnest' }] : []),
@@ -707,7 +728,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         <span className="name">
           {clip.sequence_id && <b className="nest-badge">⧉ </b>}
           {(pv?.speed ?? clip.speed) !== 1 && <b>{Math.round((pv?.speed ?? clip.speed) * 100)}% </b>}
-          {clip.name}
+          {clip.freeze != null && <b title={tx('Frame Hold')}>❚❚ </b>}
+          {clip.caption ? clip.caption.text.split('\n')[0] : clip.name}
         </span>
         {pv && toolDrag?.tool === 'slip' && toolDrag.clipId === clip.id && (
           <span className="lm-tooltip-tc" data-slip-in="">
@@ -997,8 +1019,25 @@ function PlayheadTimecode({ value, st }: { value: number; st: Sequence['settings
   )
 }
 
+/** The track source video / audio is patched to (Insert/Overwrite), null = unpatched. */
+function patchedTrack(seq: Sequence, kind: 'video' | 'audio'): string | null {
+  const set_ = kind === 'video' ? seq.source_video_track : seq.source_audio_track
+  if (set_ === '') return null
+  if (set_ && seq.tracks[set_]) return set_
+  const order = kind === 'video' ? seq.video_tracks : seq.audio_tracks
+  const usable = order.filter((id) => !seq.tracks[id].locked && !seq.tracks[id].caption_style)
+  return usable.find((id) => seq.tracks[id].targeted) ?? usable[0] ?? null
+}
+
+const VIDEO_FX = ['transform', 'gaussian_blur', 'lumetri'] as const
+const AUDIO_FX = ['parametric_eq', 'compressor', 'hard_limiter'] as const
+
 function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize: (h: number, commit: boolean) => void }) {
   const t = row.track
+  const caption = isCaptionTrack(t)
+  const patched = !caption && patchedTrack(seq, row.kind) === t.id
+  const fxCount = (t.effects ?? []).length
+  const hasGraphics = Object.values(t.clips).some((c) => c.graphic)
   // the edge away from the divider: a video track grows upward, an audio track downward
   const resize = (e: React.MouseEvent) => {
     e.preventDefault()
@@ -1018,18 +1057,75 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
     void exec('track.set', { sequence_id: seq.id, track_id: t.id, [key]: !t[key] }, `Track ${key}`)
   return (
     <div
-      className={`lm-th ${row.kind}`}
+      className={`lm-th ${row.kind} ${caption ? 'caption' : ''}`}
       style={{ top: row.top, height: row.height }}
+      onDragOver={(e) => e.dataTransfer.types.includes(EFFECT_MIME) && e.preventDefault()}
+      onDrop={(e) => {
+        // an effect or preset dropped on a track header becomes a track effect (every clip, as is)
+        const raw = e.dataTransfer.getData(EFFECT_MIME)
+        if (!raw) return
+        e.preventDefault()
+        const item = JSON.parse(raw) as EffectDrag
+        if (item.kind === 'effect' && effectMedia(item.type as never) === row.kind) void addTrackEffect(t.id, item.type)
+        else if (item.kind === 'preset' && row.kind === 'video') void applyPresetToTrack(t.id, item.type)
+        else toast(tx('That effect does not go on this track'), 'info')
+      }}
       onContextMenu={(e) =>
         openContextMenu(e, [
           { label: tx('Rename'), run: () => renameTrack(seq, t) },
           'sep',
+          ...(row.kind === 'video' ? VIDEO_FX : AUDIO_FX).map((type) => ({
+            label: `${tx('Add Track Effect')}: ${tx(EFFECTS[type].label)}`, run: () => void addTrackEffect(t.id, type)
+          })),
+          ...(fxCount
+            ? [{ label: tx('Remove All Track Effects'), run: () => void removeTrackEffects(seq, t) }]
+            : []),
+          'sep',
+          ...(row.kind === 'video'
+            ? caption
+              ? [
+                  { label: tx('Caption Track Style...'), run: () => captionStyleDialog(t.id) },
+                  { label: tx('Import Captions...'), run: () => void importCaptions(undefined, t.id) },
+                  { label: tx('Export Captions (SRT)...'), run: () => void exportCaptions(t.id) },
+                  { label: tx('Upgrade Captions to Graphics'), run: () => void upgradeCaptions(t.id) },
+                  'sep' as const
+                ]
+              : [
+                  ...(hasGraphics ? [{ label: tx('Convert Graphics to Captions'), run: () => void graphicsToCaptions(t.id) }] : []),
+                  { label: tx('Add Caption Track'), run: () => void addCaptionTrack() },
+                  { label: tx('Import Captions...'), run: () => void importCaptions() },
+                  'sep' as const
+                ]
+            : []),
+          ...(!caption
+            ? [
+                patched
+                  ? { label: tx('Unpatch Source'), run: () => void exec('sequence.set_patch', { sequence_id: seq.id, [row.kind === 'video' ? 'clear_video' : 'clear_audio']: true }, tx('Source Patching')) }
+                  : { label: tx('Patch Source Here'), run: () => void exec('sequence.set_patch', { sequence_id: seq.id, [row.kind === 'video' ? 'video_track_id' : 'audio_track_id']: t.id }, tx('Source Patching')) },
+                'sep' as const
+              ]
+            : []),
           { label: tx('Add Tracks...'), action: 'sequence.addTracks' },
           { label: tx('Delete Track'), run: () => void exec('track.remove', { sequence_id: seq.id, track_id: t.id }) }
         ])
       }
     >
-      <span className="patch">{row.label}</span>
+      {caption ? (
+        <span className="patch cc" title={tx('Caption track: cues are text in the track style')}>CC</span>
+      ) : (
+        <button
+          className={`patch ${patched ? 'on' : ''}`}
+          data-patch={row.label}
+          title={tx('Source patching: Insert/Overwrite put source here (click to patch, click again to unpatch)')}
+          onClick={() =>
+            void exec('sequence.set_patch', patched
+              ? { sequence_id: seq.id, [row.kind === 'video' ? 'clear_video' : 'clear_audio']: true }
+              : { sequence_id: seq.id, [row.kind === 'video' ? 'video_track_id' : 'audio_track_id']: t.id }, tx('Source Patching'))
+          }
+        >
+          {patched ? (row.kind === 'video' ? 'V1' : 'A1') : ''}
+        </button>
+      )}
       <button className={`target ${t.targeted ? 'on' : ''}`} onClick={() => toggle('targeted')} title={tx('Toggle Track Targeting: paste, Add Edit and keyboard edits go to the lowest targeted track')}>
         {row.label}
       </button>
@@ -1054,9 +1150,25 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
         </>
       )}
       <span className="tname">{t.name.replace(/^(Video|Audio) (\d+)$/, (_, k: string, n: string) => `${tx(k)} ${n}`)}</span>
+      {fxCount > 0 && (
+        <span className="tfx" data-track-fx={fxCount} title={`${tx('Track effects')}: ${(t.effects ?? []).map((fx) => tx(EFFECTS[fx.type].label)).join(', ')}`}>
+          fx{fxCount > 1 ? fxCount : ''}
+        </span>
+      )}
       <div className={`lm-th-resize ${row.kind}`} data-track-resize={row.label} onMouseDown={resize} />
     </div>
   )
+}
+
+async function removeTrackEffects(seq: Sequence, t: Track) {
+  await engine.call('transaction.begin', { label: tx('Remove All Track Effects') })
+  try {
+    for (const fx of t.effects ?? []) await engine.exec('effect.remove', { sequence_id: seq.id, track_id: t.id, effect_id: fx.id })
+    await engine.call('transaction.commit', {})
+  } catch (err) {
+    await engine.call('transaction.rollback', {})
+    toast(String(err))
+  }
 }
 
 function renameTrack(seq: Sequence, t: Track) {

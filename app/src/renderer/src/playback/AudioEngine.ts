@@ -105,10 +105,10 @@ export function buildFx(ctx: BaseAudioContext, fx: AudioFx[], input: AudioNode, 
   return made
 }
 
-/** The Audio Track Mixer: per-track fader and pan, and the Mix fader (linear gains, pan -1..1). */
-export type AudioMix = { tracks: { id: string; gain: number; pan: number }[]; master: number }
+/** The Audio Track Mixer: per-track effect inserts, fader and pan, and the Mix fader (linear gains, pan -1..1). */
+export type AudioMix = { tracks: { id: string; gain: number; pan: number; fx?: AudioFx[] }[]; master: number }
 
-type Bus = { gain: GainNode; pan: StereoPannerNode; meter: Meter }
+type Bus = { input: GainNode; fxNodes: AudioNode[]; fxKey: string; gain: GainNode; pan: StereoPannerNode; meter: Meter }
 type Meter = { l: AnalyserNode; r: AnalyserNode }
 
 const SCRUB = 0.09 // s of sound per scrub step (Premiere plays about a frame plus its tail)
@@ -153,7 +153,7 @@ class AudioEngine {
     return m
   }
 
-  /** Track bus: fader -> pan -> Mix fader -> output, metered after pan (like the mixer's meters). */
+  /** Track bus: effect inserts -> fader -> pan -> Mix fader -> output, metered after pan (like the mixer's meters). */
   private bus(id: string): Bus {
     const ctx = this.context()
     if (!this.master) {
@@ -164,14 +164,17 @@ class AudioEngine {
     }
     let b = this.buses.get(id)
     if (!b) {
+      const input = ctx.createGain()
       const gain = ctx.createGain()
       const pan = ctx.createStereoPanner()
       const t = this.mixState.tracks.find((x) => x.id === id)
       gain.gain.value = t?.gain ?? 1
       pan.pan.value = t?.pan ?? 0
+      const fx = t?.fx ?? []
+      const fxNodes = buildFx(ctx, fx, input, gain)
       gain.connect(pan)
       pan.connect(this.master.gain)
-      b = { gain, pan, meter: this.meter(ctx, pan) }
+      b = { input, fxNodes, fxKey: JSON.stringify(fx), gain, pan, meter: this.meter(ctx, pan) }
       this.buses.set(id, b)
     }
     return b
@@ -187,6 +190,14 @@ class AudioEngine {
       if (!b) continue
       b.gain.gain.setTargetAtTime(t.gain, ctx.currentTime, 0.01)
       b.pan.pan.setTargetAtTime(t.pan, ctx.currentTime, 0.01)
+      const key = JSON.stringify(t.fx ?? [])
+      if (key !== b.fxKey) {
+        // track effects edited: rewire the inserts in place
+        b.input.disconnect()
+        for (const n of b.fxNodes) n.disconnect()
+        b.fxNodes = buildFx(ctx, t.fx ?? [], b.input, b.gain)
+        b.fxKey = key
+      }
     }
     this.master?.gain.gain.setTargetAtTime(m.master, ctx.currentTime, 0.01)
   }
@@ -216,7 +227,7 @@ class AudioEngine {
     this.stats.scrubs++
     const T = TICKS_PER_SECOND
     for (const v of want) {
-      if (at < v.span[0] || at >= v.span[1]) continue
+      if (at < v.span[0] || at >= v.span[1] || v.speed <= 0) continue
       void openAudio(v.url).then(async (d) => {
         if (!d || this.scrubbing !== cur) return
         const src = v.sourceIn / T + ((at - v.start) / T) * v.speed
@@ -232,7 +243,7 @@ class AudioEngine {
         env.gain.setValueAtTime(v.gain * v.pre, now + SCRUB - 0.012)
         env.gain.linearRampToValueAtTime(0, now + SCRUB)
         n.connect(env)
-        const fxNodes = buildFx(ctx, v.fx, env, this.bus(v.track).gain)
+        const fxNodes = buildFx(ctx, v.fx, env, this.bus(v.track).input)
         const offset = Math.max(0, src - wb.timestamp)
         // a buffer is only ~20-40 ms long: chain the next one for the rest of the slice
         n.start(now, offset)
@@ -318,7 +329,7 @@ class AudioEngine {
         input.gain.value = v.pre
         const gain = ctx.createGain()
         gain.gain.value = v.gain
-        gain.connect(this.bus(v.track).gain)
+        gain.connect(this.bus(v.track).input)
         const fxKey = JSON.stringify(v.fx)
         l = { v, input, fxNodes: buildFx(ctx, v.fx, input, gain), fxKey, gain, nodes: new Set(), stopped: false }
         this.voices.set(v.key, l)
@@ -359,6 +370,7 @@ class AudioEngine {
     const d = await openAudio(l.v.url)
     const ctx = this.ctx!
     if (!d || l.stopped || this.session !== s) return
+    if (l.v.speed < 0) return this.scheduleReverse(l, s, d)
     const v = l.v
     const T = TICKS_PER_SECOND
     const toCtx = (seqSec: number) => s.c0 + (seqSec - s.t0) / s.rate
@@ -401,6 +413,79 @@ class AudioEngine {
       }
     } catch (err) {
       if (!l.stopped) console.warn('[lumina] audio decode failed', v.url, err)
+    }
+  }
+
+  /** Reverse Speed: the source played back to front, in half-second chunks whose samples are
+   * reversed into a buffer (the decoder only reads forward). */
+  private async scheduleReverse(l: Live, s: { t0: number; c0: number; rate: number }, d: Decodable): Promise<void> {
+    const ctx = this.ctx!
+    const v = l.v
+    const T = TICKS_PER_SECOND
+    const sp = -v.speed
+    const toCtx = (seqSec: number) => s.c0 + (seqSec - s.t0) / s.rate
+    const fromCtx = (c: number) => s.t0 + (c - s.c0) * s.rate
+    const start = v.start / T
+    const end = v.span[1] / T
+    const src = (seqSec: number) => v.sourceIn / T + (seqSec - start) * v.speed
+    let a = Math.max(v.span[0] / T, s.t0, fromCtx(ctx.currentTime + 0.01))
+    const CHUNK = 0.5
+    try {
+      while (a < end && !l.stopped && this.session === s) {
+        const b = Math.min(end, a + CHUNK)
+        const lo = Math.max(0, src(b))
+        const hi = src(a)
+        if (hi <= lo) break
+        const parts: AudioBuffer[] = []
+        let rate = 48000
+        for await (const wb of d.sink.buffers(lo, hi)) {
+          if (l.stopped || this.session !== s) return
+          rate = wb.buffer.sampleRate
+          const s0 = Math.max(0, Math.round((lo - wb.timestamp) * rate))
+          const s1 = Math.min(wb.buffer.length, Math.round((hi - wb.timestamp) * rate))
+          if (s1 <= s0) continue
+          const cut = ctx.createBuffer(wb.buffer.numberOfChannels, s1 - s0, rate)
+          for (let ch = 0; ch < cut.numberOfChannels; ch++) cut.copyToChannel(wb.buffer.getChannelData(ch).subarray(s0, s1), ch)
+          parts.push(cut)
+        }
+        const total = parts.reduce((n, x) => n + x.length, 0)
+        if (total > 0) {
+          const chans = Math.max(...parts.map((x) => x.numberOfChannels))
+          const out = ctx.createBuffer(chans, total, rate)
+          for (let ch = 0; ch < chans; ch++) {
+            const dst = out.getChannelData(ch)
+            let at = total
+            for (const x of parts) {
+              const data = x.getChannelData(Math.min(ch, x.numberOfChannels - 1))
+              for (let i = 0; i < data.length; i++) dst[at - 1 - i] = data[i]
+              at -= data.length
+            }
+          }
+          let when = toCtx(a)
+          let offset = 0
+          const now = ctx.currentTime + 0.005
+          if (when < now) {
+            offset = (now - when) * s.rate * sp
+            when = now
+            this.stats.late++
+          }
+          if (offset < out.duration) {
+            const n = ctx.createBufferSource()
+            n.buffer = out
+            n.playbackRate.value = sp * s.rate
+            n.connect(l.input)
+            n.start(when, offset)
+            n.stop(toCtx(b))
+            l.nodes.add(n)
+            this.stats.nodes++
+            n.onended = () => l.nodes.delete(n)
+          }
+          while (!l.stopped && this.session === s && when - ctx.currentTime > AHEAD) await new Promise((r) => setTimeout(r, 100))
+        }
+        a = b
+      }
+    } catch (err) {
+      if (!l.stopped) console.warn('[lumina] reverse audio decode failed', v.url, err)
     }
   }
 }
