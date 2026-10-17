@@ -36,15 +36,18 @@ export function drawWaveform(canvas: HTMLCanvasElement, w: Waveform, srcStart: n
   ctx.scale(dpr, dpr)
   ctx.clearRect(0, 0, width, height)
   ctx.fillStyle = color
-  const mid = height / 2
+  // Premiere's rectified waveform: each column's peak rises from the bottom of the clip, using its
+  // full height (a reversed clip reads its source range back to front)
   const perPx = ((srcEnd - srcStart) * w.rate) / width
   for (let x = 0; x < width; x++) {
-    const a = Math.floor(srcStart * w.rate + x * perPx)
-    const b = Math.max(a + 1, Math.floor(srcStart * w.rate + (x + 1) * perPx))
+    const p0 = srcStart * w.rate + x * perPx
+    const p1 = srcStart * w.rate + (x + 1) * perPx
+    const a = Math.max(0, Math.floor(Math.min(p0, p1)))
+    const b = Math.max(a + 1, Math.floor(Math.max(p0, p1)))
     let peak = 0
     for (let i = a; i < b && i < w.peaks.length; i++) if (w.peaks[i] > peak) peak = w.peaks[i]
-    const h = (peak / 255) * (height / 2 - 1)
-    if (h > 0.3) ctx.fillRect(x, mid - h, 1, h * 2)
+    const h = (peak / 255) * (height - 1)
+    if (h > 0.3) ctx.fillRect(x, height - h, 1, h)
   }
 }
 
