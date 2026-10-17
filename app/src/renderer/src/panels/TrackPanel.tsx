@@ -10,15 +10,13 @@ import { call, exec, toast, useStore } from '../state/store'
 import { engine } from '../engine/client'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
-import { EFFECTS, effectMedia } from '../util/effects'
+import { effectMedia } from '../util/effects'
 import { timingClip } from '../util/tracks'
 import { EffectGroup, Group, Plain } from './EffectControls'
 import { EFFECT_MIME, type EffectDrag } from './EffectsPanel'
 import { NumberScrub, type ClipCtx } from './PropertyControls'
 
 const FONTS = ['Pretendard', 'Pretendard-Bold', 'Pretendard-Black', 'Malgun Gothic', 'S-CoreDream-6Bold', 'S-CoreDream-9Black', 'Noto Sans KR', 'Arial', 'Impact']
-const VIDEO_FX = ['transform', 'gaussian_blur', 'lumetri'] as const
-const AUDIO_FX = ['parametric_eq', 'compressor', 'hard_limiter'] as const
 
 const setStyle = (seq: Sequence, track: Track, style: Partial<CaptionStyle>, label: string) =>
   void exec('caption.set_style', { sequence_id: seq.id, track_id: track.id, style }, label)
@@ -276,7 +274,6 @@ export function CaptionTransformSection({ seq, track }: { seq: Sequence; track: 
 export function TrackEffectsSection({ seq, track, refClip, time }: { seq: Sequence; track: Track; refClip: Clip | null; time: number }) {
   const fxs = track.effects ?? []
   const kind = track.kind
-  const add = (type: string) => void exec('effect.add', { sequence_id: seq.id, track_ids: [track.id], type }, t('Apply Track Effect'))
   const base: Clip = refClip ?? ({
     id: '', media_id: null, name: track.name, start: 0, end: Math.max(1, ...Object.values(track.clips).map((c) => c.end)), source_in: 0, speed: 1
   } as unknown as Clip)
@@ -284,14 +281,6 @@ export function TrackEffectsSection({ seq, track, refClip, time }: { seq: Sequen
     <>
       <div className="lm-ec-section" data-track-effects={track.id} title={t('Applies to every clip on {track}; keyframes shown on this clip').replace('{track}', track.name)}>
         {t('Track Effects')} · {track.name}
-        <select className="lm-add-fx" value="" onChange={(e) => e.target.value && add(e.target.value)} data-add-track-fx="">
-          <option value="">{t('Add Track Effect')}…</option>
-          {(kind === 'video' ? VIDEO_FX : AUDIO_FX).map((type) => (
-            <option key={type} value={type}>
-              {t(EFFECTS[type].label)}
-            </option>
-          ))}
-        </select>
       </div>
       {!fxs.length && <div className="lm-ec-hint">{t('Drop an effect or preset here or on the track header: it applies to every clip of the track.')}</div>}
       {fxs.map((fx: Effect) => {

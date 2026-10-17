@@ -1112,8 +1112,6 @@ function patchedTrack(seq: Sequence, kind: 'video' | 'audio'): string | null {
   return usable.find((id) => seq.tracks[id].targeted) ?? usable[0] ?? null
 }
 
-const VIDEO_FX = ['transform', 'gaussian_blur', 'lumetri'] as const
-const AUDIO_FX = ['parametric_eq', 'compressor', 'hard_limiter'] as const
 
 function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize: (h: number, commit: boolean) => void }) {
   const t = row.track
@@ -1164,9 +1162,6 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
         openContextMenu(e, [
           { label: tx('Rename'), run: () => renameTrack(seq, t) },
           'sep',
-          ...(row.kind === 'video' ? VIDEO_FX : AUDIO_FX).map((type) => ({
-            label: `${tx('Add Track Effect')}: ${tx(EFFECTS[type].label)}`, run: () => void addTrackEffect(t.id, type)
-          })),
           ...(fxCount
             ? [{ label: tx('Remove All Track Effects'), run: () => void removeTrackEffects(seq, t) }]
             : []),

@@ -440,7 +440,6 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-align-grid button { width: 14px; height: 10px; padding: 0; border: 1px solid #555; background: #262626; border-radius: 1px; cursor: pointer; }
 .lm-align-grid button:hover { border-color: #888; }
 .lm-align-grid button.on { background: var(--accent); border-color: var(--accent); }
-.lm-ec-section .lm-add-fx { margin-left: 8px; font-size: 11px; background: #222; color: var(--text); border: 1px solid #444; border-radius: 2px; max-width: 150px; }
 .lm-ec-hint { padding: 4px 10px; font-size: 11px; color: var(--text-dim); }
 .lm-ec-prop.tall { height: auto; min-height: 44px; padding: 3px 0; align-items: center; }
 
