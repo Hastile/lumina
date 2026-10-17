@@ -10,6 +10,7 @@ export const DEFAULT_KEYMAP: Record<string, string> = {
   'Ctrl+/': 'file.newBin',
   'Ctrl+O': 'file.open',
   'Ctrl+S': 'file.save',
+  'Ctrl+Shift+W': 'file.closeProject',
   'Ctrl+Shift+S': 'file.saveAs',
   'Ctrl+I': 'file.import',
   'Ctrl+T': 'graphics.newText',

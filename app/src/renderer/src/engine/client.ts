@@ -30,6 +30,10 @@ export type EngineEvent =
   | ({ type: 'saved'; path: string } & HistoryState)
   | ({ type: 'history' } & HistoryState)
   | { type: 'job'; job: Job }
+  | { type: 'projects'; projects: ProjectInfo[] }
+
+/** An open project (several can be open; the active one is the document shown). */
+export type ProjectInfo = { key: string; name: string; path: string | null; dirty: boolean; active: boolean; blank: boolean }
 
 export type ExportResult = { path: string; encoder: string | null; elapsed_seconds: number; size_bytes: number; frames: number; warnings: string[] }
 export type Job = {

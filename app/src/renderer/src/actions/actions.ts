@@ -62,14 +62,17 @@ function selectedClipObjects(seq: Sequence): Clip[] {
   return get().selectedClips.map((id) => findClip(seq, id)?.clip).filter((c): c is Clip => !!c)
 }
 
-async function saveAs(): Promise<void> {
-  const doc = get().doc
+/** Save As for the active project, or the open project ``key``; false when cancelled or failed. */
+export async function saveAs(key?: string): Promise<boolean> {
+  const name = key ? get().projects.find((p) => p.key === key)?.name : get().doc?.name
   const path = await window.lumina.saveDialog({
     title: 'Save Project',
-    defaultPath: `${doc?.name ?? 'Untitled'}.lumina`,
+    defaultPath: `${name ?? 'Untitled'}.lumina`,
     filters: [{ name: 'Lumina Project', extensions: ['lumina'] }]
   }, 'project')
-  if (path && (await call('project.save', { path })) !== null) void window.lumina.addRecent(path)
+  if (!path || (await call('project.save', { path, ...(key ? { key } : {}) })) === null) return false
+  void window.lumina.addRecent(path)
+  return true
 }
 
 const isPremiere = (p: string) => /\.prproj$/i.test(p)
@@ -277,10 +280,7 @@ const tool = (t: Tool) => () => set({ tool: t })
 const panel = (p: PanelId) => () => focusPanel(p)
 
 // File
-def('file.newProject', 'New Project', async () => {
-  if (get().history.dirty) toast('Previous project had unsaved changes (autosave op-log keeps them if it was saved before)', 'info')
-  await call('project.new', { name: 'Untitled' })
-})
+def('file.newProject', 'New Project', async () => void (await call('project.new', { name: 'Untitled' })))
 def('file.newSequence', t('New Sequence'), newSequenceDialog)
 def('file.newBin', t('New Bin'), async () => void (await exec('bin.create', { name: 'New Bin', parent_id: get().currentBin })))
 def('file.open', 'Open Project', async () => {
@@ -311,8 +311,8 @@ export async function openProjectPath(path: string, fromRecent = false): Promise
   if (ok) void window.lumina.addRecent(path)
   else if (fromRecent) void window.lumina.removeRecent(path) // moved or deleted: drop it from the list (the error was shown)
 }
-def('file.save', t('Save'), async () => (get().path ? void (await call('project.save', {})) : saveAs()))
-def('file.saveAs', 'Save As', saveAs)
+def('file.save', t('Save'), async () => (get().path ? void (await call('project.save', {})) : void (await saveAs())))
+def('file.saveAs', 'Save As', async () => void (await saveAs()))
 def('file.import', 'Import', () => importFiles())
 def('file.export', t('Export Media...'), () => openExportDialog())
 def('file.exportFrame', t('Export Frame...'), () => exportFrame())

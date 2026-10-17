@@ -19,6 +19,13 @@ const api = {
     ipcRenderer.on('menu:action', listener)
     return () => ipcRenderer.removeListener('menu:action', listener)
   },
+  /** The window is about to close: settle unsaved projects, then confirmClose() lets it close. */
+  onCloseRequest: (fn: () => void): (() => void) => {
+    const listener = () => fn()
+    ipcRenderer.on('app:closeRequest', listener)
+    return () => ipcRenderer.removeListener('app:closeRequest', listener)
+  },
+  confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirmClose'),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   showItemInFolder: (path: string): Promise<void> => ipcRenderer.invoke('shell:showItem', path),
   videosDir: (): Promise<string> => ipcRenderer.invoke('app:videosDir')

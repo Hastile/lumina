@@ -23,3 +23,27 @@ export function openDialog(spec: DialogSpec): void {
 export function closeDialog(): void {
   useDialog.setState({ dialog: null })
 }
+
+/** A question with its own buttons (e.g. Save / Don't Save / Cancel); Escape picks ``cancel``. */
+export type ChoiceSpec = {
+  title: string
+  message: string
+  buttons: { label: string; value: string; primary?: boolean }[]
+  cancel: string
+}
+
+type PendingChoice = ChoiceSpec & { resolve: (value: string) => void }
+export const useChoice = create<{ choice: PendingChoice | null }>(() => ({ choice: null }))
+
+export function askChoice(spec: ChoiceSpec): Promise<string> {
+  return new Promise((resolve) => {
+    useChoice.getState().choice?.resolve(useChoice.getState().choice!.cancel)
+    useChoice.setState({ choice: { ...spec, resolve } })
+  })
+}
+
+export function answerChoice(value: string): void {
+  const c = useChoice.getState().choice
+  useChoice.setState({ choice: null })
+  c?.resolve(value)
+}

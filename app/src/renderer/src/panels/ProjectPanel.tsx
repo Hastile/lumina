@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { t } from '@shared/i18n'
-import { ChevronLeft, Film, Folder, FolderPlus, Image, LayoutGrid, List, Music, Search, Clapperboard, FilePlus2, Captions, Layers, Sparkles } from 'lucide-react'
+import { ChevronLeft, X, Film, Folder, FolderPlus, Image, LayoutGrid, List, Music, Search, Clapperboard, FilePlus2, Captions, Layers, Sparkles } from 'lucide-react'
 import type { Asset, MediaItem, Sequence } from '../engine/document'
 import { mediaUrl } from '../engine/client'
 import { importFiles, runAction } from '../actions/actions'
@@ -8,6 +8,7 @@ import { openContextMenu } from '../layout/Chrome'
 import { focusPanel } from '../layout/dock'
 import { exec, get, openSequence, set, useStore } from '../state/store'
 import { linkMedia, makeOffline, newAdjustmentLayer, placeAsset } from '../actions/extra'
+import { activateProject, closeProject } from '../actions/projects'
 import { timecode } from '../util/time'
 
 export const DRAG_MIME = 'application/x-lumina-item'
@@ -78,6 +79,8 @@ export function ProjectPanel() {
   const currentBin = useStore((s) => s.currentBin)
   const selected = useStore((s) => s.selectedItems)
   const jobs = useStore((s) => s.jobs)
+  const projects = useStore((s) => s.projects)
+  const path = useStore((s) => s.path)
   const [query, setQuery] = useState('')
   const [view, setView] = useState<'list' | 'icon'>('list')
   const [dropping, setDropping] = useState(false)
@@ -177,13 +180,44 @@ export function ProjectPanel() {
       onDrop={(e) => onDrop(e)}
       onContextMenu={(e) => rowMenu(e)}
     >
+      {projects.length > 1 && (
+        <div className="lm-project-tabs" data-project-tabs="">
+          {projects.map((p) => (
+            <div
+              key={p.key}
+              className={`tab ${p.active ? 'active' : ''}`}
+              data-project-tab={p.name}
+              title={p.path ?? p.name}
+              onMouseDown={(e) => e.button === 0 && void activateProject(p.key)}
+              onAuxClick={(e) => e.button === 1 && void closeProject(p.key)}
+              onContextMenu={(e) => {
+                e.stopPropagation()
+                openContextMenu(e, [
+                  { label: t('Close Project'), run: () => void closeProject(p.key) },
+                  { label: t('Close All Projects'), run: () => runAction('file.closeAllProjects') }
+                ])
+              }}
+            >
+              <span className="text">{p.name}{p.dirty ? ' *' : ''}</span>
+              <button
+                className="close"
+                title={t('Close Project')}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={() => void closeProject(p.key)}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="lm-toolbar lm-project-head">
         {bin?.parent_id ? (
           <button className="lm-iconbtn" title={t('Up one level')} onClick={() => set({ currentBin: bin.parent_id })}>
             <ChevronLeft size={15} />
           </button>
         ) : null}
-        <span className="lm-project-title">{bin?.name ?? doc.name}.lumina</span>
+        <span className="lm-project-title">{bin?.parent_id ? bin.name : `${path ? path.split(/[\\/]/).pop()!.replace(/\.lumina$/i, '') : doc.name}.lumina`}</span>
         <span className="lm-count">{rows.length} {t('items')}</span>
       </div>
       <div className="lm-toolbar">

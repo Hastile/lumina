@@ -236,6 +236,15 @@ class Session:
         self.txn = None
         self._emit({"type": "reset", "version": self.version, "document": self.doc, "path": path, **self.history_state()})
 
+    def discard_recovery(self) -> None:
+        """Closing without saving: drop the crash-recovery op-log so the discarded edits don't come back."""
+        log = self._oplog_path()
+        if log and log.exists() and self.version != self.saved_version:
+            try:
+                log.unlink()
+            except OSError:
+                pass
+
     # ------------------------------------------------------------ op-log (crash recovery)
 
     def _oplog_path(self) -> Path | None:

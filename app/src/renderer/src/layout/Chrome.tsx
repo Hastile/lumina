@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { create } from 'zustand'
-import { closeDialog, useDialog } from '../state/dialog'
+import { answerChoice, closeDialog, useChoice, useDialog } from '../state/dialog'
 import { useStore } from '../state/store'
 import { runAction } from '../actions/actions'
 import { DEFAULT_KEYMAP } from '../actions/keymap'
@@ -82,6 +82,28 @@ export function DialogHost() {
           </button>
         </div>
       </form>
+    </div>
+  )
+}
+
+export function ChoiceHost() {
+  const choice = useChoice((s) => s.choice)
+  if (!choice) return null
+  return (
+    <div className="lm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && answerChoice(choice.cancel)}>
+      <div className="lm-dialog lm-choice" data-choice-dialog="" tabIndex={-1} onKeyDown={(e) => e.key === 'Escape' && answerChoice(choice.cancel)}>
+        <h3>{choice.title}</h3>
+        <div className="body">
+          <div className="message">{choice.message}</div>
+        </div>
+        <div className="actions">
+          {choice.buttons.map((b) => (
+            <button key={b.value} type="button" className={`lm-btn ${b.primary ? 'primary' : ''}`} data-choice={b.value} autoFocus={b.primary} onClick={() => answerChoice(b.value)}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }

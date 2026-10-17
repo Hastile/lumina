@@ -192,3 +192,9 @@ input:focus, select:focus { outline: 1px solid var(--accent); }
 .lm-speed .pair input { width: 80px; }
 .lm-speed .note.bad { border-left-color: #d44; color: #f0a0a0; }
 .lm-speed h3 .dim { color: var(--text-dim); font-weight: 400; }
+.lm-choice .body { display: block; }
+.lm-choice .message { max-width: 460px; line-height: 1.5; white-space: pre-line; }
+.lm-choice .actions .lm-btn:last-child { margin-left: 0; }
+.lm-cache { width: 620px; }
+.lm-cache .pair { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lm-cache .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: text; font-family: var(--mono, monospace); font-size: 11px; }

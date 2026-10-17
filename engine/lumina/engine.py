@@ -47,14 +47,33 @@ class MediaServices:
 
 
 class Engine:
+    """Open projects (Premiere keeps several open): one Session each; one is active and every
+    command, query and agent works on it. ``session`` is the active one."""
+
     def __init__(self, services: Any = None, run_jobs: bool = True):
-        self.session = Session(services=services or MediaServices())
+        self.services = services or MediaServices()
         self.run_jobs = run_jobs
+        self._listeners: list[Callable[[dict], None]] = []
+        self.projects: dict[str, Session] = {}
+        self.active = ""
+        self._projects_sig = None
+        self._add(self._blank())
         self._queued: set[str] = set()
-        self.jobs = JobRunner(record=self._record_derived, emit=self.session._emit)
-        self.exports = export_mod.ExportQueue(emit=self.session._emit)
+        self.jobs = JobRunner(record=self._record_derived, emit=self._broadcast)
+        self.exports = export_mod.ExportQueue(emit=self._broadcast)
+        from . import media_cache
+
+        media_cache.auto_clean(self._media_in_use)
         self.methods: dict[str, Callable[[dict], Any]] = {
-            "hello": lambda p: {"engine": "lumina", "api": 1, "commands": REGISTRY.describe(), **self.session.snapshot()},
+            "hello": lambda p: {"engine": "lumina", "api": 1, "commands": REGISTRY.describe(), **self.session.snapshot(),
+                                "projects": self._project_list()},
+            "project.list": lambda p: self._project_list(),
+            "project.activate": self._activate,
+            "project.close": self._close,
+            "project.close_all": self._close_all,
+            "cache.info": lambda p: self._cache().info(self._media_in_use()),
+            "cache.clean": self._cache_clean,
+            "cache.settings": lambda p: self._cache().update_settings(p),
             "commands.list": lambda p: REGISTRY.describe(),
             "execute": self._execute,
             "undo": lambda p: self.session.undo(),
@@ -63,9 +82,9 @@ class Engine:
             "transaction.commit": lambda p: self.session.commit(),
             "transaction.rollback": lambda p: self.session.rollback(),
             "snapshot": lambda p: self.session.snapshot(),
-            "project.new": lambda p: self.session.new(p.get("name", "Untitled")),
+            "project.new": self._new,
             "project.open": self._open,
-            "project.save": lambda p: self.session.save(p.get("path")),
+            "project.save": lambda p: self._session_of(p).save(p.get("path")),
             "project.summary": lambda p: views.project_summary(self.session.doc),
             "timeline.state": lambda p: views.timeline_state(self.session.doc, p.get("sequence_id")),
             "jobs.list": lambda p: self.jobs.list() + self.exports.list(),
@@ -99,7 +118,150 @@ class Engine:
         return fn(params or {})
 
     def subscribe(self, fn):
-        return self.session.subscribe(fn)
+        self._listeners.append(fn)
+        return lambda: self._listeners.remove(fn) if fn in self._listeners else None
+
+    # ------------------------------------------------------------ open projects
+
+    @property
+    def session(self) -> Session:
+        return self.projects[self.active]
+
+    def _session_of(self, p: dict) -> Session:
+        key = p.get("key") or self.active
+        if key not in self.projects:
+            raise CommandError("NO_PROJECT", f"project not open: {key}")
+        return self.projects[key]
+
+    def _broadcast(self, event: dict) -> None:
+        for fn in list(self._listeners):
+            try:
+                fn(event)
+            except Exception:  # noqa: BLE001 - a broken client must not break editing
+                pass
+
+    def _add(self, s: Session) -> str:
+        from .model import new_id
+
+        key = new_id()
+        self.projects[key] = s
+        s.subscribe(lambda ev, k=key: self._from_session(k, ev))
+        if not self.active:
+            self.active = key
+        return key
+
+    def _from_session(self, key: str, ev: dict) -> None:
+        if key == self.active:
+            self._broadcast(ev)
+        if ev.get("type") in ("patch", "saved", "reset", "history"):
+            self._announce_projects()
+
+    def _project_list(self) -> list[dict]:
+        # named like Premiere's project tabs: the file name once saved
+        return [{"key": k, "name": Path(s.path).stem if s.path else s.doc["name"], "path": s.path, "dirty": s.version != s.saved_version, "active": k == self.active,
+                 "blank": self._pristine(s)} for k, s in self.projects.items()]
+
+    def _announce_projects(self) -> None:
+        lst = self._project_list()
+        sig = [tuple(x.values()) for x in lst]
+        if sig != self._projects_sig:
+            self._projects_sig = sig
+            self._broadcast({"type": "projects", "projects": lst})
+
+    def _blank(self) -> Session:
+        s = Session(services=self.services)
+        s.placeholder = True  # the blank project shown when none is open
+        return s
+
+    @staticmethod
+    def _pristine(s: Session) -> bool:
+        """The untouched blank project (at start, after closing the last one): New / Open take its place."""
+        return getattr(s, "placeholder", False) and s.path is None and s.version == 0 and not s.undo_stack
+
+    def _switch(self, key: str) -> dict:
+        self.active = key
+        snap = self.session.snapshot()
+        self._broadcast({"type": "reset", "version": snap["version"], "document": snap["document"], "path": snap["path"],
+                         **self.session.history_state()})
+        self._announce_projects()
+        self._queued.clear()
+        self._submit_missing_jobs()
+        return snap
+
+    def _new(self, p: dict) -> dict:
+        if self._pristine(self.session):
+            self.session.placeholder = False
+            snap = self.session.new(p.get("name", "Untitled"))
+            self._announce_projects()
+            return snap
+        s = Session(services=self.services)
+        s.new(p.get("name", "Untitled"))
+        return self._switch(self._add(s))
+
+    def _activate(self, p: dict) -> dict:
+        key = p.get("key")
+        if key not in self.projects:
+            raise CommandError("NO_PROJECT", f"project not open: {key}")
+        return self._switch(key) if key != self.active else self.session.snapshot()
+
+    def _close(self, p: dict) -> dict:
+        """Close a project (default: the active one). Unsaved changes refuse unless discard=true (the GUI
+        asks Save / Don't Save / Cancel first). Closing the last one leaves a blank project."""
+        key = p.get("key") or self.active
+        s = self.projects.get(key)
+        if s is None:
+            raise CommandError("NO_PROJECT", f"project not open: {key}")
+        if s.version != s.saved_version and not p.get("discard"):
+            raise CommandError("UNSAVED", f"{s.doc['name']} has unsaved changes", key=key, name=s.doc["name"])
+        s.discard_recovery()
+        del self.projects[key]
+        if not self.projects:
+            self.active = ""
+            self._add(self._blank())
+            return self._switch(self.active)
+        if key == self.active:
+            return self._switch(list(self.projects)[-1])
+        self._announce_projects()
+        return self.session.snapshot()
+
+    def _close_all(self, p: dict) -> dict:
+        dirty = [k for k, s in self.projects.items() if s.version != s.saved_version]
+        if dirty and not p.get("discard"):
+            raise CommandError("UNSAVED", "projects have unsaved changes", keys=dirty,
+                               names=[self.projects[k].doc["name"] for k in dirty])
+        for s in self.projects.values():
+            s.discard_recovery()
+        self.projects.clear()
+        self.active = ""
+        self._add(self._blank())
+        return self._switch(self.active)
+
+    def _media_in_use(self) -> set[str]:
+        return {mid for s in self.projects.values() for mid in s.doc["media"]}
+
+    @staticmethod
+    def _cache():
+        from . import media_cache
+
+        return media_cache
+
+    def _cache_clean(self, p: dict) -> dict:
+        """Delete media cache: unused (no open project's media), all, or older than N days. Open projects'
+        derived files that were deleted are forgotten and regenerated."""
+        mc = self._cache()
+        try:
+            res = mc.clean(p.get("mode", "unused"), self._media_in_use(), p.get("days"))
+        except ValueError as exc:
+            raise CommandError("BAD_PARAMS", str(exc)) from exc
+        gone = set(res["removed_media"])
+        for s in self.projects.values():
+            for mid, item in s.doc["media"].items():
+                if mid in gone or any(item.get(k) and not Path(item[k]).exists()
+                                      for k in ("thumbnail_path", "waveform_path", "proxy_path", "filmstrip_path")):
+                    s.execute("media.set_derived", {"media_id": mid, "clear": True})
+        self._queued.clear()
+        self._submit_missing_jobs()
+        return res
 
     # ------------------------------------------------------------ methods
 
@@ -130,14 +292,27 @@ class Engine:
                 self.jobs.submit_media(item, {"filmstrip"})
 
     def _open(self, p: dict) -> dict:
-        snap = self.session.open(p["path"])
-        self._queued.clear()
-        self._submit_missing_jobs()
+        """Open a project next to the open ones (Premiere); one already open is brought to front."""
+        target = str(Path(p["path"]).resolve())
+        for k, s in self.projects.items():
+            if s.path and str(Path(s.path).resolve()).lower() == target.lower():
+                return self._switch(k) if k != self.active else s.snapshot()
+        if self._pristine(self.session):
+            snap = self.session.open(p["path"])
+            self.session.placeholder = False
+            self._queued.clear()
+            self._submit_missing_jobs()
+            self._announce_projects()
+            return snap
+        s = Session(services=self.services)
+        snap = s.open(p["path"])
+        self._switch(self._add(s))
         return snap
 
     def _record_derived(self, media_id: str, fields: dict) -> None:
-        if media_id in self.session.doc["media"]:
-            self.session.execute("media.set_derived", {"media_id": media_id, **fields})
+        for s in self.projects.values():  # the project the media belongs to, active or not
+            if media_id in s.doc["media"]:
+                s.execute("media.set_derived", {"media_id": media_id, **fields})
 
     def _export_start(self, p: dict) -> dict:
         from .commands.project import seq_of

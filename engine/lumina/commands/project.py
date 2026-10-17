@@ -248,15 +248,18 @@ class SetDerived(Params):
     thumbnail_path: str | None = None
     waveform_path: str | None = None
     filmstrip_path: str | None = None
+    clear: bool = False  # forget every generated file (the media cache was cleaned)
 
 
 @command("media.set_derived", SetDerived, undoable=False)
 def media_set_derived(ctx: Context, p: SetDerived):
     """Record generated proxy/thumbnail/waveform files (cache data, not undoable)."""
-    media_of(ctx.doc, p.media_id)
+    item = media_of(ctx.doc, p.media_id)
     for key in ("proxy_path", "thumbnail_path", "waveform_path", "filmstrip_path"):
         value = getattr(p, key)
-        if value is not None:
+        if p.clear and value is None and item.get(key) is not None:
+            ctx.m.set(["media", p.media_id, key], None)
+        elif value is not None:
             ctx.m.set(["media", p.media_id, key], value)
 
 

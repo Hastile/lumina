@@ -28,7 +28,9 @@ PEAK_SAMPLE_RATE = 8000
 
 
 def cache_root() -> Path:
-    root = Path(os.environ.get("LUMINA_CACHE") or Path.home() / ".lumina" / "cache")
+    from .. import media_cache
+
+    root = media_cache.root()
     root.mkdir(parents=True, exist_ok=True)
     return root
 

@@ -155,6 +155,9 @@ const MENU: Record<string, Item[]> = {
     { label: 'Open Premiere Pro Project (.prproj)...', action: 'file.open' },
     { label: 'Open Recent', recent: true },
     'sep',
+    { label: 'Close Project', action: 'file.closeProject', accel: 'Ctrl+Shift+W' },
+    { label: 'Close All Projects', action: 'file.closeAllProjects' },
+    'sep',
     { label: 'Save', action: 'file.save', accel: 'Ctrl+S' },
     { label: 'Save As...', action: 'file.saveAs', accel: 'Ctrl+Shift+S' },
     'sep',
@@ -184,7 +187,8 @@ const MENU: Record<string, Item[]> = {
     { label: 'Select All', action: 'edit.selectAll', accel: 'Ctrl+A' },
     { label: 'Deselect All', action: 'edit.deselectAll', accel: 'Ctrl+Shift+A' },
     'sep',
-    { label: 'Keyboard Shortcuts...', action: 'edit.keyboardShortcuts', accel: 'Ctrl+Alt+K' }
+    { label: 'Keyboard Shortcuts...', action: 'edit.keyboardShortcuts', accel: 'Ctrl+Alt+K' },
+    { label: 'Media Cache...', action: 'edit.mediaCache' }
   ],
   Clip: [
     { label: 'Rename...', action: 'clip.rename' },
@@ -357,6 +361,14 @@ function createWindow(): BrowserWindow {
     win.show()
   })
   buildMenu(win)
+  // Closing asks the renderer first: unsaved projects get Save / Don't Save / Cancel, and the
+  // renderer answers with app:confirmClose. A dead renderer does not keep the window open.
+  win.on('close', (e) => {
+    if (closeConfirmed.has(win) || win.webContents.isCrashed() || win.webContents.isLoading()) return
+    e.preventDefault()
+    win.webContents.send('app:closeRequest')
+  })
+  win.webContents.on('render-process-gone', () => closeConfirmed.add(win))
   // Test hook: LUMINA_CAPTURE=out.png [LUMINA_CAPTURE_DELAY=ms] saves a screenshot.
   // Repeats every LUMINA_CAPTURE_EVERY ms when set (out.png is overwritten).
   if (process.env.LUMINA_CAPTURE) {
@@ -379,6 +391,14 @@ function createWindow(): BrowserWindow {
   }
   return win
 }
+
+const closeConfirmed = new WeakSet<BrowserWindow>()
+ipcMain.handle('app:confirmClose', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender)
+  if (!win) return
+  closeConfirmed.add(win)
+  win.close()
+})
 
 ipcMain.handle('engine:info', async () => {
   if (engineInfo) return { ok: true, info: engineInfo }
@@ -445,4 +465,5 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-app.on('before-quit', stopEngine)
+// (not before-quit: a window may still ask to save, which needs the engine, or cancel the quit)
+app.on('will-quit', stopEngine)

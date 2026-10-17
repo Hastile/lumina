@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { applyPatch, engine, EngineError, type EngineEvent, type HistoryState, type Job } from '../engine/client'
+import { applyPatch, engine, EngineError, type EngineEvent, type HistoryState, type Job, type ProjectInfo } from '../engine/client'
 import type { Clip, MediaItem, Project, Sequence, Track } from '../engine/document'
 
 export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'razor' | 'slip' | 'slide' | 'pen' | 'hand' | 'zoom' | 'type' | 'rectangle' | 'ellipse'
@@ -43,6 +43,7 @@ type State = {
 
   pxPerSecond: number
   scrollX: number
+  projects: ProjectInfo[] // open projects (the active one is doc)
   openSequences: string[] // the Timeline panel's tabs (Premiere opens sequences one by one)
 }
 
@@ -85,6 +86,7 @@ export const useStore = create<State>(() => ({
   showClipKeyframes: true,
   pxPerSecond: 40,
   scrollX: 0,
+  projects: [],
   openSequences: []
 }))
 
@@ -242,6 +244,9 @@ function onEvent(e: EngineEvent): void {
       set({ history })
       break
     }
+    case 'projects':
+      set({ projects: e.projects })
+      break
     case 'job':
       set((s) => ({ jobs: { ...s.jobs, [e.job.id]: e.job } }))
       if (e.job.status === 'failed' && e.job.kind !== 'export') toast(`${e.job.kind} failed: ${e.job.error}`)
@@ -252,10 +257,10 @@ function onEvent(e: EngineEvent): void {
 export async function connectEngine(): Promise<void> {
   try {
     engine.onEvent(onEvent)
-    const hello = (await engine.connect()) as { document: Project; path: string | null; version: number } & HistoryState
-    const { document: doc, path, version, ...history } = hello
+    const hello = (await engine.connect()) as { document: Project; path: string | null; version: number; projects?: ProjectInfo[] } & HistoryState
+    const { document: doc, path, version, projects = [], ...history } = hello
     const seq = doc.active_sequence_id ? doc.sequences[doc.active_sequence_id] : null
-    set({ connected: true, doc, path, version, history: { ...emptyHistory, ...history }, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
+    set({ connected: true, doc, path, version, projects, history: { ...emptyHistory, ...history }, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
   } catch (err) {
     set({ fatal: String(err instanceof Error ? err.message : err) })
   }

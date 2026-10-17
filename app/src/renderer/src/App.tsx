@@ -4,7 +4,8 @@ import { DockviewReact, type DockviewReadyEvent, type IDockviewPanelProps } from
 import { Home } from 'lucide-react'
 import { installKeymap } from './actions/keymap'
 import { restoreLayout, setDockApi } from './layout/dock'
-import { ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
+import { ChoiceHost, ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
+import { MediaCacheDialog } from './layout/MediaCacheDialog'
 import { ExportDialog, RenderQueue } from './layout/ExportDialog'
 import { ShortcutsDialog } from './layout/ShortcutsDialog'
 import { SpeedDialog } from './layout/SpeedDialog'
@@ -112,6 +113,8 @@ export function App() {
       <ExportDialog />
       <ShortcutsDialog />
       <SpeedDialog />
+      <MediaCacheDialog />
+      <ChoiceHost />
       <RenderQueue />
       <ContextMenuHost />
       <Toasts />
