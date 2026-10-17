@@ -42,6 +42,7 @@ type State = {
 
   pxPerSecond: number
   scrollX: number
+  openSequences: string[] // the Timeline panel's tabs (Premiere opens sequences one by one)
 }
 
 const emptyHistory: HistoryState = { can_undo: false, can_redo: false, undo_label: null, redo_label: null, dirty: false, in_transaction: false }
@@ -81,7 +82,8 @@ export const useStore = create<State>(() => ({
   flashTracks: [],
   showClipKeyframes: true,
   pxPerSecond: 40,
-  scrollX: 0
+  scrollX: 0,
+  openSequences: []
 }))
 
 export const set = useStore.setState
@@ -89,9 +91,10 @@ export const get = useStore.getState
 
 // ---------------------------------------------------------------- selectors
 
+/** The sequence in the Timeline and Program monitor: the active one, while its tab is open. */
 export function activeSequence(s: State = get()): Sequence | null {
   const id = s.doc?.active_sequence_id
-  return (id && s.doc?.sequences[id]) || null
+  return (id && s.openSequences.includes(id) && s.doc?.sequences[id]) || null
 }
 
 export function sourceMedia(s: State = get()): MediaItem | null {
@@ -111,6 +114,60 @@ export function sequenceEnd(seq: Sequence): number {
   for (const t of Object.values(seq.tracks)) for (const c of Object.values(t.clips)) end = Math.max(end, c.end)
   return end
 }
+
+// ---------------------------------------------------------------- open sequences
+// Like Premiere, a project opens only the sequences that were open last time (or its active
+// one); others open from the Project panel and close from their Timeline tab. The list is a
+// view setting, kept per project in localStorage, not part of the document.
+
+const openKey = (doc: Project) => `lumina.openSequences.${doc.id}`
+
+function restoreOpen(doc: Project): string[] {
+  let ids: string[] = []
+  try {
+    ids = JSON.parse(localStorage.getItem(openKey(doc)) ?? '[]')
+  } catch {
+    /* none saved */
+  }
+  ids = Array.isArray(ids) ? ids.filter((id) => doc.sequences[id]) : []
+  const active = doc.active_sequence_id
+  return ids.length || !active || !doc.sequences[active] ? ids : [active]
+}
+
+export function openSequence(id: string): void {
+  if (!get().openSequences.includes(id)) set((s) => ({ openSequences: [...s.openSequences, id] }))
+  if (get().doc?.active_sequence_id !== id) void exec('sequence.set_active', { sequence_id: id })
+}
+
+/** Close a Timeline tab; closing the active one activates its neighbour (Premiere). */
+export function closeSequence(id: string): void {
+  const open = get().openSequences
+  const i = open.indexOf(id)
+  if (i < 0) return
+  const rest = open.filter((x) => x !== id)
+  set({ openSequences: rest })
+  const next = rest[Math.min(i, rest.length - 1)]
+  if (get().doc?.active_sequence_id === id && next) void exec('sequence.set_active', { sequence_id: next })
+}
+
+useStore.subscribe((s, prev) => {
+  const doc = s.doc
+  if (!doc || doc === prev.doc) {
+    if (doc && s.openSequences !== prev.openSequences) {
+      try {
+        localStorage.setItem(openKey(doc), JSON.stringify(s.openSequences))
+      } catch {
+        /* storage unavailable: the tabs just aren't remembered */
+      }
+    }
+    return
+  }
+  let open = doc.id !== prev.doc?.id ? restoreOpen(doc) : s.openSequences.filter((id) => doc.sequences[id])
+  // a sequence made active elsewhere (new sequence, MCP, nested double-click) opens its tab
+  const active = doc.active_sequence_id
+  if (active && doc.sequences[active] && active !== prev.doc?.active_sequence_id && !open.includes(active)) open = [...open, active]
+  if (open.length !== s.openSequences.length || open.some((id, i) => id !== s.openSequences[i])) set({ openSequences: open })
+})
 
 // ---------------------------------------------------------------- toasts
 

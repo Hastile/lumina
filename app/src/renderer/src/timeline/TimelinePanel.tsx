@@ -4,14 +4,14 @@ import { EFFECTS, TRANSITIONS, trackTransitions, type TransitionWindow } from '.
 import { transitionDurationDialog } from './transitionDialog'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t as tx } from '@shared/i18n'
-import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw } from 'lucide-react'
+import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X } from 'lucide-react'
 import type { Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
 import { runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
 import { DRAG_MIME } from '../panels/ProjectPanel'
-import { activeSequence, exec, findClip, get, sequenceEnd, set, toast, useStore } from '../state/store'
+import { activeSequence, closeSequence, exec, findClip, get, openSequence, sequenceEnd, set, toast, useStore } from '../state/store'
 import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
 import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
@@ -197,6 +197,7 @@ async function dropOnEmpty(e: React.DragEvent) {
 function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, MediaItem> }) {
   const sequences = useStore((s) => s.doc?.sequences)
   const activeId = useStore((s) => s.doc?.active_sequence_id)
+  const openIds = useStore((s) => s.openSequences)
   const pps = useStore((s) => s.pxPerSecond)
   const scrollX = useStore((s) => s.scrollX)
   const time = useStore((s) => s.programTime)
@@ -783,9 +784,17 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   return (
     <div className="lm-panel lm-timeline" style={{ cursor }}>
       <div className="lm-seqtabs">
-        {Object.values(sequences ?? {}).map((s) => (
-          <span key={s.id} className={`tab ${s.id === activeId ? 'active' : ''}`} onClick={() => void exec('sequence.set_active', { sequence_id: s.id })}>
+        {openIds.map((id) => sequences?.[id]).filter((s): s is Sequence => !!s).map((s) => (
+          <span
+            key={s.id}
+            className={`tab ${s.id === activeId ? 'active' : ''}`}
+            onClick={() => openSequence(s.id)}
+            onAuxClick={(e) => e.button === 1 && closeSequence(s.id)}
+          >
             {s.name}
+            <button className="close" title={tx('Close')} onClick={(e) => (e.stopPropagation(), closeSequence(s.id))}>
+              <X size={11} />
+            </button>
           </span>
         ))}
       </div>

@@ -6,7 +6,7 @@
 // Bezier, square = Hold).
 
 import { t } from '@shared/i18n'
-import { exec, get, set } from '../state/store'
+import { activeSequence, exec, get, set } from '../state/store'
 import { openContextMenu } from '../layout/Chrome'
 import type { KeyframeProp, Kf } from '../util/motion'
 import { seqTimeOf } from '../util/motion'
@@ -186,7 +186,7 @@ export function copySelectedKeyframes(): boolean {
   const s = get()
   const sel = s.kfSel
   if (!sel?.keys.length || s.focusedPanel !== 'effectControls') return false
-  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const seq = activeSequence(s)
   const clip = seq && Object.values(seq.tracks).map((tr) => tr.clips[sel.clipId]).find(Boolean)
   if (!clip) return false
   const targets = selectionTargets(sel.keys)
@@ -212,7 +212,7 @@ export function copySelectedKeyframes(): boolean {
 export function pasteKeyframes(): boolean {
   const s = get()
   if (s.focusedPanel !== 'effectControls' || !kfClipboard.length) return false
-  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const seq = activeSequence(s)
   const clipId = s.selectedClips[0]
   if (!seq || !clipId) return false
   void exec('keyframes.paste', { sequence_id: seq.id, clip_id: clipId, at: s.programTime, properties: kfClipboard }, t('Paste Keyframes'))
@@ -224,7 +224,7 @@ export function nudgeSelectedKeyframes(frames: number): boolean {
   const s = get()
   const sel = s.kfSel
   if (!sel?.keys.length || s.focusedPanel !== 'effectControls') return false
-  const seq = s.doc?.active_sequence_id ? s.doc.sequences[s.doc.active_sequence_id] : null
+  const seq = activeSequence(s)
   const clip = seq && Object.values(seq.tracks).map((tr) => tr.clips[sel.clipId]).find(Boolean)
   if (!seq || !clip) return false
   const d = frames * ticksPerFrame(seq.settings)

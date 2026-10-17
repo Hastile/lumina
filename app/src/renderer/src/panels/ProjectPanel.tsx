@@ -6,7 +6,7 @@ import { mediaUrl } from '../engine/client'
 import { importFiles, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { focusPanel } from '../layout/dock'
-import { exec, get, set, useStore } from '../state/store'
+import { exec, get, openSequence, set, useStore } from '../state/store'
 import { timecode } from '../util/time'
 
 export const DRAG_MIME = 'application/x-lumina-item'
@@ -42,7 +42,7 @@ function openRow(r: Row): void {
     set({ sourceMediaId: r.id, sourceTime: r.item.in_point ?? 0 })
     focusPanel('source')
   } else {
-    void exec('sequence.set_active', { sequence_id: r.id })
+    openSequence(r.id)
     set({ programTime: r.seq.playhead })
     focusPanel('timeline')
   }
