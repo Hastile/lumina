@@ -215,6 +215,11 @@ class Session:
                 raise CommandError("BAD_FILE", f"{path} is not a Lumina project")
             # normalizing through the schema also migrates older files (fills new fields with defaults)
             doc = validate_project(raw["document"]).model_dump(mode="json")
+            for seq in doc["sequences"].values():
+                # caption tracks sit above the video tracks (older files may have them anywhere)
+                vt = seq["video_tracks"]
+                caps = [t for t in vt if seq["tracks"][t].get("caption_style")]
+                seq["video_tracks"] = [t for t in vt if t not in caps] + caps
             self._reset(doc, str(Path(path).resolve()), version=int(raw.get("version", 0)))
             recovered = self._replay_oplog()
             snap = self.snapshot()

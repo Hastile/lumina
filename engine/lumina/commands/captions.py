@@ -229,8 +229,12 @@ def caption_from_graphics(ctx: Context, p: TrackRef):
     candidates = [(c, t) for c, t in candidates if t is not None]
     if not candidates:
         raise CommandError("NOTHING_TO_CONVERT", "the track has no single-text graphics")
+    was_caption = bool(track.get("caption_style"))
     style = track.get("caption_style") or {k: candidates[0][1][1].get(k) for k in STYLE_FIELDS if k in candidates[0][1][1]}
     ctx.m.set(["sequences", seq["id"], "tracks", p.track_id, "caption_style"], style)
+    if not was_caption:
+        # caption tracks sit above the video tracks
+        ctx.m.set(["sequences", seq["id"], "video_tracks"], [t for t in seq["video_tracks"] if t != p.track_id] + [p.track_id])
     for c, (text, layer) in candidates:
         over = {k: layer[k] for k in STYLE_FIELDS if k in layer and layer[k] != style.get(k)}
         path = clip_path(seq, p.track_id, c["id"])

@@ -344,3 +344,25 @@ def test_caption_asset_from_srt_and_place(media):
     cues = clips(e, tid=r["track_id"])
     assert [c["caption"]["text"] for c in cues] == ["첫 줄", "둘째 줄"] and cues[0]["start"] == SEC
     roundtrip(e)
+
+
+def test_caption_tracks_stay_on_top(media):
+    e, (vid,) = engine_with([media["video"]])
+    black_sequence(e)
+    cap = run(e, "caption.add_track")["track_id"]
+    v = run(e, "track.add", kind="video")["track_id"]
+    order = seq(e)["video_tracks"]
+    assert order[-1] == cap and order.index(v) < order.index(cap)
+    with pytest.raises(CommandError):
+        run(e, "clip.place", media_id=vid, at=0, video_track_id=cap)
+    g = run(e, "graphic.create_text", text="t", at=0, duration="1s", track_id=seq(e)["video_tracks"][0])
+    run(e, "caption.from_graphics", track_id=seq(e)["video_tracks"][0])
+    assert seq(e)["video_tracks"][-1] == g["track_id"]
+
+
+def test_new_video_track_numbering_skips_captions(media):
+    e, _ = engine_with([media["video"]])
+    run(e, "sequence.create", name="S", video_tracks=3, audio_tracks=1)
+    run(e, "caption.add_track")
+    tid = run(e, "track.add", kind="video")["track_id"]
+    assert seq(e)["tracks"][tid]["name"] == "Video 4"

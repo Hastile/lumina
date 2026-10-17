@@ -47,7 +47,8 @@ function saveJson(key: string, v: unknown) {
 const EDGE_PX = 6
 const SNAP_PX = 8
 
-type Row = { track: Track; label: string; kind: 'video' | 'audio'; index: number; top: number; height: number }
+type Area = 'caption' | 'video' | 'audio'
+type Row = { track: Track; label: string; kind: 'video' | 'audio'; area: Area; index: number; top: number; height: number }
 
 type Drag =
   | { kind: 'move'; ids: string[]; anchorRow: number; startX: number; startY: number; dt: number; dRow: number; moved: boolean; base: Clip }
@@ -130,42 +131,59 @@ function clipKeyframeTimes(clip: Clip, kind: 'video' | 'audio'): { t: number; pr
   return [...at].map(([t, props]) => ({ t, props })).sort((a, b) => a.t - b.t)
 }
 
-type Layout = { vContent: number; aContent: number; rows: Row[]; videoH: number; audioTop: number; audioH: number; vMax: number; aMax: number; vScroll: number; aScroll: number }
+type Layout = {
+  vContent: number; aContent: number; rows: Row[]; capH: number; videoTop: number; videoH: number; audioTop: number; audioH: number
+  vMax: number; aMax: number; vScroll: number; aScroll: number
+}
 
-/** Premiere's two track areas: video above the divider with V1 against it (scrolling up reveals the
- * higher tracks), audio below it with A1 against it; each scrolls on its own. Row tops are in the
- * body's coordinates. */
+/** Premiere's track areas: caption tracks pinned at the top (they never scroll away), video below
+ * them with V1 against the divider (scrolling up reveals the higher tracks), audio below the divider
+ * with A1 against it; video and audio scroll on their own. Row tops are in the body's coordinates. */
 type Kind = 'video' | 'audio'
 const clampH = (h: number) => Math.round(Math.max(MIN_TRACK_H, Math.min(MAX_TRACK_H, h)))
 
 function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<Kind, number>, bodyH: number, split: number, vScroll: number, aScroll: number): Layout {
-  const videoH = Math.max(0, Math.min(bodyH - SECTION_GAP, Math.round(bodyH * split)))
-  const audioTop = videoH + SECTION_GAP
-  const audioH = Math.max(0, bodyH - audioTop)
-  // a track's own height times its area's zoom (the vertical zoom bar's knobs)
+  // a track's own height times its area's zoom (the vertical zoom bar's knobs); caption tracks keep their own height
   const hOf = (id: string, kind: Kind) => clampH((heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)) * zoom[kind])
-  const vContent = seq.video_tracks.reduce((a, id) => a + hOf(id, 'video'), 0)
+  const capIds = seq.video_tracks.filter((id) => seq.tracks[id].caption_style)
+  const vidIds = seq.video_tracks.filter((id) => !seq.tracks[id].caption_style)
+  const capContent = capIds.reduce((a, id) => a + clampH(heights[id] ?? VIDEO_H), 0)
+  const capH = capIds.length ? Math.min(capContent, Math.round(bodyH * 0.4)) : 0
+  const videoTop = capH ? capH + SECTION_GAP : 0
+  const rest = Math.max(0, bodyH - videoTop)
+  const videoH = Math.max(0, Math.min(rest - SECTION_GAP, Math.round(rest * split)))
+  const audioTop = videoTop + videoH + SECTION_GAP
+  const audioH = Math.max(0, bodyH - audioTop)
+  const vContent = vidIds.reduce((a, id) => a + hOf(id, 'video'), 0)
   const aContent = seq.audio_tracks.reduce((a, id) => a + hOf(id, 'audio'), 0)
   // an area scrolls only as far as its tracks overflow it (zoom in with the vertical bar's knobs)
   const vMax = Math.max(0, vContent - videoH)
   const aMax = Math.max(0, aContent - audioH)
   const vs = Math.max(0, Math.min(vMax, vScroll))
   const as = Math.max(0, Math.min(aMax, aScroll))
+  // captions: the topmost caption track first, pinned at the top
+  const rows: Row[] = []
+  let y = 0
+  ;[...capIds].reverse().forEach((id, k) => {
+    const h = clampH(heights[id] ?? VIDEO_H)
+    rows.push({ track: seq.tracks[id], label: `C${capIds.length - k}`, kind: 'video', area: 'caption', index: seq.video_tracks.indexOf(id), top: y, height: h })
+    y += h
+  })
   const vrows: Row[] = []
-  let y = videoH + vs
-  seq.video_tracks.forEach((id, index) => {
+  y = videoTop + videoH + vs
+  vidIds.forEach((id, n) => {
     const h = hOf(id, 'video')
     y -= h
-    vrows.push({ track: seq.tracks[id], label: `V${index + 1}`, kind: 'video', index, top: y, height: h })
+    vrows.push({ track: seq.tracks[id], label: `V${n + 1}`, kind: 'video', area: 'video', index: seq.video_tracks.indexOf(id), top: y, height: h })
   })
-  const rows = vrows.reverse()
+  rows.push(...vrows.reverse())
   y = audioTop - as
   seq.audio_tracks.forEach((id, index) => {
     const h = hOf(id, 'audio')
-    rows.push({ track: seq.tracks[id], label: `A${index + 1}`, kind: 'audio', index, top: y, height: h })
+    rows.push({ track: seq.tracks[id], label: `A${index + 1}`, kind: 'audio', area: 'audio', index, top: y, height: h })
     y += h
   })
-  return { vContent, aContent, rows, videoH, audioTop, audioH, vMax, aMax, vScroll: vs, aScroll: as }
+  return { vContent, aContent, rows, capH, videoTop, videoH, audioTop, audioH, vMax, aMax, vScroll: vs, aScroll: as }
 }
 
 function niceStep(pxPerSecond: number): number {
@@ -262,7 +280,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   // h is the height on screen; the stored height is before the area's zoom
   const resizeTrack = (id: string, kind: Kind, h: number, commit: boolean) => {
-    const next = { ...heights, [id]: Math.round(clampH(h) / zoom[kind]) }
+    // caption tracks are not zoomed with the video area (their area is pinned): store the height as shown
+    const next = { ...heights, [id]: Math.round(clampH(h) / (seq.tracks[id]?.caption_style ? 1 : zoom[kind])) }
     setHeights(next)
     if (commit) saveJson('lumina.trackHeights', next)
   }
@@ -276,7 +295,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     const top = bodyRef.current!.getBoundingClientRect().top
     let v = split
     const move = (ev: MouseEvent) => {
-      v = Math.max(0.08, Math.min(0.92, (ev.clientY - top - SECTION_GAP / 2) / Math.max(1, bodyH)))
+      // the split is of the space below the pinned caption tracks
+      const vt = layout.videoTop
+      v = Math.max(0.08, Math.min(0.92, (ev.clientY - top - vt - SECTION_GAP / 2) / Math.max(1, bodyH - vt)))
       setSplit(v)
     }
     const up = () => {
@@ -320,7 +341,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   // the part of a row inside its own track area
   const shown = (r: Row): [number, number] =>
-    r.kind === 'video' ? [Math.max(0, r.top), Math.min(layout.videoH, r.top + r.height)] : [Math.max(layout.audioTop, r.top), Math.min(bodyH, r.top + r.height)]
+    r.area === 'caption' ? [Math.max(0, r.top), Math.min(layout.capH, r.top + r.height)]
+      : r.area === 'video' ? [Math.max(layout.videoTop, r.top), Math.min(layout.videoTop + layout.videoH, r.top + r.height)]
+        : [Math.max(layout.audioTop, r.top), Math.min(bodyH, r.top + r.height)]
   const rowAt = (y: number): number => rows.findIndex((r) => {
     const [a, b] = shown(r)
     return y >= a && y < b
@@ -535,7 +558,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       set({ pxPerSecond: next, scrollX: Math.max(0, tSec * next - x) })
     } else if (e.shiftKey) {
       set({ scrollX: Math.max(0, Math.min(contentW - width, scrollX + e.deltaY)) })
-    } else if (y < layout.videoH) {
+    } else if (y >= layout.videoTop && y < layout.videoTop + layout.videoH) {
       setVScroll(Math.max(0, Math.min(layout.vMax, layout.vScroll - e.deltaY)))
     } else if (y >= layout.audioTop) {
       setAScroll(Math.max(0, Math.min(layout.aMax, layout.aScroll + e.deltaY)))
@@ -587,7 +610,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     let at = snapToFrame(toT(x), st)
     at += snapDelta([at], new Set())
     const r = rows[rowAt(y)]
-    const vIdx = r ? (r.kind === 'video' ? r.index : Math.min(r.index, seq.video_tracks.length - 1)) : 0
+    // media never lands on a caption track: dropped there, it goes to V1
+    const vIdx = r && r.area !== 'caption' ? (r.kind === 'video' ? r.index : Math.min(r.index, seq.video_tracks.length - 1)) : 0
     const aIdx = r ? (r.kind === 'audio' ? r.index : Math.min(r.index, seq.audio_tracks.length - 1)) : 0
     const mode = e.ctrlKey ? 'insert' : 'overwrite'
     await engine.call('transaction.begin', { label: mode === 'insert' ? 'Insert' : 'Overwrite' })
@@ -813,8 +837,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   }
 
   const inOut = seq.in_point != null || seq.out_point != null
-  const vClip = `inset(0 0 ${Math.max(0, bodyH - layout.videoH)}px 0)`
-  const aClip = `inset(${layout.audioTop}px 0 0 0)`
+  const clips_: Record<Area, string> = {
+    caption: `inset(0 0 ${Math.max(0, bodyH - layout.capH)}px 0)`,
+    video: `inset(${layout.videoTop}px 0 ${Math.max(0, bodyH - layout.videoTop - layout.videoH)}px 0)`,
+    audio: `inset(${layout.audioTop}px 0 0 0)`
+  }
+  const areas: Area[] = layout.capH ? ['caption', 'video', 'audio'] : ['video', 'audio']
 
   return (
     <div className="lm-panel lm-timeline" style={{ cursor }}>
@@ -868,9 +896,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       </div>
       <div className="lm-tl-body" ref={bodyRef} onWheel={onWheel}>
         <div className="lm-tl-headers" style={{ width: HEADER_W }}>
-          {(['video', 'audio'] as const).map((k) => (
-            <div key={k} className="lm-tl-pane" style={{ clipPath: k === 'video' ? vClip : aClip }}>
-              {rows.filter((r) => r.kind === k).map((r) => (
+          {areas.map((k) => (
+            <div key={k} className="lm-tl-pane" style={{ clipPath: clips_[k] }}>
+              {rows.filter((r) => r.area === k).map((r) => (
                 <TrackHeader key={r.track.id} row={r} seq={seq} onResize={(h, commit) => resizeTrack(r.track.id, r.kind, h, commit)} />
               ))}
             </div>
@@ -890,13 +918,13 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           onDragLeave={() => setDropTarget(null)}
           onDrop={dropOnLanes}
         >
-          {(['video', 'audio'] as const).map((k) => (
-            <div key={k} className="lm-tl-pane" data-pane={k} style={{ clipPath: k === 'video' ? vClip : aClip }}>
-              {rows.map((r, i) => r.kind === k && (
+          {areas.map((k) => (
+            <div key={k} className="lm-tl-pane" data-pane={k} style={{ clipPath: clips_[k] }}>
+              {rows.map((r, i) => r.area === k && (
                 <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
               ))}
-              {rows.map((r, i) => r.kind === k && Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
-              {rows.map((r) => r.kind === k && trackTransitions(r.track).map((w) => renderTransition(w, r)))}
+              {rows.map((r, i) => r.area === k && Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
+              {rows.map((r) => r.area === k && trackTransitions(r.track).map((w) => renderTransition(w, r)))}
             </div>
           ))}
           {inOut && <div className="lm-lane-inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0), height: bodyH }} />}
@@ -907,10 +935,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
         </div>
         <div className="lm-tl-vbars" style={{ width: VBAR_W }}>
-          <VZoomBar kind="video" top={0} pane={layout.videoH} max={layout.vMax} content={layout.vContent} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
+          <VZoomBar kind="video" top={layout.videoTop} pane={layout.videoH} max={layout.vMax} content={layout.vContent} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
           <VZoomBar kind="audio" top={layout.audioTop} pane={layout.audioH} max={layout.aMax} content={layout.aContent} pos={layout.aScroll} onPos={setAScroll} zoom={zoom.audio} onZoom={(z, c) => zoomArea('audio', z, c)} />
         </div>
-        <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
+        {layout.capH > 0 && <div className="lm-tl-divider caption" data-caption-divider="" style={{ top: layout.capH, height: SECTION_GAP }} />}
+        <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoTop + layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
       </div>
       <ZoomBar width={width} contentW={contentW} pps={pps} scrollX={scrollX} end={end} />
     </div>
@@ -1056,7 +1085,7 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
     e.preventDefault()
     e.stopPropagation()
     const [y0, h0] = [e.clientY, row.height]
-    const at = (ev: MouseEvent) => h0 + (row.kind === 'video' ? y0 - ev.clientY : ev.clientY - y0)
+    const at = (ev: MouseEvent) => h0 + (row.area === 'video' ? y0 - ev.clientY : ev.clientY - y0)
     const move = (ev: MouseEvent) => onResize(at(ev), false)
     const up = (ev: MouseEvent) => {
       window.removeEventListener('mousemove', move)
@@ -1168,7 +1197,7 @@ function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize
           fx{fxCount > 1 ? fxCount : ''}
         </span>
       )}
-      <div className={`lm-th-resize ${row.kind}`} data-track-resize={row.label} onMouseDown={resize} />
+      <div className={`lm-th-resize ${row.area === 'caption' ? 'audio' : row.kind}`} data-track-resize={row.label} onMouseDown={resize} />
     </div>
   )
 }

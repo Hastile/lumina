@@ -489,7 +489,9 @@ def track_add(ctx: Context, p: AddTrack):
     seq = seq_of(ctx.doc, p.sequence_id)
     key = "audio_tracks" if p.kind == "audio" else "video_tracks"
     order = list(seq[key])
-    track = _make_track("audio" if p.kind == "audio" else "video", len(order) + 1)
+    # numbered among its own kind (caption tracks are not counted as video tracks)
+    same = [t for t in order if bool(seq["tracks"][t].get("caption_style")) == (p.kind == "caption")] if p.kind != "audio" else order
+    track = _make_track("audio" if p.kind == "audio" else "video", len(same) + 1)
     track["targeted"] = False
     if p.kind == "caption":
         from ..tracks import default_caption_style
@@ -498,7 +500,10 @@ def track_add(ctx: Context, p: AddTrack):
         track["name"] = "Subtitles"
     if p.name:
         track["name"] = p.name
-    idx = len(order) if p.index is None else max(0, min(p.index, len(order)))
+    # caption tracks stay above every video track: a new video track goes below them
+    n_plain = len(order) if p.kind == "audio" else sum(1 for t in order if not seq["tracks"][t].get("caption_style"))
+    top = len(order) if p.kind == "caption" else n_plain
+    idx = top if p.index is None else max(0 if p.kind != "caption" else n_plain, min(p.index, top))
     order.insert(idx, track["id"])
     ctx.m.set(["sequences", seq["id"], "tracks", track["id"]], track)
     ctx.m.set(["sequences", seq["id"], key], order)

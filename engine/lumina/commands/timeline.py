@@ -258,6 +258,8 @@ def clip_place(ctx: Context, p: PlaceMedia):
     for kind, tid in targets:
         if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != kind:
             raise CommandError("BAD_TRACK", f"{tid} is not a {kind} track")
+        if seq["tracks"][tid].get("caption_style"):
+            raise CommandError("BAD_TRACK", "media cannot go on a caption track")
         require_unlocked(seq, tid)
 
     end = at + duration
@@ -449,6 +451,8 @@ def clip_move(ctx: Context, p: MoveClips):
             raise CommandError("NO_TRACK", "destination track does not exist")
         dest = order[new_idx]
         require_unlocked(seq, dest)
+        if bool(seq["tracks"][dest].get("caption_style")) != bool(c.get("caption")) and dest != tid:
+            raise CommandError("BAD_TRACK", "caption cues stay on caption tracks, and other clips off them")
         if c["start"] + delta < 0:
             raise CommandError("BAD_TIME", "cannot move before 0")
         moves.append((tid, dest, c))
