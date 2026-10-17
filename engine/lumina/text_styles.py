@@ -4,10 +4,12 @@ Styles live outside projects, in ``~/.lumina/text_styles.json`` (or
 ``$LUMINA_TEXT_STYLES``), like Premiere keeps them in
 ``Documents/Adobe/Common/Assets/Text Styles``, where they are imported from
 (.prtextstyle files: a one-item Premiere project whose StyleProjectItem holds
-an ``AE.ADBE Text`` component). A style is text formatting - font, size,
-fill, stroke, shadow, background, tracking, alignment - plus, optionally, a
-default vertical position ``y`` (sequence pixels): applying it to a caption
-track restyles every cue and, with ``y``, moves the captions to that height.
+an ``AE.ADBE Text`` component). A style is a caption track preset: its text
+formatting (``style``: font, size, fill, stroke, shadow, background, tracking,
+alignment) and, when saved from a track, its Align and Transform
+(``transform``: position, scale, rotation, opacity; a ``null`` x means the
+frame's horizontal centre). Applying one sets both on every cue of a track.
+One style can be the default: new caption tracks start with it.
 """
 
 from __future__ import annotations
@@ -24,6 +26,7 @@ from .model import new_id
 _lock = threading.Lock()
 FORMAT_FIELDS = ("font_family", "font_size", "bold", "italic", "color", "stroke_color", "stroke_width", "background", "align",
                  "tracking", "shadow")
+TRANSFORM_FIELDS = ("position", "scale", "rotation", "opacity")
 
 
 def library_path() -> Path:
@@ -32,19 +35,62 @@ def library_path() -> Path:
     return Path.home() / ".lumina" / "text_styles.json"
 
 
-def load() -> list[dict]:
+def _read() -> dict:
     try:
-        return json.loads(library_path().read_text(encoding="utf-8")).get("styles", [])
+        data = json.loads(library_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return []
+        return {"styles": [], "default": None}
+    for s in data.get("styles", []):
+        y = s.get("style", {}).pop("y", None)  # early files kept only a default height
+        if y is not None and not s.get("transform"):
+            s["transform"] = {"position": [None, float(y)]}
+        s.setdefault("transform", None)
+    return {"styles": data.get("styles", []), "default": data.get("default")}
 
 
-def save(styles: list[dict]) -> None:
+def load() -> list[dict]:
+    data = _read()
+    return [dict(s, default=s["id"] == data["default"]) for s in data["styles"]]
+
+
+def save(styles: list[dict], default: str | None | type(...) = ...) -> None:
     p = library_path()
     p.parent.mkdir(parents=True, exist_ok=True)
+    cur = _read()["default"] if default is ... else default
+    keep = [{k: v for k, v in s.items() if k != "default"} for s in styles]
+    if cur is not None and not any(s["id"] == cur for s in keep):
+        cur = None
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"version": 1, "styles": styles}, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.write_text(json.dumps({"version": 2, "default": cur, "styles": keep}, ensure_ascii=False, indent=1), encoding="utf-8")
     os.replace(tmp, p)
+
+
+def get_default() -> dict | None:
+    return next((s for s in load() if s["default"]), None)
+
+
+def set_default(style_id: str | None) -> dict | None:
+    with _lock:
+        lib = load()
+        if style_id is not None and not any(s["id"] == style_id for s in lib):
+            raise KeyError(style_id)
+        save(lib, style_id)
+    return get_default()
+
+
+def track_style(rec: dict, current: dict, settings: dict) -> dict:
+    """A caption track style with ``rec`` applied: its formatting, and its transform when it has one."""
+    out = {**current, **{k: v for k, v in rec["style"].items() if k in FORMAT_FIELDS}}
+    tf = rec.get("transform") or {}
+    for k in TRANSFORM_FIELDS:
+        if tf.get(k) is None:
+            continue
+        if k == "position":
+            x, y = tf["position"]
+            out["position"] = [settings["width"] / 2 if x is None else float(x), float(y)]
+        else:
+            out[k] = float(tf[k])
+    return out
 
 
 def get(style_id: str) -> dict | None:
@@ -157,19 +203,26 @@ def remove(style_id: str) -> bool:
         return len(keep) != len(lib)
 
 
-def save_style(name: str, style: dict, y: float | None = None, replace: bool = False) -> dict:
-    """Save formatting (and an optional default y) as a style; replace=True updates the style of the
+def transform_of(style: dict, settings: dict | None = None) -> dict:
+    """A track's Align and Transform as a style transform (x centred in the frame -> null)."""
+    x, y = style["position"]
+    if settings is not None and abs(x - settings["width"] / 2) < 0.5:
+        x = None
+    return {"position": [x, y], "scale": style.get("scale", 100.0), "rotation": style.get("rotation", 0.0),
+            "opacity": style.get("opacity", 100.0)}
+
+
+def save_style(name: str, style: dict, transform: dict | None = None, replace: bool = False) -> dict:
+    """Save a caption track's style and transform as a style; replace=True updates the style of the
     same name instead of adding another."""
     fmt = {k: style.get(k) for k in FORMAT_FIELDS if k in style}
-    if y is not None:
-        fmt["y"] = float(y)
-    rec = {"id": new_id(), "name": name, "style": fmt, "source": None}
+    rec = {"id": new_id(), "name": name, "style": fmt, "transform": transform, "source": None}
     if replace:
         with _lock:
             lib = load()
             old = next((s for s in lib if s["name"] == name), None)
             if old is not None:
-                old.update(style=fmt)
+                old.update(style=fmt, transform=transform)
                 save(lib)
                 return old
     with _lock:

@@ -412,16 +412,25 @@ def test_text_styles_import_and_apply(media, tmp_path, monkeypatch):
     assert text_styles.get(saved["id"])["style"]["font_family"] == cs["font_family"]
 
 
-def test_text_style_default_y(media, tmp_path, monkeypatch):
+def test_text_style_presets_carry_the_transform_and_a_default(media, tmp_path, monkeypatch):
     from lumina import text_styles
 
     monkeypatch.setenv("LUMINA_TEXT_STYLES", str(tmp_path / "styles.json"))
-    rec = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 100.0}, y=1058)
+    tf = {"position": [None, 1058.0], "scale": 110.0, "rotation": 0.0, "opacity": 90.0}
+    rec = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 100.0}, tf)
     e, _ = engine_with([media["video"]])
     black_sequence(e)
     cap = run(e, "caption.add", text="y", at=0, duration="1s")
-    x0 = seq(e)["tracks"][cap["track_id"]]["caption_style"]["position"][0]
     run(e, "caption.apply_style", track_id=cap["track_id"], style_id=rec["id"])
-    assert seq(e)["tracks"][cap["track_id"]]["caption_style"]["position"] == [x0, 1058.0]
-    again = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 100.0}, y=900, replace=True)
+    cs = seq(e)["tracks"][cap["track_id"]]["caption_style"]
+    assert cs["position"] == [320.0, 1058.0] and cs["scale"] == 110 and cs["opacity"] == 90  # x: frame centre
+    again = text_styles.save_style("s", {"font_family": "Pretendard-Bold", "font_size": 90.0}, tf, replace=True)
     assert again["id"] == rec["id"] and len(text_styles.load()) == 1
+    # the default style: every new caption track starts with it
+    e.dispatch("styles.set_default", {"style_id": rec["id"]})
+    t2 = run(e, "caption.add_track")["track_id"]
+    cs2 = seq(e)["tracks"][t2]["caption_style"]
+    assert cs2["font_family"] == "Pretendard-Bold" and cs2["font_size"] == 90 and cs2["position"] == [320.0, 1058.0]
+    saved = e.dispatch("styles.save", {"track_id": t2, "name": "copy"})
+    assert saved["transform"]["position"] == [None, 1058.0]  # centred x saved as "centre"
+    assert text_styles.get_default()["id"] == rec["id"]

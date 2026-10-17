@@ -78,6 +78,7 @@ class Engine:
             "styles.import_premiere": lambda p: self._styles().import_premiere(p.get("path")),
             "styles.remove": lambda p: {"removed": self._styles().remove(p["style_id"])},
             "styles.save": self._styles_save,
+            "styles.set_default": lambda p: {"default": self._styles().set_default(p.get("style_id"))},
             "export.start": self._export_start,
             "export.cancel": lambda p: self.exports.cancel(p["job_id"]),
             "export.frame": self._export_frame,
@@ -211,8 +212,8 @@ class Engine:
         track = seq["tracks"].get(p.get("track_id") or "")
         if not track or not track.get("caption_style"):
             raise CommandError("NOT_CAPTION_TRACK", "styles.save needs a caption track")
-        y = track["caption_style"]["position"][1] if p.get("with_position") else None
-        return self._styles().save_style(p.get("name") or track["name"], track["caption_style"], y)
+        ts = self._styles()
+        return ts.save_style(p.get("name") or track["name"], track["caption_style"], ts.transform_of(track["caption_style"], seq["settings"]))
 
     # ------------------------------------------------------------ captions / media / analysis
 

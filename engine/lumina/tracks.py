@@ -22,7 +22,19 @@ STYLE_FIELDS = (
 
 
 def default_caption_style(settings: dict) -> dict:
-    """Premiere-like default: white text with a black edge, bottom centre."""
+    """A new caption track's style: the style library's default style, else Premiere-like white text
+    with a black edge at the bottom centre."""
+    base = builtin_caption_style(settings)
+    try:
+        from . import text_styles
+
+        rec = text_styles.get_default()
+    except Exception:  # noqa: BLE001 - an unreadable library must not block a new track
+        rec = None
+    return text_styles.track_style(rec, base, settings) if rec else base
+
+
+def builtin_caption_style(settings: dict) -> dict:
     w, h = settings["width"], settings["height"]
     short = min(w, h)
     return {

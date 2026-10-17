@@ -6,7 +6,11 @@ export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
   // captions, track effects, frame hold, media, analysis
-  'Include the vertical position': '세로 위치(y)도 저장',
+  'Default style': '기본 스타일',
+  'Set as Default Style (new caption tracks)': '기본 스타일로 설정 (새 캡션 트랙)',
+  'Clear Default Style': '기본 스타일 해제',
+  'The Track Style and the Align and Transform are saved together.': '트랙 스타일과 정렬 및 변형이 함께 저장됩니다.',
+  // captions, track effects, frame hold, media, analysis
   // captions, track effects, frame hold, media, analysis
   'Import Text Styles': '텍스트 스타일 가져오기',
   'Import Text Styles...': '텍스트 스타일 가져오기...',

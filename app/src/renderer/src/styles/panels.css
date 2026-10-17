@@ -450,3 +450,4 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-style-chips .chip:hover { border-color: var(--accent); }
 .lm-style-chips .chip.add { color: var(--text-dim); font-size: 12px; padding: 2px 7px; }
 .lm-style-chips .dim { font-size: 11px; }
+.lm-style-chips .chip.default { border-color: #c9a84a; } .lm-style-chips .chip .star { color: #f2c14e; margin-right: 3px; font-size: 11px; }

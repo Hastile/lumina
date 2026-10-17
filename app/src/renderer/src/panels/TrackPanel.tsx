@@ -34,10 +34,10 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
       title: t('Save as Text Style...'),
       fields: [
         { key: 'name', label: t('Name'), type: 'text', value: track.name },
-        { key: 'y', label: t('Include the vertical position'), type: 'checkbox', value: true }
+        { key: 'note', label: '', type: 'note', value: t('The Track Style and the Align and Transform are saved together.') }
       ],
       onSubmit: async (v) => {
-        await call('styles.save', { sequence_id: seq.id, track_id: track.id, name: String(v.name), with_position: !!v.y })
+        await call('styles.save', { sequence_id: seq.id, track_id: track.id, name: String(v.name) })
         window.dispatchEvent(new Event('lumina:styles'))
       }
     })
@@ -121,7 +121,16 @@ export function CaptionStyleSection({ seq, track }: { seq: Sequence; track: Trac
 
 // ---------------------------------------------------------------- text styles (Premiere's Text Styles)
 
-export type TextStyleRec = { id: string; name: string; style: Partial<CaptionStyle> & { y?: number }; source: string | null }
+export type StyleTransform = { position?: [number | null, number]; scale?: number; rotation?: number; opacity?: number }
+/** A caption track preset: Track Style formatting plus (when saved from a track) its Align and Transform. */
+export type TextStyleRec = { id: string; name: string; style: Partial<CaptionStyle>; transform: StyleTransform | null; source: string | null; default?: boolean }
+
+function describe(s: TextStyleRec): string {
+  const tf = s.transform
+  const pos = tf?.position ? ` · ${t('Position')} ${tf.position[0] == null ? t('Center') : Math.round(tf.position[0])}, ${Math.round(tf.position[1])}` : ''
+  const sc = tf?.scale != null && tf.scale !== 100 ? ` · ${tf.scale}%` : ''
+  return `${s.name} · ${s.style.font_family} ${s.style.font_size ?? ''}${pos}${sc}${s.default ? ` · ${t('Default style')}` : ''}`
+}
 
 /** The style library (outside the project, like Premiere's Text Styles folder), refreshed on 'lumina:styles'. */
 export function useTextStyles(): TextStyleRec[] {
@@ -189,17 +198,22 @@ export function TextStyleChips({ onApply, onSave }: { onApply: (id: string, name
       {styles.map((s) => (
         <button
           key={s.id}
-          className="chip"
+          className={`chip ${s.default ? 'default' : ''}`}
           data-style={s.id}
-          title={`${s.name} · ${s.style.font_family} ${s.style.font_size ?? ''}${s.style.y != null ? ` · y ${s.style.y}` : ''}`}
+          title={describe(s)}
           onClick={() => onApply(s.id, s.name)}
           onContextMenu={(e) =>
             openContextMenu(e, [
               { label: t('Apply'), run: () => onApply(s.id, s.name) },
+              s.default
+                ? { label: t('Clear Default Style'), run: () => void call('styles.set_default', { style_id: null }).then(() => window.dispatchEvent(new Event('lumina:styles'))) }
+                : { label: t('Set as Default Style (new caption tracks)'), run: () => void call('styles.set_default', { style_id: s.id }).then(() => window.dispatchEvent(new Event('lumina:styles'))) },
+              'sep',
               { label: t('Delete Text Style'), run: () => void call('styles.remove', { style_id: s.id }).then(() => window.dispatchEvent(new Event('lumina:styles'))) }
             ])
           }
         >
+          {s.default && <span className="star">★</span>}
           <span style={chipCss(s.style)}>{s.name}</span>
         </button>
       ))}

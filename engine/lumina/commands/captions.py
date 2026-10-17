@@ -217,7 +217,7 @@ class ApplyStyle(Params):
 @command("caption.apply_style", ApplyStyle)
 def caption_apply_style(ctx: Context, p: ApplyStyle):
     """Apply a text style to a caption track (Premiere's Track Style): font, size, fill, stroke, shadow,
-    background, tracking and alignment change for every cue; position and transform stay."""
+    background, tracking and alignment, and the style's Align and Transform when it has one, for every cue."""
     from .. import text_styles
 
     st = text_styles.get(p.style_id)
@@ -226,11 +226,8 @@ def caption_apply_style(ctx: Context, p: ApplyStyle):
     seq = seq_of(ctx.doc, p.sequence_id)
     tid = _caption_track(seq, p.track_id)
     require_unlocked(seq, tid)
-    fmt = {k: v for k, v in st["style"].items() if k in text_styles.FORMAT_FIELDS}
-    cur = seq["tracks"][tid]["caption_style"]
-    if st["style"].get("y") is not None:
-        fmt["position"] = [cur["position"][0], float(st["style"]["y"])]  # the style's default height
-    ctx.m.set(["sequences", seq["id"], "tracks", tid, "caption_style"], {**cur, **fmt})
+    new = text_styles.track_style(st, seq["tracks"][tid]["caption_style"], seq["settings"])
+    ctx.m.set(["sequences", seq["id"], "tracks", tid, "caption_style"], new)
     return {"style": st["name"]}
 
 
