@@ -93,3 +93,38 @@ def test_without_a_title_graphic_the_error_says_so():
     with pytest.raises(CommandError) as e:
         s.execute("shorts.set_copy", {"main": "x"})
     assert e.value.code == "NO_TITLE"
+
+
+def test_hidden_words_show_as_question_marks_until_the_reveal():
+    s, seq, clip = title()
+    out = s.execute("shorts.set_copy", {"sub": "에반게리온을 파쿠리한", "main": "옷코츠 유타", "hide": ["에반게리온"], "reveal_at": "3.5s"})
+    titles = out["result"]["titles"]
+    assert [(t["sub"], t["main"]) for t in titles] == [("?????을 파쿠리한", "옷코츠 유타"), ("에반게리온을 파쿠리한", "옷코츠 유타")]
+    clips = clips_of(seq)
+    assert [layers(c) for c in clips] == [["?????을 파쿠리한", "옷코츠 유타"], ["에반게리온을 파쿠리한", "옷코츠 유타"]]
+    assert all(c["name"] == "쇼츠 타이틀" for c in clips) and clips[0]["end"] == clips[1]["start"]
+    # setting it again moves the reveal onto the existing cut's clips; without hide the mask is gone
+    s.execute("shorts.set_copy", {"main": "옷코츠 유타", "hide": ["유타"], "reveal_at": "3.5s"})
+    assert [layers(c) for c in clips_of(seq)] == [["에반게리온을 파쿠리한", "옷코츠 ??"], ["에반게리온을 파쿠리한", "옷코츠 유타"]]
+    s.execute("shorts.set_copy", {})
+    assert [layers(c) for c in clips_of(seq)] == [["에반게리온을 파쿠리한", "옷코츠 유타"]] * 2
+    s.undo(); s.undo(); s.undo()
+    assert [layers(c) for c in clips_of(seq)] == [["술 마시기 내기 하는", "귀여운 얀데레 악마"]]
+
+
+def clips_of(seq):
+    tracks = [t for t in seq["tracks"].values() if any(c.get("graphic") for c in t["clips"].values())]
+    return sorted(tracks[0]["clips"].values(), key=lambda c: c["start"])
+
+
+def test_a_hidden_word_must_be_in_the_copy_and_needs_a_reveal_time():
+    s, seq, clip = title()
+    with pytest.raises(CommandError) as e:
+        s.execute("shorts.set_copy", {"hide": ["없는말"], "reveal_at": "1s"})
+    assert "not in the copy" in e.value.message
+    with pytest.raises(CommandError) as e:
+        s.execute("shorts.set_copy", {"hide": ["악마"]})
+    assert "reveal_at" in e.value.message
+    with pytest.raises(CommandError):
+        s.execute("shorts.set_copy", {"hide": ["악마"], "reveal_at": "20s"})
+    assert len(clips_of(seq)) == 1

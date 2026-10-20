@@ -51,6 +51,9 @@ With no GUI running, they start a headless engine instead.
   S-CoreDream-9Black 115, tracking -18, 1080 wide) that is 11 Hangul syllables
   for the sub line and 9 for the main line; a space is about 0.3 of a syllable.
   S-CoreDream only has the 2,350 KS X 1001 syllables, so e.g. 똠 and 뷁 render blank.
+  `hide` + `reveal_at` is the channel's reveal: the title opens with those words
+  as `?` (one per character, particles stay visible: `?????을 파쿠리한`) and is
+  cut at `reveal_at`, the start of the caption where the narration first says them.
 - CLI: `uv run lumina exec clip.razor '{"at":"5s"}'` and `uv run lumina call timeline.state`.
 - Headless export: `uv run lumina render project.lumina out.mp4 [--sequence NAME] [--preset h264|hevc|prores|wav] [--range in_out]`.
 - Time values accept ticks, `"12.5s"`, `"45f"` or `"00:00:12:15"`.
