@@ -351,6 +351,11 @@
           ],
           "default": null,
           "title": "Filmstrip Path"
+        },
+        "clear": {
+          "default": false,
+          "title": "Clear",
+          "type": "boolean"
         }
       },
       "required": [
@@ -2420,6 +2425,43 @@
     }
   },
   {
+    "name": "caption.apply_style",
+    "description": "Apply a text style to a caption track (Premiere's Track Style): font, size, fill, stroke, shadow,\nbackground, tracking and alignment, and the style's Align and Transform when it has one, for every cue.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "track_id": {
+          "title": "Track Id",
+          "type": "string"
+        },
+        "style_id": {
+          "description": "a text style from styles.list (imported from Premiere .prtextstyle files)",
+          "title": "Style Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "track_id",
+        "style_id"
+      ],
+      "title": "ApplyStyle",
+      "type": "object"
+    }
+  },
+  {
     "name": "caption.from_graphics",
     "description": "Turn a track of one-line text graphics (e.g. imported subtitles) into a caption track: the first\ngraphic's text style becomes the track style, each graphic becomes a cue (differences from the track\nstyle are kept as per-cue overrides). Timing, Motion, keyframes and effects stay as they are.",
     "undoable": true,
@@ -4207,6 +4249,47 @@
         "path"
       ],
       "title": "PlaceMogrt",
+      "type": "object"
+    }
+  },
+  {
+    "name": "graphic.apply_style",
+    "description": "Apply a text style to every text layer of graphic clips (formatting only; positions stay).",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "style_id": {
+          "description": "a text style from styles.list",
+          "title": "Style Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_ids",
+        "style_id"
+      ],
+      "title": "ApplyTextStyle",
       "type": "object"
     }
   },
@@ -7705,6 +7788,82 @@
         "properties"
       ],
       "title": "PasteKeyframes",
+      "type": "object"
+    }
+  },
+  {
+    "name": "shorts.set_copy",
+    "description": "Set the Shorts title copy (sub line above, main line below) and check that each line stays inside the frame.\n\nEach line is rendered in its own font, size, stroke and shadow and measured where it lands\non screen. An overflowing line, a line break, or a character the font cannot draw is refused\nwith the measured bounds and max_hangul (how many Hangul syllables fit on that line).\ndry_run measures without editing.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "sub": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "sub copy: the upper, smaller line (null keeps it)",
+          "title": "Sub"
+        },
+        "main": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "main copy: the lower, larger line (null keeps it)",
+          "title": "Main"
+        },
+        "clip_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "title graphic; default: the graphic clip named '\uc1fc\uce20 \ud0c0\uc774\ud2c0'",
+          "title": "Clip Id"
+        },
+        "margin": {
+          "default": 0.0,
+          "description": "px to keep clear at the left and right frame edges",
+          "minimum": 0,
+          "title": "Margin",
+          "type": "number"
+        },
+        "dry_run": {
+          "default": false,
+          "description": "only measure the copy; change nothing",
+          "title": "Dry Run",
+          "type": "boolean"
+        }
+      },
+      "title": "SetCopy",
       "type": "object"
     }
   }

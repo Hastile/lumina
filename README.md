@@ -42,6 +42,15 @@ With no GUI running, they start a headless engine instead.
   `rollback_transaction`, `save_project`, `export_media` (render + ffprobe
   verification) and `get_frame_image` (returns the rendered frame as an image so
   an agent can look at its edit).
+- Shorts copy: `shorts_set_copy` sets the title copy on the graphic clip named
+  `쇼츠 타이틀` (sub = upper text layer, main = lower). Each line is rendered in
+  its own style and measured where it lands on screen; a line that would run
+  past the frame (or past `margin`), contains a line break, or uses a character
+  the font cannot draw is refused with its bounds and `max_hangul`. `dry_run`
+  only measures. With the channel template (sub S-CoreDream-5Medium 100, main
+  S-CoreDream-9Black 115, tracking -18, 1080 wide) that is 11 Hangul syllables
+  for the sub line and 9 for the main line; a space is about 0.3 of a syllable.
+  S-CoreDream only has the 2,350 KS X 1001 syllables, so e.g. 똠 and 뷁 render blank.
 - CLI: `uv run lumina exec clip.razor '{"at":"5s"}'` and `uv run lumina call timeline.state`.
 - Headless export: `uv run lumina render project.lumina out.mp4 [--sequence NAME] [--preset h264|hevc|prores|wav] [--range in_out]`.
 - Time values accept ticks, `"12.5s"`, `"45f"` or `"00:00:12:15"`.
