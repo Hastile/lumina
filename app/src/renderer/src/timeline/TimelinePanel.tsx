@@ -4,7 +4,7 @@ import { EFFECTS, TRANSITIONS, trackTransitions, type TransitionWindow } from '.
 import { transitionDurationDialog } from './transitionDialog'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t as tx } from '@shared/i18n'
-import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X } from 'lucide-react'
+import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Asset, Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
 import { runAction } from '../actions/actions'
@@ -26,6 +26,8 @@ const RULER_H = 30
 const VIDEO_H = 42
 const AUDIO_H = 46
 const SECTION_GAP = 6
+// the strip under the caption tracks: it separates them from the video tracks and folds them away
+const CAPTION_STRIP_H = 18
 const MIN_TRACK_H = 22
 const MAX_TRACK_H = 320
 const VBAR_W = 10
@@ -145,14 +147,15 @@ type Layout = {
 type Kind = 'video' | 'audio'
 const clampH = (h: number) => Math.round(Math.max(MIN_TRACK_H, Math.min(MAX_TRACK_H, h)))
 
-function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<Kind, number>, bodyH: number, split: number, vScroll: number, aScroll: number): Layout {
+function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<Kind, number>, bodyH: number, split: number, vScroll: number, aScroll: number, capFolded = false): Layout {
   // a track's own height times its area's zoom (the vertical zoom bar's knobs); caption tracks keep their own height
   const hOf = (id: string, kind: Kind) => clampH((heights[id] ?? (kind === 'video' ? VIDEO_H : AUDIO_H)) * zoom[kind])
   const capIds = seq.video_tracks.filter((id) => seq.tracks[id].caption_style)
   const vidIds = seq.video_tracks.filter((id) => !seq.tracks[id].caption_style)
   const capContent = capIds.reduce((a, id) => a + clampH(heights[id] ?? VIDEO_H), 0)
-  const capH = capIds.length ? Math.min(capContent, Math.round(bodyH * 0.4)) : 0
-  const videoTop = capH ? capH + SECTION_GAP : 0
+  // folded caption tracks leave only their strip
+  const capH = capIds.length && !capFolded ? Math.min(capContent, Math.round(bodyH * 0.4)) : 0
+  const videoTop = capIds.length ? capH + CAPTION_STRIP_H : 0
   const rest = Math.max(0, bodyH - videoTop)
   const videoH = Math.max(0, Math.min(rest - SECTION_GAP, Math.round(rest * split)))
   const audioTop = videoTop + videoH + SECTION_GAP
@@ -167,7 +170,7 @@ function buildRows(seq: Sequence, heights: Record<string, number>, zoom: Record<
   // captions: the topmost caption track first, pinned at the top
   const rows: Row[] = []
   let y = 0
-  ;[...capIds].reverse().forEach((id, k) => {
+  ;(capFolded ? [] : [...capIds].reverse()).forEach((id, k) => {
     const h = clampH(heights[id] ?? VIDEO_H)
     rows.push({ track: seq.tracks[id], label: `C${capIds.length - k}`, kind: 'video', area: 'caption', index: seq.video_tracks.indexOf(id), top: y, height: h })
     y += h
@@ -242,6 +245,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const [zoom, setZoom] = useState<Record<Kind, number>>(() => loadJson('lumina.tlVZoom', { video: 1, audio: 1 }))
   const [vScroll, setVScroll] = useState(0)
   const [aScroll, setAScroll] = useState(0)
+  const [capFolded, setCapFolded] = useState<boolean>(() => loadJson('lumina.captionsFolded', false))
+  const foldCaptions = (v: boolean) => {
+    setCapFolded(v)
+    saveJson('lumina.captionsFolded', v)
+  }
   const [drag, setDrag] = useState<Drag | null>(null)
   const [hover, setHover] = useState<{ clipId: string; edge: 'start' | 'end' | null } | null>(null)
   const [dropTarget, setDropTarget] = useState<{ row: number; t: number } | null>(null)
@@ -257,7 +265,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     return () => ro.disconnect()
   }, [seq.id])
 
-  const layout = useMemo(() => buildRows(seq, heights, zoom, bodyH, split, vScroll, aScroll), [seq, heights, zoom, bodyH, split, vScroll, aScroll])
+  const layout = useMemo(() => buildRows(seq, heights, zoom, bodyH, split, vScroll, aScroll, capFolded), [seq, heights, zoom, bodyH, split, vScroll, aScroll, capFolded])
+  const captionTracks = seq.video_tracks.filter((id) => seq.tracks[id].caption_style).length
   const end = sequenceEnd(seq)
   const contentW = Math.max(width, ((end / TICKS_PER_SECOND) + 30) * pps)
   const toX = useCallback((t: number) => (t / TICKS_PER_SECOND) * pps - scrollX, [pps, scrollX])
@@ -929,6 +938,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             e.preventDefault()
             const { x, y } = laneXY(e)
             const t = dropTime(x, !!captionDrag())
+            if (capFolded && captionDrag()) foldCaptions(false)
             setDropTarget((d) => (d && d.row === rowAt(y) && d.t === t ? d : { row: rowAt(y), t }))
           }}
           onDragLeave={() => setDropTarget(null)}
@@ -980,7 +990,21 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <VZoomBar kind="video" top={layout.videoTop} pane={layout.videoH} max={layout.vMax} content={layout.vContent} pos={layout.vMax - layout.vScroll} onPos={(p) => setVScroll(layout.vMax - p)} zoom={zoom.video} onZoom={(z, c) => zoomArea('video', z, c)} />
           <VZoomBar kind="audio" top={layout.audioTop} pane={layout.audioH} max={layout.aMax} content={layout.aContent} pos={layout.aScroll} onPos={setAScroll} zoom={zoom.audio} onZoom={(z, c) => zoomArea('audio', z, c)} />
         </div>
-        {layout.capH > 0 && <div className="lm-tl-divider caption" data-caption-divider="" style={{ top: layout.capH, height: SECTION_GAP }} />}
+        {captionTracks > 0 && (
+          <div className={`lm-tl-capstrip ${capFolded ? 'folded' : ''}`} data-caption-divider="" style={{ top: layout.capH, height: CAPTION_STRIP_H }}>
+            <button
+              className="fold"
+              data-caption-fold={capFolded ? 'folded' : 'open'}
+              style={{ width: HEADER_W }}
+              title={tx(capFolded ? 'Expand Caption Tracks' : 'Collapse Caption Tracks')}
+              onClick={() => foldCaptions(!capFolded)}
+            >
+              {capFolded ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+              <span>{tx('Caption Tracks')}</span>
+              <span className="count">{captionTracks}</span>
+            </button>
+          </div>
+        )}
         <div className="lm-tl-divider" data-divider="" style={{ top: layout.videoTop + layout.videoH, height: SECTION_GAP }} onMouseDown={dragDivider} title={tx('Drag to resize the video and audio track areas')} />
       </div>
       <ZoomBar width={width} contentW={contentW} pps={pps} scrollX={scrollX} end={end} />

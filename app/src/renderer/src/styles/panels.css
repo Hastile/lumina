@@ -428,6 +428,14 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-tl-vbar .knob.b { bottom: 0; }
 .lm-tl-divider { position: absolute; left: 0; right: 0; background: #151515; border-top: 1px solid #333; border-bottom: 1px solid #333; cursor: row-resize; z-index: 6; box-sizing: border-box; }
 .lm-tl-divider:hover { background: #2a3c50; }
+/* the strip under the caption tracks: a clear break from the video tracks, and their fold button */
+.lm-tl-capstrip { position: absolute; left: 0; right: 0; z-index: 6; box-sizing: border-box; display: flex; align-items: center;
+  background: #191712; border-top: 1px solid #4a4128; border-bottom: 1px solid #333; }
+.lm-tl-capstrip .fold { flex: none; height: 100%; display: flex; align-items: center; gap: 5px; padding: 0 8px; border: 0; background: transparent;
+  color: #c9b98a; font-size: 11px; cursor: pointer; box-sizing: border-box; }
+.lm-tl-capstrip .fold:hover { color: #fff; background: rgba(255, 255, 255, 0.05); }
+.lm-tl-capstrip .fold .count { color: #8a7d58; }
+.lm-tl-capstrip.folded { background: repeating-linear-gradient(90deg, #1d1a12 0 12px, #191712 12px 24px); }
 .lm-tl-zoombar { position: relative; height: 14px; flex: none; background: #1b1b1b; }
 .lm-tl-zoombar .thumb { position: absolute; top: 2px; bottom: 2px; background: #4a4a4a; border-radius: 5px; cursor: grab; }
 .lm-tl-zoombar .thumb:hover { background: #5a5a5a; }
