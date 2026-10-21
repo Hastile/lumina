@@ -361,3 +361,23 @@ def test_each_image_layer_crops_on_its_own(tmp_path):
     assert alpha.crop((540, 0, 1080, 1920)).getbbox() == (60, 350, 260, 450)
     with pytest.raises(CommandError):
         s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": a, "crop_right": 80})
+
+
+def test_new_graphics_fill_the_lowest_free_track_first():
+    s = Session(services=FakeServices())
+    sid = s.execute("sequence.create", {"name": "s", "video_tracks": 4})["result"]["sequence_id"]
+    seq = s.doc["sequences"][sid]
+    v1, v2, v3, v4 = seq["video_tracks"][:4]
+    # full-length overlays high up (watermark, title) must not push new graphics onto a new track
+    s.execute("graphic.create", {"at": 0, "duration": "60s", "track_id": v3})
+    s.execute("graphic.create", {"at": 0, "duration": "60s", "track_id": v4})
+    a = s.execute("graphic.create_text", {"at": "1s", "duration": "2s", "text": "a"})["result"]
+    assert a["track_id"] == v1
+    # overlapping in time goes one track up; after it ends V1 is free again
+    b = s.execute("graphic.create_shape", {"at": "2s", "duration": "2s"})["result"]
+    assert b["track_id"] == v2
+    assert s.execute("graphic.create", {"at": "3.5s"})["result"]["track_id"] == v1
+    # only when every track is taken is a new one added
+    n = len(seq["video_tracks"])
+    s.execute("graphic.create", {"at": "2.5s", "duration": "0.2s"})
+    assert len(seq["video_tracks"]) == n + 1

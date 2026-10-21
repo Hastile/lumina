@@ -424,7 +424,7 @@ class CreateText(TextStyle):
     text: str = "새 텍스트 레이어"
     at: TimeValue | None = Field(default=None, description="default playhead")
     duration: TimeValue = "5s"
-    track_id: str | None = Field(default=None, description="default: first empty video track above the clips at that time")
+    track_id: str | None = Field(default=None, description="default: the lowest video track with nothing there at that time (a new track only when all are taken)")
 
 
 @command("graphic.create_text", CreateText)
@@ -434,7 +434,7 @@ def graphic_create_text(ctx: Context, p: CreateText):
     st = seq["settings"]
     start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
     end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
-    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    tid = p.track_id or _free_track(ctx, seq, start, end)
     if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video":
         raise CommandError("BAD_TRACK", "graphics go on a video track")
     require_unlocked(seq, tid)
@@ -453,7 +453,7 @@ class CreateGraphic(Params):
     sequence_id: str | None = None
     at: TimeValue | None = Field(default=None, description="default playhead")
     duration: TimeValue = "5s"
-    track_id: str | None = Field(default=None, description="default: first empty video track above the clips at that time")
+    track_id: str | None = Field(default=None, description="default: the lowest video track with nothing there at that time (a new track only when all are taken)")
 
 
 @command("graphic.create", CreateGraphic)
@@ -463,7 +463,7 @@ def graphic_create(ctx: Context, p: CreateGraphic):
     st = seq["settings"]
     start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
     end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
-    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    tid = p.track_id or _free_track(ctx, seq, start, end)
     if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video" or seq["tracks"][tid].get("caption_style"):
         raise CommandError("BAD_TRACK", "graphics go on a video track")
     require_unlocked(seq, tid)
@@ -497,7 +497,7 @@ def graphic_place_mogrt(ctx: Context, p: PlaceMogrt):
     st = seq["settings"]
     start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
     end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
-    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    tid = p.track_id or _free_track(ctx, seq, start, end)
     if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video":
         raise CommandError("BAD_TRACK", "graphics go on a video track")
     require_unlocked(seq, tid)
@@ -540,7 +540,23 @@ def graphic_apply_style(ctx: Context, p: ApplyTextStyle):
     return {"layers": changed}
 
 
+def _free_track(ctx: Context, seq: dict, start: int, end: int) -> str:
+    """Where a new graphic goes: the lowest video track with nothing there in [start, end) (caption and
+    locked tracks skipped), so it lands among the tracks already in view; a new track only when every
+    track is taken."""
+    for tid in seq["video_tracks"]:
+        track = seq["tracks"][tid]
+        if track.get("caption_style") or track["locked"]:
+            continue
+        if not any(c["start"] < end and c["end"] > start for c in track["clips"].values()):
+            return tid
+    from .project import AddTrack, track_add
+    return track_add(ctx, AddTrack(sequence_id=seq["id"], kind="video"))["track_id"]
+
+
 def _free_track_above(ctx: Context, seq: dict, start: int, end: int) -> str:
+    """Where a new adjustment layer goes: the first free track above everything there at that time
+    (an adjustment layer only changes the tracks below it)."""
     # caption tracks hold cues, not graphics
     vt = [t for t in seq["video_tracks"] if not seq["tracks"][t].get("caption_style")]
     top_used = -1
@@ -693,7 +709,7 @@ class CreateShape(NewShape):
     sequence_id: str | None = None
     at: TimeValue | None = Field(default=None, description="default playhead")
     duration: TimeValue = "5s"
-    track_id: str | None = Field(default=None, description="default: first empty video track above the clips at that time")
+    track_id: str | None = Field(default=None, description="default: the lowest video track with nothing there at that time (a new track only when all are taken)")
 
 
 @command("graphic.create_shape", CreateShape)
@@ -703,7 +719,7 @@ def graphic_create_shape(ctx: Context, p: CreateShape):
     st = seq["settings"]
     start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
     end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
-    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    tid = p.track_id or _free_track(ctx, seq, start, end)
     if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video":
         raise CommandError("BAD_TRACK", "graphics go on a video track")
     require_unlocked(seq, tid)
