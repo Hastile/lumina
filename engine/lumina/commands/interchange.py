@@ -77,6 +77,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
             "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None, "filmstrip_path": None,
             "in_point": None, "out_point": None, "offline": False,
             "kind": info["kind"], "duration": duration, "video": info["video"], "audio": info["audio"],
+            "markers": {k["id"]: k for k in ({"id": new_id(), **mk} for mk in m.get("markers") or [])},
         })
 
     # the project's text styles join the style library (Premiere keeps them per project too)

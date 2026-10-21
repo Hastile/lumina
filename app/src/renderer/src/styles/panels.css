@@ -357,6 +357,14 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-ec .lane .kf-hidden.left { left: 1px; }
 .lm-ec .lane .kf-hidden.right { right: 1px; }
 
+/* clip markers (on the clip's media): a flag at the top of the clip */
+.lm-clip-markers { position: absolute; left: 0; right: 0; top: 0; height: 9px; pointer-events: none; z-index: 4; }
+.lm-clip-markers .mk { position: absolute; top: 0; width: 8px; height: 8px; margin-left: -4px; background: #3fbf6f; clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
+  pointer-events: all; cursor: pointer; }
+.lm-clip-markers .mk:hover { filter: brightness(1.4); }
+.lm-clip-markers .mk.red { background: #e04848; } .lm-clip-markers .mk.purple { background: #a65ad6; } .lm-clip-markers .mk.orange { background: #f08c2e; }
+.lm-clip-markers .mk.yellow { background: #e3c43a; } .lm-clip-markers .mk.white { background: #e8e8e8; } .lm-clip-markers .mk.blue { background: #3d8bff; }
+.lm-clip-markers .mk.cyan { background: #3cc9d8; }
 .lm-clip-kfs { position: absolute; left: 0; right: 0; bottom: 1px; height: 7px; pointer-events: none; z-index: 3; }
 .lm-clip-kfs .k { position: absolute; bottom: 0; width: 6px; height: 6px; margin-left: -3px; background: #f0f0f0; transform: rotate(45deg); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7); pointer-events: all; cursor: pointer; }
 .lm-clip-kfs .k:hover { background: #2d8ceb; }

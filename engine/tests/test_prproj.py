@@ -76,8 +76,15 @@ def _levels_xml() -> str:
     return fader(500, 0.707945764065) + "\n" + fader(510, 0.501187233627)
 
 
-def build_prproj(tmp_path, media_path: str, with_shapes: bool = False, with_levels: bool = False) -> str:
+def build_prproj(tmp_path, media_path: str, with_shapes: bool = False, with_levels: bool = False, with_clip_markers: bool = False) -> str:
     shapes_xml = _shapes_xml(with_shapes) + (_levels_xml() if with_levels else "")
+    # a clip marker on the master clip (Source monitor M), 3 s into the footage
+    clip_marker_owner = '<MarkerOwner Version="1"><Markers ObjectRef="520" /></MarkerOwner>' if with_clip_markers else ""
+    if with_clip_markers:
+        shapes_xml += f'''
+  <Markers ObjectID="520" ClassID="x" Version="4"><Markers Version="1">
+    <Marker Version="1" Index="0"><First>cm1</First><Second ObjectRef="521" /></Marker></Markers></Markers>
+  <Marker ObjectID="521" ClassID="x" Version="3"><DVAMarker>{{"DVAMarker":{{"mStartTime":{{"ticks":{3 * SEC}}},"mName":"고점","mType":"Comment","mColorIndex":1}}}}</DVAMarker></Marker>'''
     clip_fader = '<ComponentOwner Version="1"><Components ObjectRef="500" /></ComponentOwner>' if with_levels else ""
     track_fader = '<AudioTrack Version="12"><ComponentOwner Version="1"><Components ObjectRef="510" /></ComponentOwner></AudioTrack>' if with_levels else ""
     gain = "<Gain>0.501187233627</Gain>" if with_levels else ""
@@ -105,7 +112,7 @@ def build_prproj(tmp_path, media_path: str, with_shapes: bool = False, with_leve
     <MasterClip ObjectURef="mc-media" />
   </ClipProjectItem>
   <MasterClip ObjectUID="mc-media" ClassID="x" Version="12"><Clips Version="1"><Clip Index="0" ObjectRef="10" /></Clips></MasterClip>
-  <VideoClip ObjectID="10" ClassID="x" Version="11"><Clip Version="18"><Source ObjectRef="11" /></Clip></VideoClip>
+  <VideoClip ObjectID="10" ClassID="x" Version="11"><Clip Version="18">{clip_marker_owner}<Source ObjectRef="11" /></Clip></VideoClip>
   <VideoMediaSource ObjectID="11" ClassID="x" Version="2"><MediaSource Version="4"><Media ObjectURef="media1" /></MediaSource></VideoMediaSource>
   <Media ObjectUID="media1" ClassID="x" Version="30">
     <VideoStream ObjectRef="12" /><AudioStream ObjectRef="13" />
@@ -227,6 +234,20 @@ def test_audio_levels_come_across(tmp_path):
     # untouched clips stay at 0 dB
     plain = extract(build_prproj(tmp_path, str(media))).sequences[0]["audio_tracks"][0]
     assert (plain["items"][0]["volume_db"], plain["items"][0]["gain_db"], plain["volume_db"]) == (0.0, 0.0, 0.0)
+
+
+def test_clip_markers_of_the_footage_come_across(tmp_path):
+    media = tmp_path / "interview.mp4"
+    media.write_bytes(b"")
+    path = build_prproj(tmp_path, str(media), with_clip_markers=True)
+    (m,) = extract(path).media.values()
+    assert m["markers"] == [{"start": 3 * SEC, "duration": 0, "name": "고점", "comment": "", "color": "red"}]
+    s = Session(services=FakeServices())
+    s.execute("project.import_premiere", {"path": path})
+    doc = s.doc
+    assert validate_project(doc).model_dump(mode="json") == doc
+    (item,) = doc["media"].values()
+    assert [(k["start"], k["name"]) for k in item["markers"].values()] == [(3 * SEC, "고점")]
 
 
 def test_rejects_non_premiere_files(tmp_path):

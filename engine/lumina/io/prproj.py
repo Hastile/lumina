@@ -312,7 +312,7 @@ def extract(path: str) -> Extract:
                     media_bins.setdefault(uid, bin_key)
                     master_media[master.get("ObjectUID")] = uid
                     if uid not in out.media:
-                        out.media[uid] = {**info, "name": name, "label": label, "bin": bin_key}
+                        out.media[uid] = {**info, "name": name, "label": label, "bin": bin_key, "markers": _master_markers(g, master)}
                 else:
                     skipped_items.append(name)
 
@@ -470,6 +470,42 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
     if parts:
         out.warnings.append(f"Sequence '{name}': skipped " + ", ".join(parts))
     return seq
+
+
+def _markers_of(g: Graph, clip: ET.Element | None) -> list[dict]:
+    """A clip's markers (its Clip/MarkerOwner), in its own time."""
+    owner = g.at(clip, "Clip/MarkerOwner/Markers") if clip is not None else None
+    markers = []
+    for mref in (owner.findall("Markers/Marker") if owner is not None else []):
+        m = g.ref(mref.find("Second"))
+        raw = _text(m, "DVAMarker")
+        if not raw:
+            continue
+        try:
+            d = json.loads(raw).get("DVAMarker", {})
+        except ValueError:
+            continue
+        color = d.get("mColorIndex")
+        markers.append({
+            "start": int(d.get("mStartTime", {}).get("ticks", 0)),
+            "duration": int(d.get("mDuration", {}).get("ticks", 0)) if isinstance(d.get("mDuration"), dict) else 0,
+            "name": d.get("mName", "") or "",
+            "comment": d.get("mComment", "") or "",
+            "color": MARKER_COLORS[color % 8] if isinstance(color, int) else "green",
+        })
+    return markers
+
+
+def _master_markers(g: Graph, master: ET.Element | None) -> list[dict]:
+    """Clip markers of a project item: every clip of its master clip (video and audio) shares them."""
+    seen, out = set(), []
+    for ref in (master.findall("Clips/Clip") if master is not None else []):
+        for m in _markers_of(g, g.ref(ref)):
+            key = (m["start"], m["duration"], m["name"], m["comment"])
+            if key not in seen:
+                seen.add(key)
+                out.append(m)
+    return sorted(out, key=lambda m: m["start"])
 
 
 def _sequence_markers(g: Graph, seq_el: ET.Element) -> list[dict]:

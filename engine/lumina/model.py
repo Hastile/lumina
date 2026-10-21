@@ -65,6 +65,8 @@ class MediaItem(_Model):
     in_point: int | None = Field(default=None, description="source monitor In mark, ticks")
     out_point: int | None = Field(default=None, description="source monitor Out mark, ticks")
     offline: bool = Field(default=False, description="Make Offline: shown as missing media even if the file exists")
+    markers: dict[str, "Marker"] = Field(default_factory=dict, description="clip markers (Premiere's master clip markers): "
+                                                                            "start is source time, so every clip of the media shows them")
 
 
 class Bin(_Model):
@@ -332,6 +334,7 @@ class Track(_Model):
 
 
 class Marker(_Model):
+    """A marker: on a sequence, start is sequence time; on a media item (a clip marker), source time."""
     id: str
     start: int
     duration: int = 0

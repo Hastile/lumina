@@ -741,29 +741,54 @@ MarkerColor = Literal["green", "red", "purple", "orange", "yellow", "white", "bl
 
 class AddMarker(Params):
     sequence_id: str | None = None
-    at: TimeValue | None = Field(default=None, description="default playhead")
+    at: TimeValue | None = Field(default=None, description="sequence time (default playhead); with media_id: source time")
     duration: TimeValue = 0
     name: str = ""
     comment: str = ""
     color: MarkerColor = "green"
+    clip_id: str | None = Field(default=None, description="a clip marker on this clip (stored on its media at the source time "
+                                                          "under `at`), like M with a clip selected in Premiere's Timeline")
+    media_id: str | None = Field(default=None, description="a clip marker on this media at source time `at` (Source monitor M)")
+
+
+def _marker_owner(ctx: Context, p) -> tuple[list[str], dict, dict | None]:
+    """(path to the markers dict, sequence, media or None) for a sequence or clip marker."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    media_id = p.media_id
+    if p.clip_id:
+        _, clip = find_clip(seq, p.clip_id)
+        media_id = clip.get("media_id")
+        if not media_id:
+            raise CommandError("NO_MEDIA", "clip markers go on clips of media (not graphics or nested sequences)")
+    if media_id:
+        media = ctx.doc["media"].get(media_id)
+        if media is None:
+            raise CommandError("NO_MEDIA", f"media not found: {media_id}")
+        return ["media", media_id, "markers"], seq, media
+    return ["sequences", seq["id"], "markers"], seq, None
 
 
 @command("marker.add", AddMarker)
 def marker_add(ctx: Context, p: AddMarker):
-    """Add a sequence marker (M)."""
-    seq = seq_of(ctx.doc, p.sequence_id)
+    """Add a marker (M): a sequence marker, or a clip marker on a clip's media (clip_id: at the source
+    time under the playhead) or on a media item (media_id: at source time `at`)."""
+    path, seq, media = _marker_owner(ctx, p)
     st = seq["settings"]
     at = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    if p.clip_id:
+        _, clip = find_clip(seq, p.clip_id)
+        if not clip["start"] <= at < clip["end"]:
+            raise CommandError("OUTSIDE_CLIP", "the time is not inside the clip")
+        at = source_at(clip, at)
     mid = new_id()
-    ctx.m.set(
-        ["sequences", seq["id"], "markers", mid],
-        {"id": mid, "start": at, "duration": resolve_time(p.duration, st), "name": p.name, "comment": p.comment, "color": p.color},
-    )
-    return {"marker_id": mid}
+    ctx.m.set(path + [mid], {"id": mid, "start": at, "duration": resolve_time(p.duration, st), "name": p.name, "comment": p.comment, "color": p.color})
+    return {"marker_id": mid, **({"media_id": media["id"], "source_time": at} if media else {})}
 
 
 class UpdateMarker(Params):
     sequence_id: str | None = None
+    media_id: str | None = Field(default=None, description="a clip marker of this media (at is then source time)")
+    clip_id: str | None = Field(default=None, description="a clip marker of this clip's media")
     marker_id: str
     at: TimeValue | None = None
     duration: TimeValue | None = None
@@ -774,12 +799,12 @@ class UpdateMarker(Params):
 
 @command("marker.update", UpdateMarker)
 def marker_update(ctx: Context, p: UpdateMarker):
-    """Edit a marker."""
-    seq = seq_of(ctx.doc, p.sequence_id)
+    """Edit a marker (sequence marker, or a clip marker with media_id / clip_id)."""
+    owner, seq, media = _marker_owner(ctx, p)
     st = seq["settings"]
-    if p.marker_id not in seq["markers"]:
+    if p.marker_id not in (media or seq)["markers"]:
         raise CommandError("NO_MARKER", f"marker not found: {p.marker_id}")
-    path = ["sequences", seq["id"], "markers", p.marker_id]
+    path = owner + [p.marker_id]
     if p.at is not None:
         ctx.m.set(path + ["start"], resolve_time(p.at, st))
     if p.duration is not None:
@@ -791,14 +816,87 @@ def marker_update(ctx: Context, p: UpdateMarker):
 
 class RemoveMarkers(Params):
     sequence_id: str | None = None
+    media_id: str | None = Field(default=None, description="clip markers of this media")
+    clip_id: str | None = Field(default=None, description="clip markers of this clip's media")
     marker_ids: list[str] = Field(min_length=1)
 
 
 @command("marker.remove", RemoveMarkers)
 def marker_remove(ctx: Context, p: RemoveMarkers):
-    """Delete markers."""
-    seq = seq_of(ctx.doc, p.sequence_id)
+    """Delete markers (sequence markers, or clip markers with media_id / clip_id)."""
+    owner, seq, media = _marker_owner(ctx, p)
     for mid in p.marker_ids:
-        if mid not in seq["markers"]:
+        if mid not in (media or seq)["markers"]:
             raise CommandError("NO_MARKER", f"marker not found: {mid}")
-        ctx.m.delete(["sequences", seq["id"], "markers", mid])
+        ctx.m.delete(owner + [mid])
+
+
+def clip_markers(doc: dict, clip: dict) -> list[tuple[dict, int]]:
+    """The clip markers a clip shows: (marker, sequence time) for each of its media's markers inside it."""
+    media = doc["media"].get(clip.get("media_id") or "")
+    if not media or not clip["speed"]:
+        return []
+    out = []
+    for m in media.get("markers", {}).values():
+        t = clip["start"] + round((m["start"] - clip["source_in"]) / clip["speed"])
+        if clip["start"] <= t < clip["end"]:
+            out.append((m, t))
+    return sorted(out, key=lambda mt: mt[1])
+
+
+class AlignMarker(Params):
+    sequence_id: str | None = None
+    clip_id: str
+    marker_id: str | None = Field(default=None, description="a clip marker of the clip's media; default the first one inside the clip")
+    at: TimeValue | None = Field(default=None, description="where the marker should land (sequence time); default the playhead")
+    mode: Literal["speed", "move"] = Field(default="speed", description="speed: change the clip's speed, keeping where it starts "
+                                                                       "and its first frame; move: slide the clip in time")
+    include_linked: bool = True
+
+
+@command("clip.align_marker", AlignMarker)
+def clip_align_marker(ctx: Context, p: AlignMarker):
+    """Put a clip marker on a time (a caption start, a cut, the playhead): mode speed changes the
+    clip's speed so the marked moment lands there while the clip keeps its start, first frame and
+    end (it ends earlier only if the media runs out); mode move slides the clip instead."""
+    doc = ctx.doc
+    seq = seq_of(doc, p.sequence_id)
+    st = seq["settings"]
+    tid, clip = find_clip(seq, p.clip_id)
+    require_unlocked(seq, tid)
+    media = doc["media"].get(clip.get("media_id") or "")
+    if not media:
+        raise CommandError("NO_MEDIA", "the clip has no media markers")
+    if p.marker_id:
+        m = media.get("markers", {}).get(p.marker_id)
+        if m is None:
+            raise CommandError("NO_MARKER", f"marker not found: {p.marker_id}")
+    else:
+        inside = clip_markers(doc, clip)
+        if not inside:
+            raise CommandError("NO_MARKER", "no clip marker inside the clip")
+        m = inside[0][0]
+    target = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    if p.mode == "move":
+        landed = clip["start"] + round((m["start"] - clip["source_in"]) / clip["speed"])
+        return {**clip_move(ctx, MoveClips(sequence_id=seq["id"], clip_ids=[clip["id"]], delta=target - landed,
+                                           include_linked=p.include_linked)), "mode": "move"}
+    if clip["speed"] < 0:
+        raise CommandError("NOT_SUPPORTED", "a reversed clip cannot be sped to a marker")
+    if not (target > clip["start"] and m["start"] > clip["source_in"]):
+        raise CommandError("BAD_TARGET", "the marker and the target must both come after the clip's first frame")
+    speed = (m["start"] - clip["source_in"]) / (target - clip["start"])
+    if not 0.01 <= speed <= 100:
+        raise CommandError("BAD_TARGET", f"that needs {speed * 100:.0f}% speed")
+    tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+    ids = linked_ids(seq, [clip["id"]]) if p.include_linked else [clip["id"]]
+    ends = []
+    for cid in ids:
+        ltid, c = find_clip(seq, cid)
+        require_unlocked(seq, ltid)
+        new = dict(c, speed=speed)
+        while source_problem(doc, new) and new["end"] - new["start"] > tpf:
+            new["end"] -= tpf
+        write_clip(ctx, seq, ltid, new)
+        ends.append(new["end"])
+    return {"speed": round(speed, 4), "end": ends[0], "shortened": ends[0] < clip["end"], "mode": "speed"}

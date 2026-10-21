@@ -159,6 +159,7 @@ def media_import(ctx: Context, p: ImportMedia):
             "in_point": None,
             "out_point": None,
             "offline": False,
+            "markers": {},
             **info,
         }
         ctx.m.set(["media", mid], item)

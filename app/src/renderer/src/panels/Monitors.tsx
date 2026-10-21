@@ -163,7 +163,7 @@ export function SourceMonitor() {
         <span style={{ flex: 1 }} />
         <span className="lm-tc dim">{media ? timecode(inOutDur, r) : '00:00:00:00'}</span>
       </div>
-      <Scrubber monitor="source" duration={duration} time={time} inPoint={media?.in_point} outPoint={media?.out_point} />
+      <Scrubber monitor="source" duration={duration} time={time} inPoint={media?.in_point} outPoint={media?.out_point} markers={Object.values(media?.markers ?? {}).map((m) => m.start)} />
       <Transport monitor="source" playing={playing} />
     </div>
   )

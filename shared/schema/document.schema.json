@@ -1069,6 +1069,7 @@
     },
     "Marker": {
       "additionalProperties": false,
+      "description": "A marker: on a sequence, start is sequence time; on a media item (a clip marker), source time.",
       "properties": {
         "id": {
           "title": "Id",
@@ -1278,6 +1279,14 @@
           "description": "Make Offline: shown as missing media even if the file exists",
           "title": "Offline",
           "type": "boolean"
+        },
+        "markers": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Marker"
+          },
+          "description": "clip markers (Premiere's master clip markers): start is source time, so every clip of the media shows them",
+          "title": "Markers",
+          "type": "object"
         }
       },
       "required": [
@@ -1296,7 +1305,8 @@
         "filmstrip_path",
         "in_point",
         "out_point",
-        "offline"
+        "offline",
+        "markers"
       ],
       "title": "MediaItem",
       "type": "object"

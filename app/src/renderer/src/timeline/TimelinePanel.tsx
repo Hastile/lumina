@@ -16,6 +16,7 @@ import { goTo } from '../state/transport'
 import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
 import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
 import { mediaUrl } from '../engine/client'
+import { clipMarkers } from '../util/markers'
 import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, placeAsset, upgradeCaptions } from '../actions/extra'
 import { effectMedia } from '../util/effects'
 import { isCaptionTrack } from '../util/tracks'
@@ -331,7 +332,14 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     if (seq.in_point != null) pts.push(seq.in_point)
     if (seq.out_point != null) pts.push(seq.out_point)
     for (const m of Object.values(seq.markers)) pts.push(m.start)
-    for (const t of Object.values(seq.tracks)) for (const c of Object.values(t.clips)) if (!exclude.has(c.id)) pts.push(c.start, c.end)
+    for (const t of Object.values(seq.tracks)) {
+      for (const c of Object.values(t.clips)) {
+        if (exclude.has(c.id)) continue
+        pts.push(c.start, c.end)
+        // clip markers snap too: a caption lines up with the marked moment
+        for (const pm of clipMarkers(c, c.media_id ? media[c.media_id] : undefined)) pts.push(pm.t)
+      }
+    }
     return pts
   }
   const snapDelta = (edges: number[], exclude: Set<string>): number => {
@@ -501,7 +509,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         let dt = Math.round(raw / tpf) * tpf
         const ex = new Set(drag.ids)
         const clips = drag.ids.map((id) => findClip(seq, id)?.clip).filter((c): c is Clip => !!c)
-        const edges = clips.flatMap((c) => [c.start + dt, c.end + dt])
+        // a dragged clip's own markers snap as well (its marked moment onto a caption start, a cut)
+        const edges = clips.flatMap((c) => [c.start + dt, c.end + dt, ...clipMarkers(c, c.media_id ? media[c.media_id] : undefined).map((pm) => pm.t + dt)])
         dt += snapDelta(edges, ex)
         dt = Math.max(dt, -Math.min(...clips.map((c) => c.start)))
         const { y } = laneXY(e)
@@ -732,6 +741,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             { label: clip.link_id ? 'Unlink' : 'Link', action: 'clip.link' },
             'sep',
             { label: tx('Speed/Duration...'), action: 'clip.speed' },
+            ...(clipMarkers(clip, m).length
+              ? [
+                  { label: tx('Speed Clip Marker to Playhead'), action: 'markers.speedToPlayhead' },
+                  { label: tx('Move Clip Marker to Playhead'), action: 'markers.moveToPlayhead' }
+                ]
+              : []),
             ...(m && row.kind === 'video' && m.kind === 'video'
               ? [
                   { label: tx('Reverse Speed'), action: 'clip.reverse' },
@@ -764,6 +779,35 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
         )}
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} clip={clip} seq={seq} />}
+        {!pv && !ghost && m?.markers && x1 - x0 > 6 && (
+          <span className="lm-clip-markers">
+            {clipMarkers(clip, m).map((pm) => (
+              <span
+                key={pm.marker.id}
+                className={`mk ${pm.marker.color}`}
+                data-clip-marker={pm.marker.id}
+                style={{ left: ((pm.t - clip.start) / Math.max(1, clip.end - clip.start)) * (x1 - x0) }}
+                title={`${pm.marker.name || tx('Marker')} · ${timecode(pm.t, st)}`}
+                onMouseDown={(e) => {
+                  // jump to the marked moment (and select its clip)
+                  e.stopPropagation()
+                  set({ selectedClips: [clip.id] })
+                  goTo('program', pm.t)
+                }}
+                onContextMenu={(e) => {
+                  e.stopPropagation()
+                  set({ selectedClips: [clip.id] })
+                  openContextMenu(e, [
+                    { label: tx('Speed Clip Marker to Playhead'), action: 'markers.speedToPlayhead' },
+                    { label: tx('Move Clip Marker to Playhead'), action: 'markers.moveToPlayhead' },
+                    'sep',
+                    { label: tx('Delete Marker'), run: () => void exec('marker.remove', { media_id: m.id, marker_ids: [pm.marker.id] }, tx('Delete Marker')) }
+                  ])
+                }}
+              />
+            ))}
+          </span>
+        )}
         {showKfs && !pv && !ghost && x1 - x0 > 10 && (
           <span className="lm-clip-kfs">
             {clipKeyframeTimes(clip, row.kind).map((k) => (

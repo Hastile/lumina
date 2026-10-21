@@ -10,6 +10,7 @@ import { factoryLayout, focusPanel, isLayoutLocked, resetToSaved, saveLayout, se
 import { openDialog } from '../state/dialog'
 import { exportFrame, openExportDialog } from '../layout/ExportDialog'
 import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, type PanelId, type Tool } from '../state/store'
+import { nearestClipMarker } from '../util/markers'
 import { goTo, shuttle, slowShuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
 import { secondsToTicks, ticksPerFrame, ticksToSeconds } from '../util/time'
 
@@ -619,9 +620,35 @@ def('markers.goOut', t('Go to Out'), () => {
   if (t != null) goTo(m, t)
 })
 def('markers.add', t('Add Marker'), async () => {
+  // Source monitor: a clip marker on the media at the source time
+  if (monitor() === 'source') {
+    const m = sourceMedia()
+    if (m) await exec('marker.add', { media_id: m.id, at: get().sourceTime }, t('Add Marker'))
+    return
+  }
   const seq = seqOrToast()
-  if (seq) await exec('marker.add', { sequence_id: seq.id, at: get().programTime }, 'Add Marker')
+  if (!seq) return
+  const at = get().programTime
+  // Premiere: with a clip selected under the playhead, M marks that clip (its media, at the source time)
+  const clip = get().selectedClips.map((id) => findClip(seq, id)?.clip).find((c) => c?.media_id && c.start <= at && at < c.end)
+  if (clip) await exec('marker.add', { sequence_id: seq.id, clip_id: clip.id, at }, t('Add Marker'))
+  else await exec('marker.add', { sequence_id: seq.id, at }, t('Add Marker'))
 })
+
+/** Put the selected clip's marker nearest the playhead on the playhead: by speed (keeping the clip's
+ * slot) or by sliding the clip. */
+async function markerToPlayhead(mode: 'speed' | 'move') {
+  const seq = seqOrToast()
+  if (!seq) return
+  const at = get().programTime
+  const clip = get().selectedClips.map((id) => findClip(seq, id)?.clip).find((c) => c?.media_id)
+  const pm = clip ? nearestClipMarker(clip, get().doc?.media[clip.media_id!], at) : null
+  if (!clip || !pm) return toast(t('Select a clip with a clip marker'), 'info')
+  await exec('clip.align_marker', { sequence_id: seq.id, clip_id: clip.id, marker_id: pm.marker.id, at, mode },
+    t(mode === 'speed' ? 'Speed Clip Marker to Playhead' : 'Move Clip Marker to Playhead'))
+}
+def('markers.speedToPlayhead', t('Speed Clip Marker to Playhead'), () => markerToPlayhead('speed'))
+def('markers.moveToPlayhead', t('Move Clip Marker to Playhead'), () => markerToPlayhead('move'))
 
 // Transport
 def('transport.playStop', t('Play-Stop Toggle'), () => togglePlay(monitor()))

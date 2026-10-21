@@ -825,9 +825,24 @@ try {
   await page.keyboard.press('Control+Shift+m')
   await page.locator('[data-shortcuts] [data-action-id="markers.add"] [data-key="Ctrl+Shift+M"]').waitFor()
   await page.locator('[data-shortcuts] .actions .lm-btn').click()
+  // nothing selected: a sequence marker
+  await page.evaluate(() => window.__lumina.set({ selectedClips: [] }))
   const markers0 = await page.evaluate(() => { const s = window.__lumina.get(); return Object.keys(s.doc.sequences[s.doc.active_sequence_id].markers).length })
   await page.keyboard.press('Control+Shift+m')
   await page.waitForFunction((n) => { const s = window.__lumina.get(); return Object.keys(s.doc.sequences[s.doc.active_sequence_id].markers).length === n + 1 }, markers0, { timeout: 10000 })
+  // a clip selected under the playhead: M marks the clip (its media, in source time), shown on the clip
+  const marked = await page.evaluate(() => {
+    const s = window.__lumina.get()
+    const seq = s.doc.sequences[s.doc.active_sequence_id]
+    const c = Object.values(seq.tracks).flatMap((t) => Object.values(t.clips)).find((c) => c.media_id && c.start <= s.programTime && s.programTime < c.end)
+    if (c) window.__lumina.set({ selectedClips: [c.id] })
+    return c ? { clip: c.id, media: c.media_id, n: Object.keys(s.doc.media[c.media_id].markers).length } : null
+  })
+  if (marked) {
+    await page.keyboard.press('Control+Shift+m')
+    await page.waitForFunction((m) => Object.keys(window.__lumina.get().doc.media[m.media].markers).length === m.n + 1, marked, { timeout: 10000 })
+    await page.locator(`[data-clip="${marked.clip}"] [data-clip-marker]`).first().waitFor()
+  }
   await page.keyboard.press('Control+Alt+k')
   await page.locator('[data-shortcuts] [data-action="reset-keys"]').click()
   assert.equal(await page.locator('[data-shortcuts] [data-key="Ctrl+Shift+M"]').count(), 0, 'reset to Premiere defaults')
@@ -838,7 +853,7 @@ try {
   const slow = await page.evaluate(() => window.__lumina.get().shuttle)
   await page.keyboard.press('k')
   assert.equal(slow, 0.2, 'Shift+L twice plays at 20%')
-  log('Keyboard Shortcuts: custom Ctrl+Shift+M added a marker, reset restored defaults; Shift+L x2 =', slow * 100 + '%')
+  log('Keyboard Shortcuts: custom Ctrl+Shift+M added a sequence marker', marked ? 'and a clip marker on the selected clip' : '', '; reset restored defaults; Shift+L x2 =', slow * 100 + '%')
   // Lumetri Color panel: dragging Exposure adds the effect and previews live, as one undo step
   await page.evaluate((id) => window.__lumina.set({ selectedClips: [id] }), t6.v[3].id)
   await page.locator('.dv-tab', { hasText: 'Lumetri 색상' }).first().click()

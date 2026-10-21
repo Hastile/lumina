@@ -62,16 +62,22 @@ export type OutPoint = number | null;
  */
 export type Offline = boolean;
 export type Id3 = string;
+export type Start = number;
+export type Duration1 = number;
 export type Name3 = string;
+export type Comment = string;
+export type Color = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
+export type Id4 = string;
+export type Name4 = string;
 export type BinId1 = string;
 export type Width1 = number;
 export type Height1 = number;
 export type FpsNum1 = number;
 export type FpsDen1 = number;
 export type SampleRate1 = number;
-export type Id4 = string;
+export type Id5 = string;
 export type Kind1 = "video" | "audio";
-export type Name4 = string;
+export type Name5 = string;
 export type Locked = boolean;
 export type SyncLock = boolean;
 /**
@@ -89,7 +95,7 @@ export type VolumeDb = number;
  * audio: track pan / balance, -100 left .. 100 right
  */
 export type Pan = number;
-export type Id5 = string;
+export type Id6 = string;
 /**
  * null for graphics and nested sequences
  */
@@ -98,11 +104,11 @@ export type MediaId = string | null;
  * nested sequence (Premiere's Nest): the clip shows that sequence, and source_in is a time in it
  */
 export type SequenceId = string | null;
-export type Name5 = string;
+export type Name6 = string;
 /**
  * timeline start, ticks (inclusive)
  */
-export type Start = number;
+export type Start1 = number;
 /**
  * timeline end, ticks (exclusive)
  */
@@ -208,14 +214,14 @@ export type TangentIn = number[] | null;
  * spatial out-tangent for point values
  */
 export type TangentOut = number[] | null;
-export type Id6 = string;
+export type Id7 = string;
 export type Type = "text";
 export type Text = string;
 export type FontFamily = string;
 export type FontSize = number;
 export type Bold = boolean;
 export type Italic = boolean;
-export type Color = string;
+export type Color1 = string;
 export type StrokeColor = string | null;
 export type StrokeWidth = number;
 export type Background = string | null;
@@ -236,7 +242,7 @@ export type VerticalAlign = "top" | "center" | "bottom";
  * 1/1000 em added after each character
  */
 export type Tracking = number;
-export type Color1 = string;
+export type Color2 = string;
 /**
  * percent
  */
@@ -259,7 +265,7 @@ export type FontFamily1 = string | null;
 export type FontSize1 = number | null;
 export type Bold1 = boolean | null;
 export type Italic1 = boolean | null;
-export type Color2 = string | null;
+export type Color3 = string | null;
 export type StrokeColor1 = string | null;
 export type StrokeWidth1 = number | null;
 export type Tracking1 = number | null;
@@ -274,7 +280,7 @@ export type Visible = boolean;
  * imported with best-effort styling (e.g. from a MOGRT)
  */
 export type Approximate = boolean;
-export type Id7 = string;
+export type Id8 = string;
 export type Type1 = "shape";
 export type Shape = "rectangle" | "ellipse" | "path";
 /**
@@ -312,7 +318,7 @@ export type Visible1 = boolean;
  * blended with everything below in the sequence
  */
 export type Blend = "normal" | "multiply";
-export type Id8 = string;
+export type Id9 = string;
 export type Type2 = "image";
 /**
  * image file (png, jpg, webp, ...)
@@ -368,7 +374,7 @@ export type Text2 = string;
 export type Style = {
   [k: string]: string | number | boolean | number[] | null;
 } | null;
-export type Id9 = string;
+export type Id10 = string;
 export type Type3 = "transform" | "gaussian_blur" | "lumetri" | "parametric_eq" | "compressor" | "hard_limiter";
 export type Enabled1 = boolean;
 /**
@@ -388,7 +394,7 @@ export type Freeze = number | null;
  * Adjustment Layer: its effects apply to everything below it (Opacity mixes the result in; Motion and crop are not used)
  */
 export type Adjustment = boolean;
-export type Id10 = string;
+export type Id11 = string;
 export type Type4 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
 /**
  * outgoing clip (ends at the cut)
@@ -401,7 +407,7 @@ export type ClipB = string | null;
 /**
  * ticks
  */
-export type Duration1 = number;
+export type Duration2 = number;
 /**
  * center at cut / start at cut (over clip_b) / end at cut (over clip_a)
  */
@@ -414,7 +420,7 @@ export type FontFamily2 = string;
 export type FontSize2 = number;
 export type Bold2 = boolean;
 export type Italic2 = boolean;
-export type Color3 = string;
+export type Color4 = string;
 export type StrokeColor3 = string | null;
 export type StrokeWidth3 = number;
 export type Background1 = string | null;
@@ -440,12 +446,6 @@ export type VideoTracks = string[];
  * top (A1) to bottom
  */
 export type AudioTracks = string[];
-export type Id11 = string;
-export type Start1 = number;
-export type Duration2 = number;
-export type Name6 = string;
-export type Comment = string;
-export type Color4 = "green" | "red" | "purple" | "orange" | "yellow" | "white" | "blue" | "cyan";
 export type Playhead = number;
 export type InPoint1 = number | null;
 export type OutPoint1 = number | null;
@@ -545,6 +545,7 @@ export interface MediaItem {
   in_point: InPoint;
   out_point: OutPoint;
   offline: Offline;
+  markers: Markers;
 }
 /**
  * This interface was referenced by `Project`'s JSON-Schema
@@ -567,6 +568,26 @@ export interface AudioStream {
   sample_rate: SampleRate;
   codec: Codec1;
 }
+/**
+ * clip markers (Premiere's master clip markers): start is source time, so every clip of the media shows them
+ */
+export interface Markers {
+  [k: string]: Marker;
+}
+/**
+ * A marker: on a sequence, start is sequence time; on a media item (a clip marker), source time.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "Marker".
+ */
+export interface Marker {
+  id: Id3;
+  start: Start;
+  duration: Duration1;
+  name: Name3;
+  comment: Comment;
+  color: Color;
+}
 export interface Sequences {
   [k: string]: Sequence;
 }
@@ -575,14 +596,14 @@ export interface Sequences {
  * via the `definition` "Sequence".
  */
 export interface Sequence {
-  id: Id3;
-  name: Name3;
+  id: Id4;
+  name: Name4;
   bin_id: BinId1;
   settings: SequenceSettings;
   tracks: Tracks;
   video_tracks: VideoTracks;
   audio_tracks: AudioTracks;
-  markers: Markers;
+  markers: Markers1;
   playhead: Playhead;
   in_point: InPoint1;
   out_point: OutPoint1;
@@ -609,9 +630,9 @@ export interface Tracks {
  * via the `definition` "Track".
  */
 export interface Track {
-  id: Id4;
+  id: Id5;
   kind: Kind1;
-  name: Name4;
+  name: Name5;
   locked: Locked;
   sync_lock: SyncLock;
   hidden: Hidden;
@@ -636,11 +657,11 @@ export interface Clips {
  * via the `definition` "Clip".
  */
 export interface Clip {
-  id: Id5;
+  id: Id6;
   media_id: MediaId;
   sequence_id: SequenceId;
-  name: Name5;
-  start: Start;
+  name: Name6;
+  start: Start1;
   end: End;
   source_in: SourceIn;
   speed: Speed;
@@ -733,14 +754,14 @@ export interface Graphic {
  * via the `definition` "TextLayer".
  */
 export interface TextLayer {
-  id: Id6;
+  id: Id7;
   type: Type;
   text: Text;
   font_family: FontFamily;
   font_size: FontSize;
   bold: Bold;
   italic: Italic;
-  color: Color;
+  color: Color1;
   stroke_color: StrokeColor;
   stroke_width: StrokeWidth;
   background: Background;
@@ -762,7 +783,7 @@ export interface TextLayer {
  * via the `definition` "TextShadow".
  */
 export interface TextShadow {
-  color: Color1;
+  color: Color2;
   opacity: Opacity1;
   angle: Angle;
   distance: Distance;
@@ -780,7 +801,7 @@ export interface TextRun {
   font_size: FontSize1;
   bold: Bold1;
   italic: Italic1;
-  color: Color2;
+  color: Color3;
   stroke_color: StrokeColor1;
   stroke_width: StrokeWidth1;
   tracking: Tracking1;
@@ -794,7 +815,7 @@ export interface TextRun {
  * via the `definition` "ShapeLayer".
  */
 export interface ShapeLayer {
-  id: Id7;
+  id: Id8;
   type: Type1;
   shape: Shape;
   path: Path1;
@@ -821,7 +842,7 @@ export interface ShapeLayer {
  * via the `definition` "ImageLayer".
  */
 export interface ImageLayer {
-  id: Id8;
+  id: Id9;
   type: Type2;
   path: Path2;
   size: Size;
@@ -863,7 +884,7 @@ export interface Caption {
  * via the `definition` "Effect".
  */
 export interface Effect {
-  id: Id9;
+  id: Id10;
   type: Type3;
   enabled: Enabled1;
   params: Params;
@@ -888,11 +909,11 @@ export interface Transitions {
  * via the `definition` "Transition".
  */
 export interface Transition {
-  id: Id10;
+  id: Id11;
   type: Type4;
   clip_a: ClipA;
   clip_b: ClipB;
-  duration: Duration1;
+  duration: Duration2;
   alignment: Alignment;
 }
 /**
@@ -907,7 +928,7 @@ export interface CaptionStyle {
   font_size: FontSize2;
   bold: Bold2;
   italic: Italic2;
-  color: Color3;
+  color: Color4;
   stroke_color: StrokeColor3;
   stroke_width: StrokeWidth3;
   background: Background1;
@@ -921,20 +942,8 @@ export interface CaptionStyle {
   rotation: Rotation4;
   opacity: Opacity5;
 }
-export interface Markers {
+export interface Markers1 {
   [k: string]: Marker;
-}
-/**
- * This interface was referenced by `Project`'s JSON-Schema
- * via the `definition` "Marker".
- */
-export interface Marker {
-  id: Id11;
-  start: Start1;
-  duration: Duration2;
-  name: Name6;
-  comment: Comment;
-  color: Color4;
 }
 /**
  * captions, templates and adjustment layers
