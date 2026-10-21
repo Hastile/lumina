@@ -27,6 +27,7 @@ type State = {
   selectedTransition: string | null
   selectedTrack: string | null // a track header clicked: Effect Controls / Properties show the track (caption style, track effects)
   selectedLayer: string | null // a layer of the selected graphic clip (Properties panel), null = the clip itself
+  selectedMarker: { id: string; media_id?: string } | null // a clicked marker: a sequence marker, or a clip marker (media_id)
   selectedItems: string[]
   currentBin: string | null
 
@@ -88,6 +89,7 @@ export const useStore = create<State>(() => ({
   selectedTransition: null,
   selectedTrack: null,
   selectedLayer: null,
+  selectedMarker: null,
   selectedItems: [],
   currentBin: null,
   sourceMediaId: null,

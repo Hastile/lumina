@@ -7,7 +7,7 @@ import { t as tx } from '@shared/i18n'
 import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Asset, Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
-import { markerAtPlayhead, runAction } from '../actions/actions'
+import { currentMarker, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
 import { DRAG_MIME, draggedItems } from '../panels/ProjectPanel'
@@ -236,6 +236,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const playing = useStore((s) => s.playing === 'program')
   const flash = useStore((s) => s.flashTracks)
   const showKfs = useStore((s) => s.showClipKeyframes)
+  const selectedMarker = useStore((s) => s.selectedMarker)
   const rulerNumbers = useStore((s) => s.rulerNumbers)
   const audioUnits = useStore((s) => s.audioTimeUnits)
 
@@ -781,29 +782,31 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           <ClipFilmstrip path={m.filmstrip_path} srcIn={srcIn} speed={pv?.speed ?? clip.speed} duration={stop - start} x0={x0} width={x1 - x0} lane={width} height={target.height - 2} />
         )}
         {row.kind === 'audio' && m?.waveform_path && <ClipWaveform path={m.waveform_path} srcIn={srcIn} speed={clip.speed} duration={stop - start} clip={clip} seq={seq} />}
-        {!pv && !ghost && m?.markers && x1 - x0 > 6 && (
+        {m?.markers && x1 - x0 > 6 && (
+          // shown while the clip is dragged, trimmed or stretched too, where they will land
           <span className="lm-clip-markers">
-            {clipMarkers(clip, m).map((pm) => (
+            {clipMarkers({ ...clip, start, end: stop, source_in: srcIn, speed: pv?.speed ?? clip.speed }, m).map((pm) => (
               <span
                 key={pm.marker.id}
-                className={`mk ${pm.marker.color}`}
+                className={`mk ${pm.marker.color} ${selectedMarker?.media_id === m.id && selectedMarker.id === pm.marker.id ? 'selected' : ''}`}
                 data-clip-marker={pm.marker.id}
-                style={{ left: ((pm.t - clip.start) / Math.max(1, clip.end - clip.start)) * (x1 - x0) }}
+                style={{ left: ((pm.t - start) / Math.max(1, stop - start)) * (x1 - x0) }}
                 title={`${pm.marker.name || tx('Marker')} · ${timecode(pm.t, st)}`}
                 onMouseDown={(e) => {
-                  // jump to the marked moment (and select its clip)
+                  // select the marker (and its clip) and jump to the marked moment
                   e.stopPropagation()
-                  set({ selectedClips: [clip.id] })
+                  set({ selectedClips: [clip.id], selectedMarker: { id: pm.marker.id, media_id: m.id } })
                   goTo('program', pm.t)
                 }}
                 onContextMenu={(e) => {
                   e.stopPropagation()
-                  set({ selectedClips: [clip.id] })
+                  set({ selectedClips: [clip.id], selectedMarker: { id: pm.marker.id, media_id: m.id } })
                   openContextMenu(e, [
                     { label: tx('Speed Clip Marker to Playhead'), action: 'markers.speedToPlayhead' },
                     { label: tx('Move Clip Marker to Playhead'), action: 'markers.moveToPlayhead' },
                     'sep',
-                    { label: tx('Delete Marker'), run: () => void exec('marker.remove', { media_id: m.id, marker_ids: [pm.marker.id] }, tx('Delete Marker')) }
+                    { label: tx('Edit Marker...'), action: 'markers.edit' },
+                    { label: tx('Clear Selected Marker'), action: 'markers.clearCurrent' }
                   ])
                 }}
               />
@@ -911,7 +914,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const rulerMenu = (e: React.MouseEvent) => {
     const hasIn = seq.in_point != null
     const hasOut = seq.out_point != null
-    const here = markerAtPlayhead()
+    const here = currentMarker()
     openContextMenu(e, [
       { label: tx('Mark In'), action: 'markers.markIn' },
       { label: tx('Mark Out'), action: 'markers.markOut' },
@@ -982,7 +985,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             </button>
           </div>
         </div>
-        <div className="lm-ruler" data-ruler="" style={{ height: RULER_H }} onMouseDown={(e) => e.button === 0 && scrubRuler(e)} onWheel={onWheel} onContextMenu={rulerMenu}>
+        <div className="lm-ruler" data-ruler="" style={{ height: RULER_H }} onMouseDown={(e) => e.button === 0 && (set({ selectedMarker: null }), scrubRuler(e))} onWheel={onWheel} onContextMenu={rulerMenu}>
           {ticks.map((s) => (
             <div key={s} className="tick" style={{ left: s * pps - scrollX }}>
               {rulerNumbers && <span>{audioUnits ? audioTimecode(Math.round(s * TICKS_PER_SECOND), st.sample_rate) : timecode(Math.round(s * TICKS_PER_SECOND), st)}</span>}
@@ -992,10 +995,21 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             <div className="inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0) }} />
           )}
           {Object.values(seq.markers).map((mk) => (
-            <div key={mk.id} className={`marker ${mk.color} ${mk.duration > 0 ? 'range' : ''}`} data-seq-marker={mk.id}
+            <div key={mk.id} className={`marker ${mk.color} ${mk.duration > 0 ? 'range' : ''} ${!selectedMarker?.media_id && selectedMarker?.id === mk.id ? 'selected' : ''}`} data-seq-marker={mk.id}
               style={{ left: toX(mk.start), width: mk.duration > 0 ? Math.max(2, toX(mk.start + mk.duration) - toX(mk.start)) : undefined }}
               title={[mk.name || tx('Marker'), mk.comment].filter(Boolean).join(' · ')}
-              onDoubleClick={() => (goTo('program', mk.start), runAction('markers.edit'))} />
+              // a click selects the marker (Clear Selected Marker, Edit Marker) and puts the playhead on it
+              onMouseDown={(e) => {
+                if (e.button !== 0) return
+                e.stopPropagation()
+                set({ selectedMarker: { id: mk.id } })
+                goTo('program', mk.start)
+              }}
+              onContextMenu={(e) => {
+                set({ selectedMarker: { id: mk.id } })
+                rulerMenu(e)
+              }}
+              onDoubleClick={() => runAction('markers.edit')} />
           ))}
           <div className="head" style={{ left: toX(time) }} />
         </div>
@@ -1013,7 +1027,10 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         <div
           className="lm-tl-lanes"
           ref={lanesRef}
-          onMouseDown={laneMouseDown}
+          onMouseDown={(e) => {
+            if (get().selectedMarker) set({ selectedMarker: null })
+            laneMouseDown(e)
+          }}
           onMouseMove={laneMouseMove}
           onMouseLeave={() => setHover(null)}
           onDragOver={(e) => {

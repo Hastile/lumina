@@ -669,10 +669,23 @@ function goMarker(dir: 1 | -1) {
 }
 def('markers.next', t('Go to Next Marker'), () => goMarker(1))
 def('markers.prev', t('Go to Previous Marker'), () => goMarker(-1))
+/** The marker Clear Selected Marker / Edit Marker act on: the clicked one, else the sequence marker under the playhead. */
+export function currentMarker(): { marker: Marker; media_id?: string } | null {
+  const sel = get().selectedMarker
+  if (sel) {
+    const seq = activeSequence()
+    const marker = sel.media_id ? get().doc?.media[sel.media_id]?.markers?.[sel.id] : seq?.markers[sel.id]
+    if (marker) return { marker, media_id: sel.media_id }
+  }
+  const m = markerAtPlayhead()
+  return m ? { marker: m } : null
+}
 def('markers.clearCurrent', t('Clear Selected Marker'), async () => {
   const seq = activeSequence()
-  const m = markerAtPlayhead()
-  if (seq && m) await exec('marker.remove', { sequence_id: seq.id, marker_ids: [m.id] }, t('Clear Selected Marker'))
+  const cur = currentMarker()
+  if (!seq || !cur) return
+  const owner = cur.media_id ? { media_id: cur.media_id } : { sequence_id: seq.id }
+  if (await exec('marker.remove', { ...owner, marker_ids: [cur.marker.id] }, t('Clear Selected Marker'))) set({ selectedMarker: null })
 })
 def('markers.clearAll', t('Clear Markers'), async () => {
   const seq = activeSequence()
@@ -682,8 +695,10 @@ def('markers.clearAll', t('Clear Markers'), async () => {
 const MARKER_COLORS = ['green', 'red', 'purple', 'orange', 'yellow', 'white', 'blue', 'cyan'] as const
 def('markers.edit', t('Edit Marker...'), () => {
   const seq = activeSequence()
-  const m = markerAtPlayhead()
-  if (!seq || !m) return
+  const cur = currentMarker()
+  if (!seq || !cur) return
+  const m = cur.marker
+  const owner = cur.media_id ? { media_id: cur.media_id } : { sequence_id: seq.id }
   openDialog({
     title: t('Edit Marker...'),
     fields: [
@@ -694,7 +709,7 @@ def('markers.edit', t('Edit Marker...'), () => {
     ],
     onSubmit: async (v) => {
       await exec('marker.update', {
-        sequence_id: seq.id, marker_id: m.id, name: String(v.name), comment: String(v.comment),
+        ...owner, marker_id: m.id, name: String(v.name), comment: String(v.comment),
         duration: Math.round(Number(v.duration) * TICKS_PER_SECOND), color: String(v.color)
       }, t('Edit Marker...'))
     }

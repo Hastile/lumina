@@ -860,6 +860,17 @@ try {
   await page.locator('.lm-ctx [data-action="view.rulerNumbers"]').click()
   await page.locator('[data-ruler] .tick span').first().waitFor()
   log('ruler menu: 19 items, Add Range Marker made a range marker, Time Ruler Numbers off and on')
+  // a clicked marker is the selected one: Clear Selected Marker deletes it
+  const seqMarks = () => page.evaluate(() => { const s = window.__lumina.get(); return Object.keys(s.doc.sequences[s.doc.active_sequence_id].markers) })
+  const marks0 = await seqMarks()
+  const victim = marks0[0]
+  await page.locator(`[data-seq-marker="${victim}"]`).dispatchEvent('mousedown', { button: 0 })
+  await page.waitForFunction((id) => window.__lumina.get().selectedMarker?.id === id, victim)
+  await page.locator('[data-ruler]').click({ button: 'right', position: { x: 5, y: 25 } })
+  await page.locator('.lm-ctx [data-action="markers.clearCurrent"]').click()
+  await page.waitForFunction((id) => { const s = window.__lumina.get(); return !s.doc.sequences[s.doc.active_sequence_id].markers[id] }, victim, { timeout: 10000 })
+  assert.equal((await seqMarks()).length, marks0.length - 1, 'only the selected marker went')
+  log('clicked marker selected and removed by Clear Selected Marker')
   // Shift+L: slow play, each press 10% faster; K stops
   await page.keyboard.press('Shift+l')
   await page.keyboard.press('Shift+l')
