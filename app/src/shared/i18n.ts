@@ -679,6 +679,7 @@ const ko: Record<string, string> = {
   'Pan': '패닝',
   'Mix': '혼합',
   'Track Volume': '트랙 볼륨',
+  'Peak (click to reset)': '피크 (클릭하면 초기화)',
   'Mix Volume': '혼합 볼륨',
   // audio effects
   'Parametric Equalizer': '파라메트릭 이퀄라이저',

@@ -579,6 +579,14 @@ try {
     return seq.tracks[seq.audio_tracks[0]].volume_db < 0
   }, null, { timeout: 10000 })
   const afterFader = await audioState()
+  // the strips read like Premiere's: a dB scale on each fader, a 3 dB meter scale and the held peak in dB
+  {
+    const strip = page.locator('[data-mixer="track"] [data-strip="A1"]')
+    assert.equal(await strip.locator('.fscale span').count(), 13, 'fader scale')
+    assert.equal(await strip.locator('.lm-smeter .lm-mscale span').count(), 20, 'meter scale 0 to -57 in 3 dB steps')
+    assert.ok(await strip.locator('.lm-smeter .peak').count(), 'peak readout')
+    if (process.env.E2E_SHOTS) await page.locator('[data-mixer="track"]').screenshot({ path: join(process.env.E2E_SHOTS, 'mixer.png') })
+  }
   const band = page.locator(`[data-vband="${afterFader.clips[0].id}"] .hit`)
   const bb = await page.locator(`[data-vband="${afterFader.clips[0].id}"]`).boundingBox()
   const by = bb.y + 4 + (1 - Math.pow(10, -6 / 40)) * (bb.height - 8)

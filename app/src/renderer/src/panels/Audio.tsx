@@ -37,9 +37,11 @@ function step(l: Level, peak: number, dt: number, now: number): Level {
   return { now: cur, hold, holdAt, clip: l.clip || peak >= 1 }
 }
 
+/** Clear the clip LEDs and the held peaks (the peak readouts start over). */
 function clearClip(s: { master: [Level, Level]; tracks: Record<string, [Level, Level]> }) {
-  s.master = [{ ...s.master[0], clip: false }, { ...s.master[1], clip: false }]
-  for (const k of Object.keys(s.tracks)) s.tracks[k] = [{ ...s.tracks[k][0], clip: false }, { ...s.tracks[k][1], clip: false }]
+  const clear = (l: Level): Level => ({ ...l, clip: false, hold: -Infinity, holdAt: 0 })
+  s.master = [clear(s.master[0]), clear(s.master[1])]
+  for (const k of Object.keys(s.tracks)) s.tracks[k] = [clear(s.tracks[k][0]), clear(s.tracks[k][1])]
 }
 
 /** Live levels of the Mix and every track (L, R), updated on animation frames. */
@@ -88,7 +90,8 @@ function Bar({ l, onReset }: { l: Level; onReset?: () => void }) {
   )
 }
 
-const SCALE = [0, -6, -12, -18, -24, -30, -36, -42, -48, -54]
+// Premiere's meter scale: linear in dB, a label every 3 dB down to -57
+const SCALE = Array.from({ length: 20 }, (_, i) => -3 * i)
 
 function Scale() {
   return (
@@ -101,6 +104,37 @@ function Scale() {
     </div>
   )
 }
+
+const fmtPeak = (db: number): string => (Number.isFinite(db) && db > FLOOR ? db.toFixed(1) : '-∞')
+
+/** A strip's stereo meter: clip LEDs, the two bars against a 3 dB scale, and the held peak in dB
+ * (click to reset). */
+function StereoMeter({ levels, onReset }: { levels?: [Level, Level]; onReset?: () => void }) {
+  const [l, r] = levels ?? [fresh(), fresh()]
+  const hold = Math.max(l.hold, r.hold)
+  return (
+    <div className="lm-smeter" onClick={onReset} title={t('Peak (click to reset)')}>
+      <div className="leds">
+        <div className={`clipled ${l.clip ? 'on' : ''}`} />
+        <div className={`clipled ${r.clip ? 'on' : ''}`} />
+        <span />
+      </div>
+      <div className="wells">
+        {[l, r].map((x, i) => (
+          <div key={i} className="well">
+            <div className="fill" style={{ clipPath: `inset(${(1 - meterPos(x.now)) * 100}% 0 0 0)` }} />
+            {Number.isFinite(x.hold) && x.hold > FLOOR && <div className="hold" style={{ bottom: `${meterPos(x.hold) * 100}%` }} />}
+          </div>
+        ))}
+        <Scale />
+      </div>
+      <div className={`peak ${l.clip || r.clip ? 'over' : ''}`} data-peak={fmtPeak(hold)}>{fmtPeak(hold)}</div>
+    </div>
+  )
+}
+
+// fader marks on the fader's own taper (dbToPos); -∞ at the bottom
+const FADER_MARKS = [6, 3, 0, -3, -6, -9, -12, -15, -18, -24, -30, -40, -96]
 
 export function AudioMeters() {
   const lv = useLevels()
@@ -147,9 +181,16 @@ function Fader({ db, onPreview, onCommit, label }: { db: number; onPreview: (db:
   }
   return (
     <div className="lm-fader" data-fader={label}>
-      <div className="rail" ref={rail} onDoubleClick={() => onCommit(0)}>
-        <div className="zero" style={{ bottom: `${dbToPos(0) * 100}%` }} />
-        <div className="knob" style={{ bottom: `calc(${dbToPos(shown) * 100}% - 5px)` }} onMouseDown={down} />
+      <div className="rail-wrap">
+        <div className="fscale">
+          {FADER_MARKS.map((d) => (
+            <span key={d} className={d === 0 ? 'zero-mark' : ''} style={{ bottom: `${dbToPos(d) * 100}%` }}>{d <= -96 ? '-∞' : d > 0 ? `+${d}` : d}</span>
+          ))}
+        </div>
+        <div className="rail" ref={rail} onDoubleClick={() => onCommit(0)}>
+          <div className="zero" style={{ bottom: `${dbToPos(0) * 100}%` }} />
+          <div className="knob" style={{ bottom: `calc(${dbToPos(shown) * 100}% - 5px)` }} onMouseDown={down} />
+        </div>
       </div>
       {edit === null ? (
         <span className="val" onClick={() => setEdit(fmtDb(db))}>{fmtDb(shown)}</span>
@@ -209,16 +250,13 @@ function PanKnob({ pan, onPreview, onCommit, disabled }: { pan: number; onPrevie
   )
 }
 
-function Strip({ name, children, fader, levels, className }: { name: string; children: React.ReactNode; fader: React.ReactNode; levels?: [Level, Level]; className?: string }) {
+function Strip({ name, children, fader, levels, onReset, className }: { name: string; children: React.ReactNode; fader: React.ReactNode; levels?: [Level, Level]; onReset?: () => void; className?: string }) {
   return (
     <div className={`strip ${className ?? ''}`} data-strip={name}>
       {children}
       <div className="body-row">
         {fader}
-        <div className="meters">
-          <Bar l={levels?.[0] ?? fresh()} />
-          <Bar l={levels?.[1] ?? fresh()} />
-        </div>
+        <StereoMeter levels={levels} onReset={onReset} />
       </div>
       <div className="name">{name}</div>
     </div>
@@ -249,7 +287,7 @@ export function AudioTrackMixerPanel() {
       {seq.audio_tracks.map((id, i) => {
         const tr = seq.tracks[id]
         return (
-          <Strip key={id} name={`A${i + 1}`} levels={lv.tracks[id]} fader={<Fader label={`A${i + 1}`} db={tr.volume_db ?? 0} onPreview={(db) => previewMix(seq, { id, db })} onCommit={(db) => setTrack(id, { volume_db: db }, t('Track Volume'))} />}>
+          <Strip key={id} name={`A${i + 1}`} levels={lv.tracks[id]} onReset={lv.reset} fader={<Fader label={`A${i + 1}`} db={tr.volume_db ?? 0} onPreview={(db) => previewMix(seq, { id, db })} onCommit={(db) => setTrack(id, { volume_db: db }, t('Track Volume'))} />}>
             <PanKnob pan={tr.pan ?? 0} onPreview={(p) => previewMix(seq, { id, pan: p })} onCommit={(p) => setTrack(id, { pan: p }, t('Pan'))} />
             <div className="ms">
               <button className={`lm-ms m ${tr.muted ? 'on' : ''}`} onClick={() => setTrack(id, { muted: !tr.muted }, t('Mute Track'))}>M</button>
@@ -258,7 +296,7 @@ export function AudioTrackMixerPanel() {
           </Strip>
         )
       })}
-      <Strip name={t('Mix')} levels={lv.master} className="mix" fader={<Fader
+      <Strip name={t('Mix')} levels={lv.master} onReset={lv.reset} className="mix" fader={<Fader
           label="Mix"
           db={seq.master_volume_db ?? 0}
           onPreview={(db) => previewMix(seq, undefined, db)}
@@ -285,7 +323,7 @@ export function AudioClipMixerPanel() {
         const clip: Clip | undefined = Object.values(tr.clips).find((c) => c.start <= time && time < c.end)
         const db = clip ? (valueAt(clip, 'volume_db', time, seq) as number) : 0
         return (
-          <Strip key={id} name={`A${i + 1}`} levels={lv.tracks[id]} fader={clip ? (
+          <Strip key={id} name={`A${i + 1}`} levels={lv.tracks[id]} onReset={lv.reset} fader={clip ? (
               <Fader
                 label={`A${i + 1}`}
                 db={db}

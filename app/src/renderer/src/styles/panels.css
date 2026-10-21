@@ -259,13 +259,28 @@
 .lm-mbar .fill { position: absolute; inset: 0; background: linear-gradient(to top, #2ea043 0%, #2ea043 70%, #d8c33a 85%, #e8862a 95%, #ff3b30 100%); }
 .lm-mbar .hold { position: absolute; left: 0; right: 0; height: 2px; background: #f0e070; }
 .lm-mpeak { display: none; }
+/* a mixer strip's stereo meter: LEDs, two bars on a 3 dB scale, the held peak in dB */
+.lm-smeter { display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+.lm-smeter .leds { display: flex; gap: 2px; height: 6px; }
+.lm-smeter .leds .clipled { width: 9px; background: #3a1d1d; border-radius: 1px; }
+.lm-smeter .leds .clipled.on { background: #ff3b30; }
+.lm-smeter .leds span { width: 24px; }
+.lm-smeter .wells { flex: 1; display: flex; gap: 2px; min-height: 0; }
+.lm-smeter .well { position: relative; width: 9px; background: #141414; border-radius: 1px; overflow: hidden;
+  background-image: repeating-linear-gradient(to top, transparent 0, transparent calc(5% - 1px), #232323 calc(5% - 1px), #232323 5%); }
+.lm-smeter .fill { position: absolute; inset: 0; background: linear-gradient(to top, #2ea043 0%, #2ea043 70%, #d8c33a 85%, #e8862a 95%, #ff3b30 100%); }
+.lm-smeter .hold { position: absolute; left: 0; right: 0; height: 2px; background: #f0e070; }
+.lm-smeter .lm-mscale { margin: 0; width: 24px; }
+.lm-smeter .lm-mscale span { left: 3px; right: auto; }
+.lm-smeter .peak { font-size: 10px; font-variant-numeric: tabular-nums; color: #e0e0e0; background: #151515; border-radius: 2px; text-align: center; padding: 1px 0; width: 44px; }
+.lm-smeter .peak.over { color: #fff; background: #b3261e; }
 
 /* Audio Track / Clip Mixer strips */
 .lm-mixer { flex-direction: row; gap: 4px; padding: 8px; overflow-x: auto; min-height: 0; }
-.lm-mixer .strip { width: 74px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #262626; border-radius: 3px; padding: 6px 0 4px; }
+.lm-mixer .strip { width: 118px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 6px; background: #262626; border-radius: 3px; padding: 6px 0 4px; }
 .lm-mixer .strip.mix { margin-left: 8px; background: #2c2c2c; }
 .lm-mixer .ms { display: flex; gap: 2px; min-height: 18px; }
-.lm-mixer .body-row { flex: 1; min-height: 80px; display: flex; gap: 6px; width: 100%; justify-content: center; }
+.lm-mixer .body-row { flex: 1; min-height: 80px; display: flex; gap: 4px; width: 100%; justify-content: center; padding: 0 4px; box-sizing: border-box; }
 .lm-mixer .meters { display: flex; gap: 2px; }
 .lm-mixer .name { font-size: 11px; color: var(--text-dim); }
 .lm-mixer .clipname { font-size: 10px; color: var(--text-dim); max-width: 66px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-height: 30px; }
@@ -273,9 +288,14 @@
 .lm-pan.disabled { opacity: 0.35; cursor: default; }
 .lm-pan .ring { fill: #1b1b1b; stroke: #8a8a8a; stroke-width: 1.4; }
 .lm-pan .needle { stroke: #3d9bff; stroke-width: 2; stroke-linecap: round; }
-.lm-fader { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 34px; }
+.lm-fader { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 46px; }
+.lm-fader .rail-wrap { position: relative; flex: 1; display: flex; gap: 6px; margin: 13px 0 3px; align-self: stretch; justify-content: flex-end; padding-right: 9px; }
+.lm-fader .fscale { position: relative; width: 22px; font-size: 9px; color: #8a8a8a; }
+.lm-fader .fscale span { position: absolute; right: 0; transform: translateY(50%); line-height: 1; white-space: nowrap; }
+.lm-fader .fscale span::after { content: ''; position: absolute; right: -6px; top: 50%; width: 4px; height: 1px; background: #5a5a5a; }
+.lm-fader .fscale .zero-mark { color: #d0d0d0; }
 .lm-fader.empty { opacity: 0.3; }
-.lm-fader .rail { position: relative; flex: 1; width: 6px; background: #151515; border-radius: 3px; margin: 5px 0; }
+.lm-fader .rail { position: relative; width: 6px; background: #151515; border-radius: 3px; }
 .lm-fader .zero { position: absolute; left: -6px; right: -6px; height: 1px; background: #666; }
 .lm-fader .knob { position: absolute; left: -9px; width: 24px; height: 10px; background: linear-gradient(#d8d8d8, #9a9a9a); border-radius: 2px; cursor: ns-resize; box-shadow: 0 1px 2px #000; }
 .lm-fader .val { font-size: 10px; color: #3d9bff; width: 40px; text-align: center; background: transparent; border: 0; padding: 0; cursor: text; }
