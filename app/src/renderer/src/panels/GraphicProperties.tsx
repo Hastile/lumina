@@ -5,16 +5,17 @@
 import { useEffect, useState } from 'react'
 import {
   AlignCenter, AlignCenterHorizontal, AlignCenterVertical, AlignLeft, AlignRight, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd,
-  AlignVerticalJustifyStart, ArrowDown, ArrowUp, Bold, ChevronDown, Circle, Eye, EyeOff, Italic, Plus, Spline, Square, Trash2, TriangleAlert, Type
+  AlignVerticalJustifyStart, ArrowDown, ArrowUp, Bold, ChevronDown, Circle, Eye, EyeOff, ImagePlus, Italic, Plus, Square, Trash2, TriangleAlert
 } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { ShapeLayer, TextLayer } from '../engine/document'
-import { exec, set, useStore } from '../state/store'
-import { layerName, ShapeLayerEditor } from './GraphicLayers'
+import type { ImageLayer, ShapeLayer, TextLayer } from '../engine/document'
+import { exec, get, set, useStore } from '../state/store'
+import { IMAGE_FILTERS, ImageLayerEditor, LayerIcon, layerCommand, layerName, ShapeLayerEditor } from './GraphicLayers'
+import { DRAG_MIME } from './ProjectPanel'
 import { NumberScrub, type ClipCtx } from './PropertyControls'
 import { TextStyleChips } from './TrackPanel'
 
-type Layer = TextLayer | ShapeLayer
+type Layer = TextLayer | ShapeLayer | ImageLayer
 type Shadow = NonNullable<TextLayer['shadow']>
 
 const FONTS = ['Pretendard', 'Pretendard-Medium', 'Pretendard-Bold', 'Pretendard-Black', 'Malgun Gothic', 'S-CoreDream-5Medium', 'S-CoreDream-6Bold', 'S-CoreDream-9Black', 'Noto Sans KR', 'Arial', 'Impact']
@@ -39,16 +40,34 @@ function LayerList({ c, selected }: { c: ClipCtx; selected: string | null }) {
   const index = layers.findIndex((l) => l.id === selected)
   const pick = (id: string | null) => set({ selectedLayer: id })
   const setVisible = (l: Layer, visible: boolean) =>
-    void exec(l.type === 'shape' ? 'graphic.set_shape' : 'graphic.set_layer', { ...base, layer_id: l.id, visible }, t('Toggle Layer Visibility'))
+    void exec(layerCommand(l), { ...base, layer_id: l.id, visible }, t('Toggle Layer Visibility'))
   const added = (r: { layer_id: string } | null) => r && pick(r.layer_id)
+  const addImage = async (path: string) => added(await exec<{ layer_id: string }>('graphic.add_image', { ...base, path }, t('New Layer > From File')))
+  const pickImage = async () => {
+    const [path] = await window.lumina.openDialog({ title: t('New Layer > From File'), properties: ['openFile'], filters: IMAGE_FILTERS }, 'import')
+    if (path) await addImage(path)
+  }
+  // images dragged from the Project panel become image layers (Premiere: drop into Essential Graphics)
+  const drop = async (e: React.DragEvent) => {
+    const raw = e.dataTransfer.getData(DRAG_MIME)
+    if (!raw) return
+    e.preventDefault()
+    const media = get().doc?.media ?? {}
+    for (const id of JSON.parse(raw) as string[]) if (media[id]?.kind === 'image') await addImage(media[id].path)
+  }
   return (
     <>
-      <div className="lm-glist" onClick={(e) => e.target === e.currentTarget && pick(null)}>
+      <div
+        className="lm-glist"
+        title={t('Drop images from the Project panel here.')}
+        onClick={(e) => e.target === e.currentTarget && pick(null)}
+        onDragOver={(e) => e.dataTransfer.types.includes(DRAG_MIME) && e.preventDefault()}
+        onDrop={(e) => void drop(e)}
+      >
         {layers
           .map((l, i) => ({ l, i }))
           .reverse()
           .map(({ l }) => {
-            const Icon = l.type === 'text' ? Type : l.shape === 'ellipse' ? Circle : l.shape === 'rectangle' ? Square : Spline
             const visible = l.visible !== false
             return (
               <div key={l.id} className={`lm-glayer ${visible ? '' : 'hidden'} ${l.id === selected ? 'selected' : ''}`} data-glayer={l.id} onClick={() => pick(l.id === selected ? null : l.id)}>
@@ -56,7 +75,7 @@ function LayerList({ c, selected }: { c: ClipCtx; selected: string | null }) {
                   <button className="lm-iconbtn" title={t('Toggle Layer Visibility')} onClick={(e) => { e.stopPropagation(); setVisible(l, !visible) }}>
                     {visible ? <Eye size={12} /> : <EyeOff size={12} />}
                   </button>
-                  <Icon size={12} />
+                  <LayerIcon l={l} />
                   <span className="name">{layerName(l)}</span>
                 </div>
               </div>
@@ -73,6 +92,9 @@ function LayerList({ c, selected }: { c: ClipCtx; selected: string | null }) {
         </button>
         <button className="lm-btn small" onClick={async () => added(await exec<{ layer_id: string }>('graphic.add_shape', { ...base, shape: 'ellipse' }, t('New Layer > Ellipse')))}>
           <Circle size={12} /> {t('Ellipse')}
+        </button>
+        <button className="lm-btn small" data-add-layer="image" title={t('New Layer > From File')} onClick={() => void pickImage()}>
+          <ImagePlus size={12} /> {t('Image')}
         </button>
         <span style={{ flex: 1 }} />
         <button className="lm-iconbtn" title={t('Bring Forward')} disabled={index < 0 || index === layers.length - 1}
@@ -274,6 +296,11 @@ export function GraphicProperties({ c, clipSections }: { c: ClipCtx; clipSection
       {layer?.type === 'shape' && (
         <Section title={t('Appearance')}>
           <ShapeLayerEditor c={c} layer={layer} />
+        </Section>
+      )}
+      {layer?.type === 'image' && (
+        <Section title={t('Align and Transform')}>
+          <ImageLayerEditor c={c} layer={layer} />
         </Section>
       )}
     </>

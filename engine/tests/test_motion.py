@@ -303,3 +303,37 @@ def test_new_graphic_is_empty_and_never_lands_on_a_caption_track():
     assert s.execute("graphic.create_text", {"at": "1s", "text": "x"})["result"]["track_id"] != cap
     with pytest.raises(CommandError):
         s.execute("graphic.create", {"at": 0, "track_id": cap})
+
+
+def test_image_layers_in_a_graphic(tmp_path):
+    from PIL import Image
+
+    from lumina.render.compositor import render_graphic
+
+    red = tmp_path / "red.png"
+    Image.new("RGBA", (200, 100), (255, 0, 0, 255)).save(red)
+    big = tmp_path / "big.png"
+    Image.new("RGBA", (3840, 1080), (0, 0, 255, 255)).save(big)
+    s = Session(services=FakeServices())
+    sid = s.execute("sequence.create", {"name": "s", "settings": {"width": 1080, "height": 1920, "fps_num": 30, "fps_den": 1}})["result"]["sequence_id"]
+    g = s.execute("graphic.create", {"at": 0})["result"]
+    out = s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(red), "position": [300, 400]})["result"]
+    assert out["size"] == [200, 100]
+    clip = s.doc["sequences"][sid]["tracks"][g["track_id"]]["clips"][g["clip_id"]]
+    assert validate_project(s.doc).model_dump(mode="json") == s.doc
+    # anchored at its centre on the position, at full size
+    img = render_graphic(clip["graphic"], 1080, 1920)
+    assert img.getchannel("A").getbbox() == (200, 350, 400, 450) and img.getpixel((300, 400))[:3] == (255, 0, 0)
+    s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": out["layer_id"], "scale": 50, "opacity": 50})
+    img = render_graphic(clip["graphic"], 1080, 1920)
+    assert img.getchannel("A").getbbox() == (250, 375, 350, 425) and abs(img.getpixel((300, 400))[3] - 128) <= 2
+    # a picture larger than the frame is scaled down to fit; replacing the file keeps the placement
+    wide = s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(big)})["result"]
+    layer = clip["graphic"]["layers"][-1]
+    assert layer["scale"] == pytest.approx(100 * 1080 / 3840, abs=0.01) and layer["position"] == [540, 960]
+    s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": wide["layer_id"], "path": str(red)})
+    assert clip["graphic"]["layers"][-1]["size"] == [200, 100] and clip["graphic"]["layers"][-1]["position"] == [540, 960]
+    with pytest.raises(CommandError):
+        s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(tmp_path / "missing.png")})
+    with pytest.raises(CommandError):
+        s.execute("graphic.set_layer", {"clip_id": g["clip_id"], "layer_id": out["layer_id"], "text": "x"})

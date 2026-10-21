@@ -238,7 +238,7 @@ class TrackRef(Params):
 
 def _text_of(graphic: dict) -> tuple[str, dict] | None:
     texts = [l for l in graphic.get("layers", []) if l.get("type") == "text" and l.get("visible", True)]
-    if len(texts) != 1 or any(l.get("type") == "shape" and l.get("visible", True) for l in graphic.get("layers", [])):
+    if len(texts) != 1 or any(l.get("type") in ("shape", "image") and l.get("visible", True) for l in graphic.get("layers", [])):
         return None
     return texts[0]["text"], texts[0]
 

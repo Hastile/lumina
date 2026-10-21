@@ -182,7 +182,26 @@ class ShapeLayer(_Model):
     blend: Literal["normal", "multiply"] = Field(default="normal", description="blended with everything below in the sequence")
 
 
-GraphicLayer = Annotated[TextLayer | ShapeLayer, Field(discriminator="type")]
+class ImageLayer(_Model):
+    """A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,
+    null = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation
+    apply around it."""
+    id: str
+    type: Literal["image"] = "image"
+    path: str = Field(description="image file (png, jpg, webp, ...)")
+    size: list[float] = Field(description="the image's pixel size [w, h]")
+    position: list[float] = Field(description="sequence pixels where the anchor lands")
+    anchor: list[float] | None = Field(default=None, description="image pixels; null = centre")
+    scale: float = 100.0
+    scale_width: float = Field(default=100.0, description="used when uniform is false")
+    uniform: bool = True
+    rotation: float = 0.0
+    opacity: float = 100.0
+    visible: bool = Field(default=True, description="the layer's eye toggle")
+    blend: Literal["normal", "multiply"] = Field(default="normal", description="blended with everything below in the sequence")
+
+
+GraphicLayer = Annotated[TextLayer | ShapeLayer | ImageLayer, Field(discriminator="type")]
 
 
 class CaptionStyle(_Model):

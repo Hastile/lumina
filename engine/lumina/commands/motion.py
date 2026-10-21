@@ -623,7 +623,7 @@ class RemoveLayer(Params):
 
 @command("graphic.remove_layer", RemoveLayer)
 def graphic_remove_layer(ctx: Context, p: RemoveLayer):
-    """Remove a text or shape layer from a graphic clip."""
+    """Remove a text, shape or image layer from a graphic clip."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
     layers = [l for l in (clip.get("graphic") or {}).get("layers", []) if l["id"] != p.layer_id]
     if len(layers) == len((clip.get("graphic") or {}).get("layers", [])):
@@ -764,6 +764,98 @@ def graphic_set_shape(ctx: Context, p: SetShape):
         changes["closed"] = p.closed
     if p.width is not None or p.height is not None:
         changes["path"] = shapes.resize(changes.get("path", layer["path"]), p.width, p.height)
+    layer.update(changes)
+    ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
+
+
+# ---------------------------------------------------------------- image layers
+
+class ImageStyle(Params):
+    position: list[float] | None = None
+    anchor: list[float] | None = Field(default=None, description="image pixels; default the centre")
+    scale: float | None = Field(default=None, ge=0, le=10000)
+    scale_width: float | None = Field(default=None, ge=0, le=10000)
+    uniform: bool | None = None
+    rotation: float | None = None
+    opacity: float | None = Field(default=None, ge=0, le=100)
+    visible: bool | None = None
+    blend: Literal["normal", "multiply"] | None = None
+
+
+def _image_size(path: str) -> list[float]:
+    from PIL import Image, UnidentifiedImageError
+
+    try:
+        with Image.open(path) as im:
+            return [float(im.width), float(im.height)]
+    except FileNotFoundError as exc:
+        raise CommandError("NO_FILE", f"file not found: {path}") from exc
+    except (UnidentifiedImageError, OSError):
+        from ..render.compositor import RenderError, decode_still
+
+        try:
+            im = decode_still(path)
+        except RenderError as exc:
+            raise CommandError("BAD_IMAGE", f"not an image: {path}") from exc
+        return [float(im.width), float(im.height)]
+
+
+def _image_changes(p: ImageStyle) -> dict:
+    changes = p.model_dump(include=set(ImageStyle.model_fields), exclude_none=True)
+    if "anchor" in p.model_fields_set and p.anchor is None:
+        changes["anchor"] = None
+    for k in ("position", "anchor"):
+        if changes.get(k) is not None:
+            if len(changes[k]) != 2:
+                raise CommandError("BAD_VALUE", f"{k} needs [x, y]")
+            changes[k] = [float(v) for v in changes[k]]
+    return changes
+
+
+class AddImage(ImageStyle):
+    sequence_id: str | None = None
+    clip_id: str
+    path: str = Field(description="image file (png, jpg, webp, ...)")
+
+
+@command("graphic.add_image", AddImage)
+def graphic_add_image(ctx: Context, p: AddImage):
+    """New Layer > From File: put an image on top of a graphic clip's layers. By default it sits in
+    the middle of the frame at full size, scaled down to fit when it is larger than the frame."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    if not clip.get("graphic"):
+        raise CommandError("NOT_GRAPHIC", "clip is not a graphic")
+    w, h = _image_size(p.path)
+    st = seq["settings"]
+    fit = min(100.0, 100.0 * st["width"] / w, 100.0 * st["height"] / h)
+    layer = {"id": new_id(), "type": "image", "path": p.path, "size": [w, h], "position": [st["width"] / 2, st["height"] / 2],
+             "anchor": None, "scale": round(fit, 2), "scale_width": round(fit, 2), "uniform": True, "rotation": 0.0, "opacity": 100.0,
+             "visible": True, "blend": "normal"}
+    layer.update(_image_changes(p))
+    ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], clip["graphic"]["layers"] + [layer])
+    return {"layer_id": layer["id"], "size": [w, h]}
+
+
+class SetImage(ImageStyle):
+    sequence_id: str | None = None
+    clip_id: str
+    layer_id: str
+    path: str | None = Field(default=None, description="replace the picture (keeps position and scale)")
+
+
+@command("graphic.set_image", SetImage)
+def graphic_set_image(ctx: Context, p: SetImage):
+    """Edit an image layer: replace its file, position, anchor, scale, rotation, opacity, visibility, blend."""
+    seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
+    layers = copy.deepcopy((clip.get("graphic") or {}).get("layers", []))
+    layer = next((l for l in layers if l["id"] == p.layer_id), None)
+    if layer is None:
+        raise CommandError("NO_LAYER", f"layer not found: {p.layer_id}")
+    if layer.get("type") != "image":
+        raise CommandError("NOT_IMAGE", "use graphic.set_layer / graphic.set_shape for text and shape layers")
+    changes = _image_changes(p)
+    if p.path is not None:
+        changes.update(path=p.path, size=_image_size(p.path))
     layer.update(changes)
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
 

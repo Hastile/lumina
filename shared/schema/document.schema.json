@@ -775,6 +775,7 @@
           "items": {
             "discriminator": {
               "mapping": {
+                "image": "#/$defs/ImageLayer",
                 "shape": "#/$defs/ShapeLayer",
                 "text": "#/$defs/TextLayer"
               },
@@ -786,6 +787,9 @@
               },
               {
                 "$ref": "#/$defs/ShapeLayer"
+              },
+              {
+                "$ref": "#/$defs/ImageLayer"
               }
             ]
           },
@@ -811,6 +815,118 @@
         "source"
       ],
       "title": "Graphic",
+      "type": "object"
+    },
+    "ImageLayer": {
+      "additionalProperties": false,
+      "description": "A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,\nnull = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation\napply around it.",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "type": {
+          "const": "image",
+          "default": "image",
+          "title": "Type",
+          "type": "string"
+        },
+        "path": {
+          "description": "image file (png, jpg, webp, ...)",
+          "title": "Path",
+          "type": "string"
+        },
+        "size": {
+          "description": "the image's pixel size [w, h]",
+          "items": {
+            "type": "number"
+          },
+          "title": "Size",
+          "type": "array"
+        },
+        "position": {
+          "description": "sequence pixels where the anchor lands",
+          "items": {
+            "type": "number"
+          },
+          "title": "Position",
+          "type": "array"
+        },
+        "anchor": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "image pixels; null = centre",
+          "title": "Anchor"
+        },
+        "scale": {
+          "default": 100.0,
+          "title": "Scale",
+          "type": "number"
+        },
+        "scale_width": {
+          "default": 100.0,
+          "description": "used when uniform is false",
+          "title": "Scale Width",
+          "type": "number"
+        },
+        "uniform": {
+          "default": true,
+          "title": "Uniform",
+          "type": "boolean"
+        },
+        "rotation": {
+          "default": 0.0,
+          "title": "Rotation",
+          "type": "number"
+        },
+        "opacity": {
+          "default": 100.0,
+          "title": "Opacity",
+          "type": "number"
+        },
+        "visible": {
+          "default": true,
+          "description": "the layer's eye toggle",
+          "title": "Visible",
+          "type": "boolean"
+        },
+        "blend": {
+          "default": "normal",
+          "description": "blended with everything below in the sequence",
+          "enum": [
+            "normal",
+            "multiply"
+          ],
+          "title": "Blend",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "path",
+        "size",
+        "position",
+        "anchor",
+        "scale",
+        "scale_width",
+        "uniform",
+        "rotation",
+        "opacity",
+        "visible",
+        "blend"
+      ],
+      "title": "ImageLayer",
       "type": "object"
     },
     "Keyframe": {

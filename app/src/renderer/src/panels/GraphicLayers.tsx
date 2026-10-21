@@ -1,16 +1,30 @@
 // A graphic clip's layer stack (Essential Graphics style: top-most first) with
 // the eye toggle, stacking order and per-type editors.
-import { ArrowDown, ArrowUp, Circle, Eye, EyeOff, Spline, Square, Trash2, Type } from 'lucide-react'
+import { ArrowDown, ArrowUp, Circle, Eye, EyeOff, Image as ImageIcon, Maximize, Minimize, Spline, Square, Trash2, Type } from 'lucide-react'
 import { t } from '@shared/i18n'
-import type { ShapeLayer, TextLayer } from '../engine/document'
+import type { ImageLayer, ShapeLayer, TextLayer } from '../engine/document'
 import { exec } from '../state/store'
 import { bounds } from '../util/shapes'
 import { NumberScrub, type ClipCtx } from './PropertyControls'
 import { TextLayerEditor } from './TextLayerEditor'
 
-type Layer = TextLayer | ShapeLayer
+type Layer = TextLayer | ShapeLayer | ImageLayer
+
+/** The command that edits a layer of this type. */
+export function layerCommand(l: Layer): string {
+  return l.type === 'shape' ? 'graphic.set_shape' : l.type === 'image' ? 'graphic.set_image' : 'graphic.set_layer'
+}
+
+export function LayerIcon({ l, size = 12 }: { l: Layer; size?: number }) {
+  const Icon = l.type === 'text' ? Type : l.type === 'image' ? ImageIcon : l.shape === 'ellipse' ? Circle : l.shape === 'rectangle' ? Square : Spline
+  return <Icon size={size} />
+}
+
+/** Image file filters for the open dialog. */
+export const IMAGE_FILTERS = [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tif', 'tiff'] }]
 
 export function layerName(l: Layer): string {
+  if (l.type === 'image') return l.path.split(/[\\/]/).pop() || t('Image')
   if (l.type === 'shape') return t(l.shape === 'ellipse' ? 'Ellipse' : l.shape === 'rectangle' ? 'Rectangle' : 'Path')
   return l.text.split('\n')[0] || t('Text')
 }
@@ -19,7 +33,7 @@ export function GraphicLayers({ c, compact = false }: { c: ClipCtx; compact?: bo
   const layers = c.clip.graphic!.layers
   const base = { sequence_id: c.seq.id, clip_id: c.clip.id }
   const setVisible = (l: Layer, visible: boolean) =>
-    void exec(l.type === 'shape' ? 'graphic.set_shape' : 'graphic.set_layer', { ...base, layer_id: l.id, visible }, t('Toggle Layer Visibility'))
+    void exec(layerCommand(l), { ...base, layer_id: l.id, visible }, t('Toggle Layer Visibility'))
   const move = (l: Layer, index: number) => void exec('graphic.move_layer', { ...base, layer_id: l.id, index }, t('Arrange'))
   return (
     <div className="lm-glayers">
@@ -27,7 +41,6 @@ export function GraphicLayers({ c, compact = false }: { c: ClipCtx; compact?: bo
         .map((l, i) => ({ l, i }))
         .reverse()
         .map(({ l, i }) => {
-          const Icon = l.type === 'text' ? Type : l.shape === 'ellipse' ? Circle : l.shape === 'rectangle' ? Square : Spline
           const visible = l.visible !== false
           return (
             <div key={l.id} className={`lm-glayer ${visible ? '' : 'hidden'}`} data-glayer={l.id}>
@@ -35,7 +48,7 @@ export function GraphicLayers({ c, compact = false }: { c: ClipCtx; compact?: bo
                 <button className="lm-iconbtn" title={t('Toggle Layer Visibility')} onClick={() => setVisible(l, !visible)}>
                   {visible ? <Eye size={12} /> : <EyeOff size={12} />}
                 </button>
-                <Icon size={12} />
+                <LayerIcon l={l} />
                 <span className="name">{layerName(l)}</span>
                 <span style={{ flex: 1 }} />
                 <button className="lm-iconbtn" title={t('Bring Forward')} disabled={i === layers.length - 1} onClick={() => move(l, i + 1)}>
@@ -50,7 +63,13 @@ export function GraphicLayers({ c, compact = false }: { c: ClipCtx; compact?: bo
                   </button>
                 )}
               </div>
-              {l.type === 'shape' ? <ShapeLayerEditor c={c} layer={l} compact={compact} /> : <TextLayerEditor c={c} layer={l} compact={compact} />}
+              {l.type === 'shape' ? (
+                <ShapeLayerEditor c={c} layer={l} compact={compact} />
+              ) : l.type === 'image' ? (
+                <ImageLayerEditor c={c} layer={l} compact={compact} />
+              ) : (
+                <TextLayerEditor c={c} layer={l} compact={compact} />
+              )}
             </div>
           )
         })}
@@ -102,6 +121,68 @@ export function ShapeLayerEditor({ c, layer, compact = false }: { c: ClipCtx; la
           </div>
         </>
       )}
+    </div>
+  )
+}
+
+/** An image layer: its file, and its placement (the anchor, default the centre, lands on the position). */
+export function ImageLayerEditor({ c, layer, compact = false }: { c: ClipCtx; layer: ImageLayer; compact?: boolean }) {
+  const set = (changes: Record<string, unknown>, label: string) =>
+    void exec('graphic.set_image', { sequence_id: c.seq.id, clip_id: c.clip.id, layer_id: layer.id, ...changes }, label)
+  const { width: W, height: H } = c.seq.settings
+  const [w, h] = layer.size
+  const anchor = layer.anchor ?? [w / 2, h / 2]
+  const frame = (mode: 'fit' | 'fill') => {
+    const k = Math.round((mode === 'fit' ? Math.min : Math.max)(W / w, H / h) * 10000) / 100
+    set({ scale: k, scale_width: k, uniform: true, anchor: null, position: [W / 2, H / 2] }, t(mode === 'fit' ? 'Fit' : 'Fill'))
+  }
+  const replace = async () => {
+    const [path] = await window.lumina.openDialog({ title: t('Replace Image...'), properties: ['openFile'], filters: IMAGE_FILTERS }, 'import')
+    if (path) set({ path }, t('Replace Image...'))
+  }
+  return (
+    <div className={`lm-text-layer ${compact ? 'compact' : ''}`} data-image-editor={layer.id}>
+      <div className="row">
+        <span className="k file" title={layer.path}>{layerName(layer)}</span>
+        <span className="k">{Math.round(w)} x {Math.round(h)}</span>
+        <span style={{ flex: 1 }} />
+        <button className="lm-btn small" onClick={() => void replace()}>{t('Replace Image...')}</button>
+      </div>
+      <div className="row">
+        <button className="lm-chip" onClick={() => frame('fill')}>
+          <Maximize size={12} /> {t('Fill')}
+        </button>
+        <button className="lm-chip" onClick={() => frame('fit')}>
+          <Minimize size={12} /> {t('Fit')}
+        </button>
+      </div>
+      <div className="row">
+        <span className="k">{t('Position')}</span>
+        <NumberScrub value={layer.position[0]} digits={1} suffix=" X" onChange={(v) => set({ position: [v, layer.position[1]] }, t('Position'))} />
+        <NumberScrub value={layer.position[1]} digits={1} suffix=" Y" onChange={(v) => set({ position: [layer.position[0], v] }, t('Position'))} />
+      </div>
+      {!compact && (
+        <div className="row">
+          <span className="k">{t('Anchor Point')}</span>
+          <NumberScrub value={anchor[0]} digits={1} suffix=" X" onChange={(v) => set({ anchor: [v, anchor[1]] }, t('Anchor Point'))} />
+          <NumberScrub value={anchor[1]} digits={1} suffix=" Y" onChange={(v) => set({ anchor: [anchor[0], v] }, t('Anchor Point'))} />
+        </div>
+      )}
+      <div className="row">
+        <span className="k">{t('Scale')}</span>
+        <NumberScrub value={layer.scale} min={0} max={10000} digits={1} suffix=" %" onChange={(v) => set({ scale: v }, t('Scale'))} />
+        {!layer.uniform && <NumberScrub value={layer.scale_width} min={0} max={10000} digits={1} suffix=" % W" onChange={(v) => set({ scale_width: v }, t('Scale Width'))} />}
+        <label className="swatch">
+          <input type="checkbox" checked={layer.uniform} onChange={(e) => set({ uniform: e.target.checked, scale_width: layer.scale }, t('Uniform Scale'))} />
+          {t('Uniform Scale')}
+        </label>
+      </div>
+      <div className="row">
+        <span className="k">{t('Rotation')}</span>
+        <NumberScrub value={layer.rotation} digits={0} suffix=" °" onChange={(v) => set({ rotation: v }, t('Rotation'))} />
+        <span className="k">{t('Opacity')}</span>
+        <NumberScrub value={layer.opacity} min={0} max={100} digits={0} suffix=" %" onChange={(v) => set({ opacity: v }, t('Opacity'))} />
+      </div>
     </div>
   )
 }

@@ -2,7 +2,8 @@
 // bottom to top. The engine (lumina/render/text.py, compositor.render_graphic)
 // draws the same layers with the same layout rules for export.
 
-import type { Graphic, ShapeLayer, TextLayer, TextRun } from '../engine/document'
+import type { Graphic, ImageLayer, ShapeLayer, TextLayer, TextRun } from '../engine/document'
+import { mediaUrl } from '../engine/client'
 import { svgPath } from '../util/shapes'
 
 const LINE_HEIGHT = 1.2
@@ -165,12 +166,41 @@ function ShapeView({ l }: { l: ShapeLayer }) {
   )
 }
 
+/** The anchor (image px, default the centre) lands on position; scale and rotation apply around it. */
+function ImageView({ l }: { l: ImageLayer }) {
+  const [w, h] = l.size
+  const [ax, ay] = l.anchor ?? [w / 2, h / 2]
+  const sx = (l.uniform ? l.scale : l.scale_width) / 100
+  return (
+    <img
+      data-layer={l.id}
+      src={mediaUrl(l.path)}
+      draggable={false}
+      style={{
+        position: 'absolute',
+        left: l.position[0] - ax,
+        top: l.position[1] - ay,
+        width: w,
+        height: h,
+        maxWidth: 'none',
+        transformOrigin: `${ax}px ${ay}px`,
+        transform: `rotate(${l.rotation}deg) scale(${sx}, ${l.scale / 100})`,
+        opacity: l.opacity / 100,
+        mixBlendMode: l.blend === 'multiply' ? 'multiply' : undefined,
+        pointerEvents: 'auto'
+      }}
+    />
+  )
+}
+
 export function GraphicView({ graphic }: { graphic: Graphic }) {
   return (
     <>
       {graphic.layers.map((l) =>
         l.visible === false ? null : l.type === 'shape' ? (
           <ShapeView key={l.id} l={l} />
+        ) : l.type === 'image' ? (
+          <ImageView key={l.id} l={l} />
         ) : (
           <div key={l.id} data-layer={l.id} style={textStyle(l)}>
             <TextBlock l={l} />

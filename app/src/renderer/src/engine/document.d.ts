@@ -312,10 +312,44 @@ export type Visible1 = boolean;
  * blended with everything below in the sequence
  */
 export type Blend = "normal" | "multiply";
+export type Id8 = string;
+export type Type2 = "image";
+/**
+ * image file (png, jpg, webp, ...)
+ */
+export type Path2 = string;
+/**
+ * the image's pixel size [w, h]
+ */
+export type Size = number[];
+/**
+ * sequence pixels where the anchor lands
+ */
+export type Position3 = number[];
+/**
+ * image pixels; null = centre
+ */
+export type Anchor2 = number[] | null;
+export type Scale3 = number;
+/**
+ * used when uniform is false
+ */
+export type ScaleWidth2 = number;
+export type Uniform2 = boolean;
+export type Rotation3 = number;
+export type Opacity4 = number;
+/**
+ * the layer's eye toggle
+ */
+export type Visible2 = boolean;
+/**
+ * blended with everything below in the sequence
+ */
+export type Blend1 = "normal" | "multiply";
 /**
  * bottom to top
  */
-export type Layers = (TextLayer | ShapeLayer)[];
+export type Layers = (TextLayer | ShapeLayer | ImageLayer)[];
 /**
  * origin, e.g. 'mogrt:Title' for imported Premiere graphics
  */
@@ -327,13 +361,13 @@ export type Text2 = string;
 export type Style = {
   [k: string]: string | number | boolean | number[] | null;
 } | null;
-export type Id8 = string;
-export type Type2 = "transform" | "gaussian_blur" | "lumetri" | "parametric_eq" | "compressor" | "hard_limiter";
+export type Id9 = string;
+export type Type3 = "transform" | "gaussian_blur" | "lumetri" | "parametric_eq" | "compressor" | "hard_limiter";
 export type Enabled1 = boolean;
 /**
  * track effects: what keyframe times count from
  */
-export type Anchor2 = ("in" | "out" | "stretch") | null;
+export type Anchor3 = ("in" | "out" | "stretch") | null;
 /**
  * track effects, anchor stretch: the length keyframe times span
  */
@@ -347,8 +381,8 @@ export type Freeze = number | null;
  * Adjustment Layer: its effects apply to everything below it (Opacity mixes the result in; Motion and crop are not used)
  */
 export type Adjustment = boolean;
-export type Id9 = string;
-export type Type3 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
+export type Id10 = string;
+export type Type4 = "cross_dissolve" | "dip_to_black" | "dip_to_white" | "constant_power";
 /**
  * outgoing clip (ends at the cut)
  */
@@ -381,16 +415,16 @@ export type Align1 = "left" | "center" | "right";
 /**
  * sequence pixels; point text: the block's alignment point at its vertical center
  */
-export type Position3 = number[];
+export type Position4 = number[];
 /**
  * area text box [w, h]; null = point text
  */
 export type Box1 = number[] | null;
 export type VerticalAlign1 = "top" | "center" | "bottom";
 export type Tracking2 = number;
-export type Scale3 = number;
-export type Rotation3 = number;
-export type Opacity4 = number;
+export type Scale4 = number;
+export type Rotation4 = number;
+export type Opacity5 = number;
 /**
  * bottom (V1) to top
  */
@@ -399,7 +433,7 @@ export type VideoTracks = string[];
  * top (A1) to bottom
  */
 export type AudioTracks = string[];
-export type Id10 = string;
+export type Id11 = string;
 export type Start1 = number;
 export type Duration2 = number;
 export type Name6 = string;
@@ -420,14 +454,14 @@ export type SourceVideoTrack = string | null;
  * source patching for audio; null = first targeted audio track; '' = none
  */
 export type SourceAudioTrack = string | null;
-export type Id11 = string;
+export type Id12 = string;
 export type Name7 = string;
 export type BinId2 = string;
 export type Kind2 = "captions" | "template" | "adjustment";
 /**
  * template: the .mogrt / .aegraphic file; captions: the source .srt, if any
  */
-export type Path2 = string | null;
+export type Path3 = string | null;
 /**
  * captions: the cues
  */
@@ -772,6 +806,29 @@ export interface ShapeLayer {
   blend: Blend;
 }
 /**
+ * A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,
+ * null = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation
+ * apply around it.
+ *
+ * This interface was referenced by `Project`'s JSON-Schema
+ * via the `definition` "ImageLayer".
+ */
+export interface ImageLayer {
+  id: Id8;
+  type: Type2;
+  path: Path2;
+  size: Size;
+  position: Position3;
+  anchor: Anchor2;
+  scale: Scale3;
+  scale_width: ScaleWidth2;
+  uniform: Uniform2;
+  rotation: Rotation3;
+  opacity: Opacity4;
+  visible: Visible2;
+  blend: Blend1;
+}
+/**
  * A caption cue: its text, drawn with the track's style (overrides apply to this cue only).
  *
  * This interface was referenced by `Project`'s JSON-Schema
@@ -795,12 +852,12 @@ export interface Caption {
  * via the `definition` "Effect".
  */
 export interface Effect {
-  id: Id8;
-  type: Type2;
+  id: Id9;
+  type: Type3;
   enabled: Enabled1;
   params: Params;
   keyframes: Keyframes1;
-  anchor: Anchor2;
+  anchor: Anchor3;
   ref_duration: RefDuration;
 }
 export interface Params {
@@ -820,8 +877,8 @@ export interface Transitions {
  * via the `definition` "Transition".
  */
 export interface Transition {
-  id: Id9;
-  type: Type3;
+  id: Id10;
+  type: Type4;
   clip_a: ClipA;
   clip_b: ClipB;
   duration: Duration1;
@@ -844,14 +901,14 @@ export interface CaptionStyle {
   stroke_width: StrokeWidth3;
   background: Background1;
   align: Align1;
-  position: Position3;
+  position: Position4;
   box: Box1;
   vertical_align: VerticalAlign1;
   tracking: Tracking2;
   shadow: TextShadow | null;
-  scale: Scale3;
-  rotation: Rotation3;
-  opacity: Opacity4;
+  scale: Scale4;
+  rotation: Rotation4;
+  opacity: Opacity5;
 }
 export interface Markers {
   [k: string]: Marker;
@@ -861,7 +918,7 @@ export interface Markers {
  * via the `definition` "Marker".
  */
 export interface Marker {
-  id: Id10;
+  id: Id11;
   start: Start1;
   duration: Duration2;
   name: Name6;
@@ -882,11 +939,11 @@ export interface Assets {
  * via the `definition` "Asset".
  */
 export interface Asset {
-  id: Id11;
+  id: Id12;
   name: Name7;
   bin_id: BinId2;
   kind: Kind2;
-  path: Path2;
+  path: Path3;
   cues: Cues;
   label: Label2;
 }

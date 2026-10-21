@@ -207,6 +207,7 @@
 .lm-text-layer .row.indent { padding-left: 18px; }
 .lm-text-layer .sep { width: 1px; height: 14px; background: #444; margin: 0 2px; }
 .lm-text-layer .k.small { font-size: 11px; }
+.lm-text-layer .k.file { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
 .lm-text-layer .lm-range { flex: 1; min-width: 80px; accent-color: #b8b8b8; }
 .lm-glayer-add .lm-btn.small { margin: 6px 0 6px 10px; }
 .lm-stage.drawing { cursor: crosshair; }

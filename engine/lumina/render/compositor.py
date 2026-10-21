@@ -20,6 +20,7 @@ from __future__ import annotations
 import functools
 import json
 import math
+import os
 import queue
 import subprocess
 import threading
@@ -281,8 +282,34 @@ def render_shape_layer(layer: dict) -> tuple[Image.Image, float, float] | None:
     return img, ax - ox, ay - oy
 
 
+_IMAGES: dict[tuple[str, float], Image.Image] = {}
+
+
+def image_layer_pixels(path: str) -> Image.Image | None:
+    """An image layer's picture, decoded once per file version (None when the file is missing)."""
+    try:
+        key = (path, os.path.getmtime(path))
+    except OSError:
+        return None
+    if key not in _IMAGES:
+        if len(_IMAGES) > 64:
+            _IMAGES.clear()
+        try:
+            _IMAGES[key] = decode_still(path)
+        except RenderError:
+            return None
+    return _IMAGES[key]
+
+
 def _layer_image(layer: dict) -> tuple[Image.Image, dict] | None:
-    if layer.get("type") == "shape":
+    if layer.get("type") == "image":
+        img = image_layer_pixels(layer["path"])
+        if img is None:
+            return None
+        ax, ay = layer.get("anchor") or [img.width / 2, img.height / 2]
+        s = layer.get("scale", 100.0)
+        sx = s if layer.get("uniform", True) else layer.get("scale_width", 100.0)
+    elif layer.get("type") == "shape":
         out = render_shape_layer(layer)
         if out is None:
             return None
@@ -313,7 +340,7 @@ def render_graphic_groups(graphic: dict, width: int, height: int) -> list[tuple[
         out = _layer_image(layer)
         if out is None:
             continue
-        blend = layer.get("blend", "normal") if layer.get("type") == "shape" else "normal"
+        blend = layer.get("blend", "normal") if layer.get("type") in ("shape", "image") else "normal"
         if not groups or groups[-1][0] != blend:
             groups.append((blend, Image.new("RGBA", (width, height), (0, 0, 0, 0))))
         place(groups[-1][1], out[0], (0, 0), out[1])
