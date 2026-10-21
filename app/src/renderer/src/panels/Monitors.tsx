@@ -389,9 +389,9 @@ function Stage({ seq, media, at, playing, rate, scale }: {
     if (e.button !== 0) return
     if (tool === 'type') {
       const [x, y] = toSeq(e)
-      const res = await exec<{ clip_id: string }>('graphic.create_text', { sequence_id: seq.id, at, text: t('New Text Layer'), position: [x, y] }, t('New Layer > Text'))
+      const res = await exec<{ clip_id: string; layer_id: string }>('graphic.create_text', { sequence_id: seq.id, at, text: t('New Text Layer'), position: [x, y] }, t('New Layer > Text'))
       if (res) {
-        set({ selectedClips: [res.clip_id], tool: 'select' })
+        set({ selectedClips: [res.clip_id], selectedLayer: res.layer_id, tool: 'select' })
         focusPanel('properties')
       }
       return

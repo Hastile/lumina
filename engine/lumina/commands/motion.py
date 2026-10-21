@@ -449,6 +449,31 @@ def graphic_create_text(ctx: Context, p: CreateText):
     return {"clip_id": clip["id"], "layer_id": layer["id"], "track_id": tid}
 
 
+class CreateGraphic(Params):
+    sequence_id: str | None = None
+    at: TimeValue | None = Field(default=None, description="default playhead")
+    duration: TimeValue = "5s"
+    track_id: str | None = Field(default=None, description="default: first empty video track above the clips at that time")
+
+
+@command("graphic.create", CreateGraphic)
+def graphic_create(ctx: Context, p: CreateGraphic):
+    """New Graphic (Properties panel): an empty graphic clip to add text and shape layers to."""
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    start = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    end = start + max(resolve_time(p.duration, st), timebase.ticks_per_frame(st["fps_num"], st["fps_den"]))
+    tid = p.track_id or _free_track_above(ctx, seq, start, end)
+    if tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video" or seq["tracks"][tid].get("caption_style"):
+        raise CommandError("BAD_TRACK", "graphics go on a video track")
+    require_unlocked(seq, tid)
+    from .timeline import clear_range
+    clear_range(ctx, seq, tid, start, end)
+    clip = graphic_clip("Graphic", start, end, [])
+    write_clip(ctx, seq, tid, clip)
+    return {"clip_id": clip["id"], "track_id": tid}
+
+
 class PlaceMogrt(Params):
     sequence_id: str | None = None
     path: str = Field(description="a .mogrt (or .aegraphic) Motion Graphics Template made in After Effects")
@@ -516,7 +541,8 @@ def graphic_apply_style(ctx: Context, p: ApplyTextStyle):
 
 
 def _free_track_above(ctx: Context, seq: dict, start: int, end: int) -> str:
-    vt = seq["video_tracks"]
+    # caption tracks hold cues, not graphics
+    vt = [t for t in seq["video_tracks"] if not seq["tracks"][t].get("caption_style")]
     top_used = -1
     for i, tid in enumerate(vt):
         if any(c["start"] < end and c["end"] > start for c in seq["tracks"][tid]["clips"].values()):

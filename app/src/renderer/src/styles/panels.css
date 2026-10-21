@@ -192,6 +192,22 @@
 .lm-glayer.hidden .head .name { color: var(--text-dim); text-decoration: line-through; }
 .lm-glayer .lm-text-layer { border-bottom: 0; }
 .lm-glayer-add { display: flex; flex-wrap: wrap; }
+/* Properties: Premiere's layer list (pick a layer to edit it; none = the clip) */
+.lm-glist { margin: 2px 0 4px; border: 1px solid #3a3a3a; border-radius: 4px; background: #161616; min-height: 52px; max-height: 220px; overflow: auto; }
+.lm-glist .lm-glayer { border-bottom: 1px solid #262626; cursor: default; }
+.lm-glist .lm-glayer .head { padding: 4px 8px; }
+.lm-glist .lm-glayer:hover { background: #222; }
+.lm-glist .lm-glayer.selected { background: #2b3f57; }
+.lm-glist .lm-glayer.selected .head { color: #fff; }
+.lm-glist .lm-empty.small { font-size: 11px; padding: 12px; }
+.lm-glist-tools { display: flex; align-items: center; gap: 2px; margin-bottom: 8px; }
+.lm-glist-tools .lm-btn.small { margin: 0 4px 0 0; }
+.lm-props-foot { flex: none; border-top: 1px solid var(--border); padding: 8px 10px; }
+.lm-props-foot .lm-btn { display: inline-flex; align-items: center; gap: 6px; }
+.lm-text-layer .row.indent { padding-left: 18px; }
+.lm-text-layer .sep { width: 1px; height: 14px; background: #444; margin: 0 2px; }
+.lm-text-layer .k.small { font-size: 11px; }
+.lm-text-layer .lm-range { flex: 1; min-width: 80px; accent-color: #b8b8b8; }
 .lm-glayer-add .lm-btn.small { margin: 6px 0 6px 10px; }
 .lm-stage.drawing { cursor: crosshair; }
 .lm-draw { position: absolute; border: 1px solid #2d8ceb; background: rgba(45, 140, 235, 0.12); pointer-events: none; z-index: 100000; }

@@ -669,9 +669,9 @@ def('tool.ellipse', t('Ellipse Tool'), tool('ellipse'))
 def('graphics.newText', t('New Layer > Text'), async () => {
   const seq = seqOrToast()
   if (!seq) return
-  const res = await exec<{ clip_id: string }>('graphic.create_text', { sequence_id: seq.id, at: get().programTime, text: t('New Text Layer') }, t('New Layer > Text'))
+  const res = await exec<{ clip_id: string; layer_id: string }>('graphic.create_text', { sequence_id: seq.id, at: get().programTime, text: t('New Text Layer') }, t('New Layer > Text'))
   if (res) {
-    set({ selectedClips: [res.clip_id] })
+    set({ selectedClips: [res.clip_id], selectedLayer: res.layer_id })
     focusPanel('properties')
   }
 })
@@ -685,13 +685,14 @@ export async function newShapeLayer(shape: 'rectangle' | 'ellipse', rect?: numbe
   const target = sel.length === 1 ? Object.values(seq.tracks).map((tr) => tr.clips[sel[0]]).find(Boolean) : undefined
   const at = get().programTime
   if (target?.graphic && target.start <= at && at < target.end) {
-    await exec('graphic.add_shape', { sequence_id: seq.id, clip_id: target.id, shape, rect }, label)
+    const added = await exec<{ layer_id: string }>('graphic.add_shape', { sequence_id: seq.id, clip_id: target.id, shape, rect }, label)
+    if (added) set({ selectedLayer: added.layer_id })
     focusPanel('properties')
     return
   }
-  const res = await exec<{ clip_id: string }>('graphic.create_shape', { sequence_id: seq.id, at, shape, rect }, label)
+  const res = await exec<{ clip_id: string; layer_id: string }>('graphic.create_shape', { sequence_id: seq.id, at, shape, rect }, label)
   if (res) {
-    set({ selectedClips: [res.clip_id] })
+    set({ selectedClips: [res.clip_id], selectedLayer: res.layer_id })
     focusPanel('properties')
   }
 }

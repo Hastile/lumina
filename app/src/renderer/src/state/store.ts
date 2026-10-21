@@ -26,6 +26,7 @@ type State = {
   selectedClips: string[]
   selectedTransition: string | null
   selectedTrack: string | null // a track header clicked: Effect Controls / Properties show the track (caption style, track effects)
+  selectedLayer: string | null // a layer of the selected graphic clip (Properties panel), null = the clip itself
   selectedItems: string[]
   currentBin: string | null
 
@@ -64,6 +65,7 @@ export const useStore = create<State>(() => ({
   selectedClips: [],
   selectedTransition: null,
   selectedTrack: null,
+  selectedLayer: null,
   selectedItems: [],
   currentBin: null,
   sourceMediaId: null,
@@ -171,6 +173,11 @@ useStore.subscribe((s, prev) => {
   const active = doc.active_sequence_id
   if (active && doc.sequences[active] && active !== prev.doc?.active_sequence_id && !open.includes(active)) open = [...open, active]
   if (open.length !== s.openSequences.length || open.some((id, i) => id !== s.openSequences[i])) set({ openSequences: open })
+})
+
+// another clip selection drops the layer selection (a layer belongs to one graphic clip)
+useStore.subscribe((s, prev) => {
+  if (s.selectedLayer && s.selectedLayer === prev.selectedLayer && s.selectedClips[0] !== prev.selectedClips[0]) set({ selectedLayer: null })
 })
 
 // selecting clips (or a transition) leaves the track selection

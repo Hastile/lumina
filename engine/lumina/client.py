@@ -15,6 +15,14 @@ from typing import Any
 from .commands.registry import CommandError
 
 
+class EngineGone(Exception):
+    """The GUI's engine closed the connection; ``sent``: the request may already have run."""
+
+    def __init__(self, sent: bool):
+        super().__init__("engine connection closed")
+        self.sent = sent
+
+
 class RemoteEngine:
     def __init__(self, host: str, port: int, token: str):
         from websockets.sync.client import connect
@@ -27,9 +35,16 @@ class RemoteEngine:
     def dispatch(self, method: str, params: dict | None = None) -> Any:
         with self.lock:
             rid = next(self.ids)
-            self.ws.send(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}}))
+            try:
+                self.ws.send(json.dumps({"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}}))
+            except Exception as exc:  # noqa: BLE001 - closed socket: the engine is gone
+                raise EngineGone(sent=False) from exc
             while True:
-                msg = json.loads(self.ws.recv())
+                try:
+                    raw = self.ws.recv()
+                except Exception as exc:  # noqa: BLE001
+                    raise EngineGone(sent=True) from exc
+                msg = json.loads(raw)
                 if msg.get("id") != rid:
                     continue  # event notification or stale reply
                 if "error" in msg:
@@ -54,15 +69,58 @@ class LocalEngine:
         self.engine.jobs.pool.shutdown(wait=True)
 
 
+def _remote() -> RemoteEngine | None:
+    """The running GUI's engine, from its discovery file (None when there is none or it is stale)."""
+    from .server import discovery_path
+
+    path = discovery_path()
+    if path.exists():
+        try:
+            info = json.loads(path.read_text(encoding="utf-8"))
+            return RemoteEngine(info["host"], info["port"], info["token"])
+        except Exception:  # noqa: BLE001 - stale discovery file
+            pass
+    return None
+
+
 def connect(prefer_remote: bool = True):
-    if prefer_remote:
+    return (_remote() if prefer_remote else None) or LocalEngine()
+
+
+class FollowingEngine:
+    """The MCP server's engine: the GUI's while one runs, else a headless one, and it follows the GUI.
+
+    A GUI started after the agent is picked up on the next call while the headless engine still
+    holds only a blank project (nothing to lose), and a GUI that restarts is reconnected to. A
+    request lost on the way is resent; one that may already have run is reported, not repeated."""
+
+    def __init__(self, engine=None):
+        self.current = engine if engine is not None else connect()
+
+    def _headless_is_blank(self) -> bool:
+        try:
+            return all(p.get("blank") and not p.get("dirty") for p in self.current.dispatch("project.list"))
+        except Exception:  # noqa: BLE001
+            return False
+
+    def dispatch(self, method: str, params: dict | None = None) -> Any:
         from .server import discovery_path
 
-        path = discovery_path()
-        if path.exists():
-            try:
-                info = json.loads(path.read_text(encoding="utf-8"))
-                return RemoteEngine(info["host"], info["port"], info["token"])
-            except Exception:  # noqa: BLE001 - stale discovery file
-                pass
-    return LocalEngine()
+        if isinstance(self.current, LocalEngine) and discovery_path().exists() and self._headless_is_blank():
+            remote = _remote()
+            if remote is not None:
+                self.current.close()
+                self.current = remote
+        try:
+            return self.current.dispatch(method, params)
+        except EngineGone as gone:
+            remote = _remote()
+            if remote is None:
+                raise CommandError("NO_ENGINE", "the Lumina editor closed; start it again and retry") from gone
+            self.current = remote
+            if gone.sent:
+                raise CommandError("ENGINE_RESTARTED", "the editor restarted during this call (reconnected): check the state, then retry") from gone
+            return self.current.dispatch(method, params)
+
+    def close(self) -> None:
+        self.current.close()

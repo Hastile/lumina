@@ -14,7 +14,7 @@ from mcp import types
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from .client import connect
+from .client import FollowingEngine
 from .commands.registry import REGISTRY, CommandError
 
 INSTRUCTIONS = """Lumina is a Premiere-style video editor. Every edit is an undoable command.
@@ -201,7 +201,7 @@ def make_server(engine) -> Server:
 
 
 def main() -> None:
-    engine = connect()
+    engine = FollowingEngine()
 
     async def run():
         server = make_server(engine)

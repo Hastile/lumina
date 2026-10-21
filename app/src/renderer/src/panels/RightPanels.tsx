@@ -2,16 +2,16 @@
 // Properties, Metadata and Essential Sound are functional; Lumetri Color, Text
 // and Graphic Templates hold their place until their milestones.
 import { useState } from 'react'
-import { ChevronDown, Circle, Square, RotateCcw, Plus, Maximize, Minimize } from 'lucide-react'
+import { ChevronDown, RotateCcw, Maximize, Minimize, Shapes } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { MediaItem } from '../engine/document'
-import { activeSequence, exec, findClip, get, toast, useStore } from '../state/store'
+import { activeSequence, exec, findClip, get, set, toast, useStore } from '../state/store'
 import { engine } from '../engine/client'
 import { effectParam } from '../util/effects'
 import type { LumetriParams } from '../util/color'
 import { ticksToSeconds } from '../util/time'
 import { current, KeyframeRow, NumberScrub, setProp, useSelectedClip } from './PropertyControls'
-import { GraphicLayers } from './GraphicLayers'
+import { GraphicProperties } from './GraphicProperties'
 import { DRAG_MIME, setDraggedItems } from './ProjectPanel'
 import { placeAsset } from '../actions/extra'
 import { TrackPanel, useSelectedTrack } from './TrackPanel'
@@ -51,77 +51,80 @@ export function PropertiesPanel() {
       </div>
     )
   }
-  if (!c) return <div className="lm-panel"><div className="lm-empty">{t('Select a clip to see its properties.')}</div></div>
+  if (!c) return <EmptyProperties />
   const { clip, seq } = c
   const pos = current(c, 'position') as number[]
   const anchor = current(c, 'anchor') as number[]
   const fit = (mode: 'fit' | 'fill') => void exec('clip.fit_to_frame', { sequence_id: seq.id, clip_ids: [clip.id], mode }, t(mode === 'fit' ? 'Fit' : 'Fill'))
+  const sections = c.kind === 'video' ? (
+    <>
+      <Section title={t(clip.graphic ? 'Clip Transform' : 'Transform')} reset={() => void exec('clip.reset_motion', { sequence_id: seq.id, clip_ids: [clip.id] }, t('Reset'))}>
+        {c.media?.video && (
+          <div className="lm-fitrow">
+            <button className="lm-chip" onClick={() => fit('fill')}>
+              <Maximize size={12} /> {t('Fill')}
+            </button>
+            <button className="lm-chip" onClick={() => fit('fit')}>
+              <Minimize size={12} /> {t('Fit')}
+            </button>
+          </div>
+        )}
+        <KeyframeRow c={c} prop="position">
+          <NumberScrub value={pos[0]} digits={0} suffix=" X" onChange={(v) => setProp(c, 'position', [v, pos[1]])} />
+          <NumberScrub value={pos[1]} digits={0} suffix=" Y" onChange={(v) => setProp(c, 'position', [pos[0], v])} />
+        </KeyframeRow>
+        <KeyframeRow c={c} prop="anchor">
+          <NumberScrub value={anchor[0]} digits={0} suffix=" X" onChange={(v) => setProp(c, 'anchor', [v, anchor[1]])} />
+          <NumberScrub value={anchor[1]} digits={0} suffix=" Y" onChange={(v) => setProp(c, 'anchor', [anchor[0], v])} />
+        </KeyframeRow>
+        <KeyframeRow c={c} prop="scale">
+          <NumberScrub value={current(c, 'scale') as number} min={0} max={10000} digits={0} suffix=" %" onChange={(v) => setProp(c, 'scale', v)} />
+        </KeyframeRow>
+        <KeyframeRow c={c} prop="rotation">
+          <NumberScrub value={current(c, 'rotation') as number} digits={0} suffix=" °" onChange={(v) => setProp(c, 'rotation', v)} />
+        </KeyframeRow>
+        <KeyframeRow c={c} prop="opacity">
+          <NumberScrub value={current(c, 'opacity') as number} min={0} max={100} digits={0} suffix=" %" onChange={(v) => setProp(c, 'opacity', v)} />
+        </KeyframeRow>
+      </Section>
+      <Section title={t('Crop')}>
+        {(['crop_left', 'crop_top', 'crop_right', 'crop_bottom'] as const).map((p) => (
+          <KeyframeRow key={p} c={c} prop={p} label={{ crop_left: 'Left', crop_top: 'Top', crop_right: 'Right', crop_bottom: 'Bottom' }[p]}>
+            <NumberScrub value={current(c, p) as number} min={0} max={100} suffix=" %" onChange={(v) => setProp(c, p, v)} />
+          </KeyframeRow>
+        ))}
+      </Section>
+    </>
+  ) : (
+    <Section title={t('Volume')} reset={() => setProp(c, 'volume_db', 0)}>
+      <KeyframeRow c={c} prop="volume_db">
+        <NumberScrub value={current(c, 'volume_db') as number} min={-96} max={15} step={0.1} suffix=" dB" onChange={(v) => setProp(c, 'volume_db', v)} />
+      </KeyframeRow>
+    </Section>
+  )
   return (
     <div className="lm-panel lm-props">
       <div className="lm-props-title">{clip.name}</div>
-      <div className="lm-props-scroll lm-ec">
-        {clip.graphic && (
-          <Section title={t('Layers')}>
-            <GraphicLayers c={c} />
-            <div className="lm-glayer-add">
-              <button className="lm-btn small" onClick={() => void exec('graphic.add_layer', { sequence_id: seq.id, clip_id: clip.id, text: t('New Text Layer') }, t('Add Text Layer'))}>
-                <Plus size={12} /> {t('Text')}
-              </button>
-              <button className="lm-btn small" data-add-shape="rectangle" onClick={() => void exec('graphic.add_shape', { sequence_id: seq.id, clip_id: clip.id, shape: 'rectangle' }, t('New Layer > Rectangle'))}>
-                <Square size={12} /> {t('Rectangle')}
-              </button>
-              <button className="lm-btn small" onClick={() => void exec('graphic.add_shape', { sequence_id: seq.id, clip_id: clip.id, shape: 'ellipse' }, t('New Layer > Ellipse'))}>
-                <Circle size={12} /> {t('Ellipse')}
-              </button>
-            </div>
-          </Section>
-        )}
-        {c.kind === 'video' ? (
-          <>
-            <Section title={t('Transform')} reset={() => void exec('clip.reset_motion', { sequence_id: seq.id, clip_ids: [clip.id] }, t('Reset'))}>
-              {c.media?.video && (
-                <div className="lm-fitrow">
-                  <button className="lm-chip" onClick={() => fit('fill')}>
-                    <Maximize size={12} /> {t('Fill')}
-                  </button>
-                  <button className="lm-chip" onClick={() => fit('fit')}>
-                    <Minimize size={12} /> {t('Fit')}
-                  </button>
-                </div>
-              )}
-              <KeyframeRow c={c} prop="position">
-                <NumberScrub value={pos[0]} digits={0} suffix=" X" onChange={(v) => setProp(c, 'position', [v, pos[1]])} />
-                <NumberScrub value={pos[1]} digits={0} suffix=" Y" onChange={(v) => setProp(c, 'position', [pos[0], v])} />
-              </KeyframeRow>
-              <KeyframeRow c={c} prop="anchor">
-                <NumberScrub value={anchor[0]} digits={0} suffix=" X" onChange={(v) => setProp(c, 'anchor', [v, anchor[1]])} />
-                <NumberScrub value={anchor[1]} digits={0} suffix=" Y" onChange={(v) => setProp(c, 'anchor', [anchor[0], v])} />
-              </KeyframeRow>
-              <KeyframeRow c={c} prop="scale">
-                <NumberScrub value={current(c, 'scale') as number} min={0} max={10000} digits={0} suffix=" %" onChange={(v) => setProp(c, 'scale', v)} />
-              </KeyframeRow>
-              <KeyframeRow c={c} prop="rotation">
-                <NumberScrub value={current(c, 'rotation') as number} digits={0} suffix=" °" onChange={(v) => setProp(c, 'rotation', v)} />
-              </KeyframeRow>
-              <KeyframeRow c={c} prop="opacity">
-                <NumberScrub value={current(c, 'opacity') as number} min={0} max={100} digits={0} suffix=" %" onChange={(v) => setProp(c, 'opacity', v)} />
-              </KeyframeRow>
-            </Section>
-            <Section title={t('Crop')}>
-              {(['crop_left', 'crop_top', 'crop_right', 'crop_bottom'] as const).map((p) => (
-                <KeyframeRow key={p} c={c} prop={p} label={{ crop_left: 'Left', crop_top: 'Top', crop_right: 'Right', crop_bottom: 'Bottom' }[p]}>
-                  <NumberScrub value={current(c, p) as number} min={0} max={100} suffix=" %" onChange={(v) => setProp(c, p, v)} />
-                </KeyframeRow>
-              ))}
-            </Section>
-          </>
-        ) : (
-          <Section title={t('Volume')} reset={() => setProp(c, 'volume_db', 0)}>
-            <KeyframeRow c={c} prop="volume_db">
-              <NumberScrub value={current(c, 'volume_db') as number} min={-96} max={15} step={0.1} suffix=" dB" onChange={(v) => setProp(c, 'volume_db', v)} />
-            </KeyframeRow>
-          </Section>
-        )}
+      <div className="lm-props-scroll lm-ec">{clip.graphic ? <GraphicProperties c={c} clipSections={sections} /> : sections}</div>
+    </div>
+  )
+}
+
+/** Nothing selected: Premiere's "select a clip" hint, and New Graphic at the bottom (an empty graphic at the playhead). */
+function EmptyProperties() {
+  const create = async () => {
+    const seq = activeSequence(get())
+    if (!seq) return toast(t('(no sequences)'))
+    const r = await exec<{ clip_id: string }>('graphic.create', { sequence_id: seq.id, at: get().programTime }, t('New Graphic'))
+    if (r) set({ selectedClips: [r.clip_id], selectedLayer: null })
+  }
+  return (
+    <div className="lm-panel lm-props">
+      <div className="lm-empty">{t('Select a clip to see its properties.')}</div>
+      <div className="lm-props-foot">
+        <button className="lm-btn" data-action="new-graphic" onClick={() => void create()}>
+          <Shapes size={13} /> {t('New Graphic')}
+        </button>
       </div>
     </div>
   )

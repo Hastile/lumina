@@ -4172,6 +4172,71 @@
     }
   },
   {
+    "name": "graphic.create",
+    "description": "New Graphic (Properties panel): an empty graphic clip to add text and shape layers to.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default playhead",
+          "title": "At"
+        },
+        "duration": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "default": "5s",
+          "title": "Duration"
+        },
+        "track_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "default: first empty video track above the clips at that time",
+          "title": "Track Id"
+        }
+      },
+      "title": "CreateGraphic",
+      "type": "object"
+    }
+  },
+  {
     "name": "graphic.place_mogrt",
     "description": "Place a Motion Graphics Template: its text layers become an editable graphic clip (styling is\nbest effort; animation in the template is not reproduced).",
     "undoable": true,

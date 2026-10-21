@@ -9,7 +9,9 @@ from lumina.commands.timeline import check_sequence
 from lumina.model import validate_project
 from lumina.motion import interpolate, transform_at, value_at
 
-from .test_session import SEC, clips, make
+from lumina.session import Session
+
+from .test_session import SEC, FakeServices, clips, make
 
 VECTORS = Path(__file__).resolve().parents[2] / "shared" / "test-vectors" / "keyframes.json"
 
@@ -284,3 +286,20 @@ def test_keyframes_paste_at_the_playhead_onto_another_clip():
     c = next(c for t in s.doc["sequences"][sid]["tracks"].values() for c in t["clips"].values() if c["id"] == b)
     assert [k["t"] - c["source_in"] for k in c["keyframes"]["opacity"]] == [2 * SEC, 3 * SEC]
     assert c["effects"][0]["keyframes"]["blurriness"][0]["v"] == 20
+
+
+def test_new_graphic_is_empty_and_never_lands_on_a_caption_track():
+    s = Session(services=FakeServices())
+    sid = s.execute("sequence.create", {"name": "s"})["result"]["sequence_id"]
+    cap = s.execute("caption.add", {"text": "자막", "at": 0, "duration": "5s"})["result"]["track_id"]
+    out = s.execute("graphic.create", {"at": 0})["result"]
+    seq = s.doc["sequences"][sid]
+    clip = seq["tracks"][out["track_id"]]["clips"][out["clip_id"]]
+    assert clip["graphic"]["layers"] == [] and out["track_id"] != cap
+    assert not seq["tracks"][out["track_id"]].get("caption_style")
+    # layers are added to it like any graphic; the Type tool also skips the caption track
+    s.execute("graphic.add_layer", {"clip_id": out["clip_id"], "text": "TMI"})
+    assert [l["text"] for l in clip["graphic"]["layers"]] == ["TMI"]
+    assert s.execute("graphic.create_text", {"at": "1s", "text": "x"})["result"]["track_id"] != cap
+    with pytest.raises(CommandError):
+        s.execute("graphic.create", {"at": 0, "track_id": cap})
