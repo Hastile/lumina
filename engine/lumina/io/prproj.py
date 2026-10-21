@@ -418,7 +418,7 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                                            _transition(g, g.ref(cti.find("TailTransition")), "tail", kind, stats)) if t]
                 nested = target.get("ObjectUID") if src_kind == "sequence" else None
                 media = None if graphic or nested else out.media[target.get("ObjectUID")]
-                fx = _motion(g, cti, seq_w, seq_h, media, stats) if kind == "video" else {}
+                fx = _motion(g, cti, seq_w, seq_h, media, stats) if kind == "video" else _audio_levels(g, cti, clip_el)
                 items.append({
                     "media_uid": None if graphic or nested else target.get("ObjectUID"),
                     "sequence_uid": nested,
@@ -436,7 +436,9 @@ def _extract_sequence(g: Graph, seq_el: ET.Element, name: str, bin_key: str | No
                     "transitions": transitions,
                     **fx,
                 })
-            result.append({"muted": _text(tr, "ClipTrack/Track/IsMuted") == "true", "items": items})
+            fader = _param_static(_fader(g, tr.find("AudioTrack"))) if kind == "audio" else None
+            result.append({"muted": _text(tr, "ClipTrack/Track/IsMuted") == "true", "items": items,
+                           "volume_db": _db(fader) if fader is not None else 0.0})
         return result
 
     seq = {
@@ -660,6 +662,38 @@ def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | Non
             stats["effects"] += 1
             stats.setdefault("effect_names", set()).add(_text(comp, "DisplayName") or match)
     return {"motion": motion, "keyframes": keyframes, "opacity": opacity, "effects": effects}
+
+
+def _db(amplitude) -> float:
+    import math
+
+    return round(20 * math.log10(amplitude), 2) if isinstance(amplitude, float) and amplitude > 0 else -96.0
+
+
+def _fader(g: Graph, owner: ET.Element | None) -> ET.Element | None:
+    """The volume Level param of the fader in a clip's or track's audio component chain (none while the
+    chain is still on its default volume)."""
+    chain = g.at(owner, "ComponentOwner/Components")
+    if chain is None:
+        return None
+    for ref in chain.findall("ComponentChain/Components/Component"):
+        comp = g.ref(ref)
+        if comp is not None and comp.tag == "AudioFader":
+            return next((g.ref(p) for p in comp.findall("AudioComponent/Component/Params/Param") if p.get("Index") == "0"), None)
+    return None
+
+
+def _audio_levels(g: Graph, cti: ET.Element, clip_el: ET.Element | None) -> dict:
+    """An audio clip's Volume (keyframes included) and its Audio Gain (which Loudness Auto-Match sets),
+    in dB. Premiere stores both as amplitude, 1.0 = 0 dB."""
+    gain = _text(clip_el, "Gain")
+    out: dict = {"volume_db": 0.0, "gain_db": _db(float(gain)) if gain else 0.0, "keyframes": {}}
+    level = _fader(g, cti)
+    if (v := _param_static(level)) is not None:
+        out["volume_db"] = _db(v)
+    if kfs := _param_keyframes(level):
+        out["keyframes"]["volume_db"] = [{**k, "v": _db(k["v"])} for k in kfs]
+    return out
 
 
 # Premiere effect MatchName -> (lumina type, {ParameterID: (name, kind)})

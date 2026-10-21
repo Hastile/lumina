@@ -65,8 +65,22 @@ def _shapes_xml(with_shapes: bool) -> str:
   <Component Index="0" ObjectRef="300" /><Component Index="1" ObjectRef="400" /></Components></ComponentChain></VideoComponentChain>'''
 
 
-def build_prproj(tmp_path, media_path: str, with_shapes: bool = False) -> str:
-    shapes_xml = _shapes_xml(with_shapes)
+def _levels_xml() -> str:
+    """Clip Volume -3 dB, Audio Gain -6 dB and a -6 dB track fader, stored as amplitude like Premiere does."""
+    def fader(oid, amp):
+        return f'''<AudioComponentChain ObjectID="{oid}" ClassID="x" Version="4"><ComponentChain Version="3"><Components Version="1">
+  <Component Index="0" ObjectRef="{oid + 1}" /></Components></ComponentChain></AudioComponentChain>
+<AudioFader ObjectID="{oid + 1}" ClassID="x" Version="3"><AudioComponent Version="3"><Component Version="7"><Params Version="1">
+  <Param Index="0" ObjectRef="{oid + 2}" /></Params><ID>1</ID></Component></AudioComponent></AudioFader>
+<AudioComponentParam ObjectID="{oid + 2}" ClassID="x" Version="10"><StartKeyframe>-91445760000000000,{amp},0,0,0,0,0,0</StartKeyframe><Name>Volume</Name></AudioComponentParam>'''
+    return fader(500, 0.707945764065) + "\n" + fader(510, 0.501187233627)
+
+
+def build_prproj(tmp_path, media_path: str, with_shapes: bool = False, with_levels: bool = False) -> str:
+    shapes_xml = _shapes_xml(with_shapes) + (_levels_xml() if with_levels else "")
+    clip_fader = '<ComponentOwner Version="1"><Components ObjectRef="500" /></ComponentOwner>' if with_levels else ""
+    track_fader = '<AudioTrack Version="12"><ComponentOwner Version="1"><Components ObjectRef="510" /></ComponentOwner></AudioTrack>' if with_levels else ""
+    gain = "<Gain>0.501187233627</Gain>" if with_levels else ""
     owner = '<ComponentOwner Version="1"><Components ObjectRef="290" /></ComponentOwner>' if with_shapes else ""
     xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <PremiereData Version="3">
@@ -142,7 +156,7 @@ def build_prproj(tmp_path, media_path: str, with_shapes: bool = False) -> str:
   <VideoClipTrack ObjectUID="vt2" ClassID="x" Version="1"><ClipTrack Version="2"><Track Version="4"><Index>1</Index></Track>
     <ClipItems Version="3"><TrackItems Version="1"><TrackItem Index="0" ObjectRef="62" /></TrackItems></ClipItems></ClipTrack></VideoClipTrack>
   <AudioClipTrack ObjectUID="at1" ClassID="x" Version="1"><ClipTrack Version="2"><Track Version="4"><IsMuted>true</IsMuted><Index>0</Index></Track>
-    <ClipItems Version="3"><TrackItems Version="1"><TrackItem Index="0" ObjectRef="61" /></TrackItems></ClipItems></ClipTrack></AudioClipTrack>
+    <ClipItems Version="3"><TrackItems Version="1"><TrackItem Index="0" ObjectRef="61" /></TrackItems></ClipItems></ClipTrack>{track_fader}</AudioClipTrack>
 
   <VideoClipTrackItem ObjectID="60" ClassID="x" Version="8"><ClipTrackItem Version="8">
     <TrackItem Version="4"><Start>{SEC}</Start><End>{5 * SEC}</End></TrackItem><SubClip ObjectRef="70" /></ClipTrackItem></VideoClipTrackItem>
@@ -150,10 +164,10 @@ def build_prproj(tmp_path, media_path: str, with_shapes: bool = False) -> str:
   <VideoClip ObjectID="71" ClassID="x" Version="11"><Clip Version="18">
     <Node Version="1"><Properties Version="1"><asl.clip.label.name>BE.Prefs.LabelColors.7</asl.clip.label.name></Properties></Node>
     <Source ObjectRef="11" /><InPoint>{10 * SEC}</InPoint><OutPoint>{14 * SEC}</OutPoint><PlaybackSpeed>1</PlaybackSpeed></Clip></VideoClip>
-  <AudioClipTrackItem ObjectID="61" ClassID="x" Version="11"><ClipTrackItem Version="8">
+  <AudioClipTrackItem ObjectID="61" ClassID="x" Version="11"><ClipTrackItem Version="8">{clip_fader}
     <TrackItem Version="4"><Start>{SEC}</Start><End>{5 * SEC}</End></TrackItem><SubClip ObjectRef="72" /></ClipTrackItem></AudioClipTrackItem>
   <SubClip ObjectID="72" ClassID="x" Version="6"><Clip ObjectRef="73" /><Name>interview cut</Name></SubClip>
-  <AudioClip ObjectID="73" ClassID="x" Version="11"><Clip Version="18"><Source ObjectRef="11" /><InPoint>{10 * SEC}</InPoint></Clip></AudioClip>
+  <AudioClip ObjectID="73" ClassID="x" Version="11"><Clip Version="18"><Source ObjectRef="11" /><InPoint>{10 * SEC}</InPoint></Clip>{gain}</AudioClip>
   <VideoClipTrackItem ObjectID="62" ClassID="x" Version="8"><ClipTrackItem Version="8">
     <TrackItem Version="4"><End>{2 * SEC}</End></TrackItem>{owner}<SubClip ObjectRef="74" /></ClipTrackItem></VideoClipTrackItem>
   <SubClip ObjectID="74" ClassID="x" Version="6"><Clip ObjectRef="20" /><Name>Title</Name></SubClip>
@@ -194,6 +208,25 @@ def test_import_command_is_valid_and_one_undo_step(tmp_path):
     assert doc["bins"][out["bin_id"]]["name"] == "demo"
     s.undo()
     assert doc["media"] == {} and doc["sequences"] == {}
+
+
+def test_audio_levels_come_across(tmp_path):
+    media = tmp_path / "interview.mp4"
+    media.write_bytes(b"")
+    path = build_prproj(tmp_path, str(media), with_levels=True)
+    a = extract(path).sequences[0]["audio_tracks"][0]
+    assert (a["items"][0]["volume_db"], a["items"][0]["gain_db"], a["volume_db"]) == (-3.0, -6.0, -6.0)
+    s = Session(services=FakeServices())
+    out = s.execute("project.import_premiere", {"path": path})["result"]
+    doc = s.doc
+    assert validate_project(doc).model_dump(mode="json") == doc
+    seq = doc["sequences"][out["sequences"][0]]
+    track = seq["tracks"][seq["audio_tracks"][0]]
+    (clip,) = track["clips"].values()
+    assert (clip["volume_db"], clip["gain_db"], track["volume_db"]) == (-3.0, -6.0, -6.0)
+    # untouched clips stay at 0 dB
+    plain = extract(build_prproj(tmp_path, str(media))).sequences[0]["audio_tracks"][0]
+    assert (plain["items"][0]["volume_db"], plain["items"][0]["gain_db"], plain["volume_db"]) == (0.0, 0.0, 0.0)
 
 
 def test_rejects_non_premiere_files(tmp_path):

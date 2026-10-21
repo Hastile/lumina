@@ -119,6 +119,8 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
             for track_id, tr in zip(seq[f"{kind}_tracks"], s[f"{kind}_tracks"]):
                 track = seq["tracks"][track_id]
                 track["muted"] = tr["muted"] if kind == "audio" else False
+                if kind == "audio":
+                    track["volume_db"] = float(tr.get("volume_db", 0.0))
                 track["hidden"] = tr["muted"] if kind == "video" else False
                 track["targeted"] = track["targeted"]
                 prev_end = 0
@@ -147,7 +149,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
                         "source_in": it["source_in"], "speed": it["speed"], "enabled": True,
                         "link_id": links.setdefault(it["link"], new_id()) if it["link"] else None,
                         "label": it["label"] if kind == "video" else "caribbean",
-                        "opacity": float(it.get("opacity", 100.0)), "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "sequence_id": nested, "muted": False, "auto_match": None,
+                        "opacity": float(it.get("opacity", 100.0)), "volume_db": float(it.get("volume_db", 0.0)), "gain_db": float(it.get("gain_db", 0.0)), "audio_tag": None, "sequence_id": nested, "muted": False, "auto_match": None,
                         "motion": {**DEFAULT_MOTION, **it.get("motion", {})},
                         "keyframes": it.get("keyframes", {}),
                         "graphic": graphic,
