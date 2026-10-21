@@ -30,6 +30,41 @@ def test_rolling_edit_moves_the_edit_point_and_nothing_else():
         s.execute("clip.roll", {"clip_id": r2["id"], "edge": "start", "delta": 5 * SEC})  # a.mp4 has 5 s left -> 3 s
 
 
+def test_rolling_edit_with_clamp_stops_at_the_last_frame_that_fits():
+    s, sid, (l, r) = _two_cuts()
+    # a.mp4 has 5 s after the cut and b.mp4 5 s before it: an 8 s roll either way stops at 5 s
+    out = s.execute("clip.roll", {"clip_id": l["id"], "edge": "end", "delta": 8 * SEC, "clamp": True})["result"]
+    assert out["delta"] == 5 * SEC
+    l2, r2 = clips(s, sid)
+    assert (l2["end"], r2["start"], r2["source_in"]) == (15 * SEC, 15 * SEC, 10 * SEC)
+    _ok(s, sid)
+    out = s.execute("clip.roll", {"clip_id": l["id"], "edge": "end", "delta": SEC, "clamp": True})["result"]
+    assert out["delta"] == 0, "already at the end of the media"
+
+
+def test_alt_drag_copies_clips_and_leaves_the_originals():
+    s, sid, (l, r) = _two_cuts()
+    out = s.execute("clip.move", {"clip_ids": [l["id"]], "delta": 20 * SEC, "duplicate": True})["result"]
+    v = clips(s, sid)
+    assert [(c["start"], c["end"]) for c in v] == [(0, 10 * SEC), (10 * SEC, 20 * SEC), (20 * SEC, 30 * SEC)]
+    copy = v[2]
+    assert copy["id"] in out["clip_ids"] and copy["id"] != l["id"] and copy["source_in"] == l["source_in"]
+    a = clips(s, sid, "audio")
+    assert len(a) == 3 and a[2]["link_id"] == copy["link_id"] != l["link_id"], "the copy keeps its own audio link"
+    _ok(s, sid)
+
+
+def test_overwrite_reports_the_clips_it_covered():
+    s, sid, (l, r) = _two_cuts()
+    a = l["media_id"]
+    out = s.execute("clip.place", {"media_id": a, "at": "8s", "source_in": "0s", "source_out": "4s", "take_audio": False})["result"]
+    cov = {c["clip_id"]: c for c in out["covered"]}
+    assert cov[l["id"]]["was"] == [0, 10 * SEC] and cov[l["id"]]["now"] == [[0, 8 * SEC]]
+    assert cov[r["id"]]["now"] == [[12 * SEC, 20 * SEC]]
+    out = s.execute("clip.move", {"clip_ids": [out["video_clip_id"]], "delta": "-8s", "include_linked": False})["result"]
+    assert {c["clip_id"] for c in out["covered"]} == {l["id"]}
+
+
 def test_slip_keeps_position_and_shifts_source():
     s, sid, (l, _) = _two_cuts()
     s.execute("clip.slip", {"clip_id": l["id"], "delta": 2 * SEC})

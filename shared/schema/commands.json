@@ -1008,7 +1008,7 @@
   },
   {
     "name": "clip.place",
-    "description": "Place media on the timeline (Insert ',' / Overwrite '.'), video and audio linked.",
+    "description": "Place media on the timeline (Insert ',' / Overwrite '.'), video and audio linked.\nAn overwrite reports the clips it covered (``covered``: each one's range before and the parts left).",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -1314,7 +1314,7 @@
   },
   {
     "name": "clip.move",
-    "description": "Drag clips in time and/or across tracks (overwrite, or Ctrl-drag insert).",
+    "description": "Drag clips in time and/or across tracks (overwrite, or Ctrl-drag insert); Alt-drag\nduplicates them (duplicate). An overwrite reports the clips it covered (``covered``).",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -1370,6 +1370,12 @@
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "duplicate": {
+          "default": false,
+          "description": "Alt-drag: leave the clips where they are and drop copies",
+          "title": "Duplicate",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3142,7 +3148,7 @@
   },
   {
     "name": "clip.roll",
-    "description": "Rolling Edit (N): move an edit point, trimming the outgoing clip's Out and the incoming clip's In\ntogether so nothing else moves. Without a neighbor it trims that edge alone.",
+    "description": "Rolling Edit (N): move an edit point, trimming the outgoing clip's Out and the incoming clip's In\ntogether so nothing else moves. Without a neighbor it trims that edge alone. With clamp, a roll\npast the media or the next clip stops at the last frame that fits.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -3180,6 +3186,12 @@
           ],
           "title": "Edge",
           "type": "string"
+        },
+        "clamp": {
+          "default": false,
+          "description": "stop at the furthest the edit point can go instead of refusing (the tool's drag)",
+          "title": "Clamp",
+          "type": "boolean"
         }
       },
       "required": [
@@ -3187,7 +3199,7 @@
         "delta",
         "edge"
       ],
-      "title": "EdgeEdit",
+      "title": "RollEdit",
       "type": "object"
     }
   },

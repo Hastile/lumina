@@ -26,6 +26,8 @@ const api = {
     return () => ipcRenderer.removeListener('app:closeRequest', listener)
   },
   confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirmClose'),
+  /** Alt was used with the mouse (Alt-click, Alt-drag): releasing it must not open the menu bar. */
+  altGesture: (): void => ipcRenderer.send('app:altGesture'),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   showItemInFolder: (path: string): Promise<void> => ipcRenderer.invoke('shell:showItem', path),
   videosDir: (): Promise<string> => ipcRenderer.invoke('app:videosDir')

@@ -370,6 +370,13 @@ function createWindow(): BrowserWindow {
     win.webContents.send('app:closeRequest')
   })
   win.webContents.on('render-process-gone', () => closeConfirmed.add(win))
+  // Alt used with the mouse (Alt-drag duplicates a clip): its release must not put Windows' focus on
+  // the menu bar, where the next keys would go
+  win.webContents.on('before-input-event', (e, input) => {
+    if (input.key !== 'Alt') return
+    if (input.type === 'keyDown') altGestures.delete(win.webContents.id)
+    else if (altGestures.delete(win.webContents.id)) e.preventDefault()
+  })
   // Test hook: LUMINA_CAPTURE=out.png [LUMINA_CAPTURE_DELAY=ms] saves a screenshot.
   // Repeats every LUMINA_CAPTURE_EVERY ms when set (out.png is overwritten).
   if (process.env.LUMINA_CAPTURE) {
@@ -394,6 +401,8 @@ function createWindow(): BrowserWindow {
 }
 
 const closeConfirmed = new WeakSet<BrowserWindow>()
+const altGestures = new Set<number>()
+ipcMain.on('app:altGesture', (e) => altGestures.add(e.sender.id))
 ipcMain.handle('app:confirmClose', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender)
   if (!win) return

@@ -746,6 +746,20 @@ try {
   for (let i = 0; i < 30 && t1.v[0].end === pre.v[0].end; i++) { await page.waitForTimeout(100); t1 = await tl() }
   assert.ok(t1.v[0].end > pre.v[0].end && t1.v[1].start === t1.v[0].end && t1.v[2].start === pre.v[2].start, 'rolling edit moved only the edit point')
   assert.equal(t1.a[1].start, t1.v[1].start, 'linked audio rolled too')
+  // rolling far past the next clip stops one frame short of its end instead of refusing
+  {
+    const b = await vbox(0)
+    const nb = await vbox(1)
+    await tdrag(b.x + b.width - 2, b.y + b.height / 2, nb.width * 1.6)
+    const tpf = await page.evaluate(() => { const s = window.__lumina.get(); const st = s.doc.sequences[s.doc.active_sequence_id].settings; return Math.round(254016000000 * st.fps_den / st.fps_num) })
+    let tc = await tl()
+    for (let i = 0; i < 30 && tc.v[0].end === t1.v[0].end; i++) { await page.waitForTimeout(100); tc = await tl() }
+    assert.equal(tc.v[0].end, tc.v[1].start)
+    assert.equal(tc.v[1].end - tc.v[1].start, tpf, `rolled to the last frame that fits (${(tc.v[1].end - tc.v[1].start) / tpf} frames left)`)
+    await page.keyboard.press('Control+z')
+    for (let i = 0; i < 30 && tc.v[0].end !== t1.v[0].end; i++) { await page.waitForTimeout(100); tc = await tl() }
+    assert.equal(tc.v[0].end, t1.v[0].end, 'undone')
+  }
   await page.keyboard.press('y')
   let b1 = await vbox(1)
   await tdrag(b1.x + b1.width / 2, b1.y + b1.height / 2, -20)
@@ -770,6 +784,29 @@ try {
   assert.equal(t4.v.length, 4, 'pasted at the end')
   assert.equal(t4.v[3].start, t3.v[2].end)
   assert.equal(t4.a.length, 4, 'with its linked audio')
+  // Alt-drag duplicates: the first cut copied one track up, the original stays
+  {
+    const b = await vbox(0)
+    await page.keyboard.down('Alt')
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2)
+    await page.mouse.down()
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2 - b.height - 6, { steps: 6 })
+    await page.mouse.up()
+    await page.keyboard.up('Alt')
+    const onTracks = () => page.evaluate(() => {
+      const s = window.__lumina.get()
+      const seq = s.doc.sequences[s.doc.active_sequence_id]
+      return seq.video_tracks.map((id) => Object.values(seq.tracks[id].clips).map((c) => ({ id: c.id, start: c.start, src: c.source_in })))
+    })
+    let tr = await onTracks()
+    for (let i = 0; i < 30 && tr[1].length === 0; i++) { await page.waitForTimeout(100); tr = await onTracks() }
+    assert.equal(tr[0].length, 4, 'the original stayed on V1')
+    assert.equal(tr[1].length, 1, 'a copy landed on V2')
+    assert.ok(tr[1][0].id !== t4.v[0].id && tr[1][0].start === t4.v[0].start && tr[1][0].src === t4.v[0].source_in, 'the copy is the same cut')
+    await page.keyboard.press('Control+z')
+    for (let i = 0; i < 30 && tr[1].length; i++) { await page.waitForTimeout(100); tr = await onTracks() }
+    assert.equal(tr[1].length, 0, 'duplicate undone')
+  }
   // rubber-band: drag over the pasted clip from empty space selects it and its audio
   await page.keyboard.press('Backslash')
   await page.waitForTimeout(200)

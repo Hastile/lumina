@@ -57,15 +57,48 @@ def _neighbor(track: dict, c: dict, side: Literal["before", "after"]) -> dict | 
     return None
 
 
-@command("clip.roll", EdgeEdit)
-def clip_roll(ctx: Context, p: EdgeEdit):
+class RollEdit(EdgeEdit):
+    clamp: bool = Field(default=False, description="stop at the furthest the edit point can go instead of refusing (the tool's drag)")
+
+
+@command("clip.roll", RollEdit)
+def clip_roll(ctx: Context, p: RollEdit):
     """Rolling Edit (N): move an edit point, trimming the outgoing clip's Out and the incoming clip's In
-    together so nothing else moves. Without a neighbor it trims that edge alone."""
+    together so nothing else moves. Without a neighbor it trims that edge alone. With clamp, a roll
+    past the media or the next clip stops at the last frame that fits."""
     doc = ctx.doc
     seq = seq_of(doc, p.sequence_id)
-    d = p.delta
-    if d == 0:
+    if p.delta == 0:
         return {"delta": 0}
+    try:
+        writes = _roll_writes(doc, seq, p, p.delta)
+        d = p.delta
+    except CommandError:
+        if not p.clamp:
+            raise
+        # the furthest whole frame in that direction that still fits (fitting only shrinks with distance)
+        st = seq["settings"]
+        tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+        sign = 1 if p.delta > 0 else -1
+        lo, hi = 0, abs(p.delta) // tpf
+        while lo < hi:
+            mid = (lo + hi + 1) // 2
+            try:
+                _roll_writes(doc, seq, p, sign * mid * tpf)
+                lo = mid
+            except CommandError:
+                hi = mid - 1
+        if lo == 0:
+            return {"delta": 0, "clip_ids": []}
+        d = sign * lo * tpf
+        writes = _roll_writes(doc, seq, p, d)
+    for tid, n in writes.values():
+        write_clip(ctx, seq, tid, n)
+    return {"delta": d, "clip_ids": list(writes)}
+
+
+def _roll_writes(doc: dict, seq: dict, p: EdgeEdit, d: int) -> dict[str, tuple[str, dict]]:
+    """The clips a roll by ``d`` rewrites, checked (CommandError when it does not fit)."""
     writes: dict[str, tuple[str, dict]] = {}
     for tid, c in _targets(seq, p):
         track = seq["tracks"][tid]
@@ -82,9 +115,7 @@ def clip_roll(ctx: Context, p: EdgeEdit):
         _check_source(doc, n)
         if n["start"] < 0 or not is_free(seq["tracks"][tid], n["start"], n["end"], exclude=edited):
             raise CommandError("TRIM_COLLISION", "the edit point cannot roll past the next clip")
-    for tid, n in writes.values():
-        write_clip(ctx, seq, tid, n)
-    return {"delta": d, "clip_ids": list(writes)}
+    return writes
 
 
 @command("clip.slip", ToolEdit)

@@ -121,21 +121,29 @@ def split_clip(ctx: Context, seq: dict, track_id: str, clip: dict, at: int, righ
     return right["id"]
 
 
-def clear_range(ctx: Context, seq: dict, track_id: str, start: int, end: int, exclude: set[str] = frozenset()) -> None:
-    """Overwrite-clear [start, end) on one track."""
+def clear_range(ctx: Context, seq: dict, track_id: str, start: int, end: int, exclude: set[str] = frozenset()) -> list[dict]:
+    """Overwrite-clear [start, end) on one track. Returns what it covered: each clip's range before
+    (``was``) and the parts of it left (``now``, empty when it was removed)."""
     track = seq["tracks"][track_id]
+    covered = []
     for c in clips_sorted(track):
         if c["id"] in exclude or c["end"] <= start or c["start"] >= end:
             continue
         if c["start"] >= start and c["end"] <= end:
             ctx.m.delete(clip_path(seq, track_id, c["id"]))
+            now = []
         elif c["start"] < start and c["end"] > end:
             split_clip(ctx, seq, track_id, c, end)
             write_clip(ctx, seq, track_id, dict(track["clips"][c["id"]], end=start))
+            now = [[c["start"], start], [end, c["end"]]]
         elif c["start"] < start:
             write_clip(ctx, seq, track_id, dict(c, end=start))
+            now = [[c["start"], start]]
         else:
             write_clip(ctx, seq, track_id, dict(c, start=end, source_in=source_at(c, end)))
+            now = [[end, c["end"]]]
+        covered.append({"clip_id": c["id"], "name": c["name"], "track_id": track_id, "was": [c["start"], c["end"]], "now": now})
+    return covered
 
 
 def shift_from(ctx: Context, seq: dict, track_id: str, at: int, delta: int, exclude: set[str] = frozenset()) -> None:
@@ -213,7 +221,8 @@ class PlaceMedia(Params):
 
 @command("clip.place", PlaceMedia)
 def clip_place(ctx: Context, p: PlaceMedia):
-    """Place media on the timeline (Insert ',' / Overwrite '.'), video and audio linked."""
+    """Place media on the timeline (Insert ',' / Overwrite '.'), video and audio linked.
+    An overwrite reports the clips it covered (``covered``: each one's range before and the parts left)."""
     doc = ctx.doc
     seq = seq_of(doc, p.sequence_id)
     item = media_of(doc, p.media_id)
@@ -263,6 +272,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
         require_unlocked(seq, tid)
 
     end = at + duration
+    covered: list[dict] = []
     if p.mode == "insert":
         link_map: dict[str, str] = {}
         affected = sync_tracks(seq, {tid for _, tid in targets})
@@ -272,7 +282,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
             shift_from(ctx, seq, tid, at, duration)
     else:
         for _, tid in targets:
-            clear_range(ctx, seq, tid, at, end)
+            covered += clear_range(ctx, seq, tid, at, end)
 
     link_id = new_id() if len(targets) > 1 else None
     base_name = item["name"]
@@ -307,7 +317,7 @@ def clip_place(ctx: Context, p: PlaceMedia):
         write_clip(ctx, seq, tid, clip)
         created[f"{kind}_clip_id"] = clip["id"]
     ctx.m.set(["sequences", seq["id"], "playhead"], end)
-    return {**created, "start": at, "end": end}
+    return {**created, "start": at, "end": end, "covered": covered}
 
 
 # ---------------------------------------------------------------- razor / lift / extract
@@ -427,11 +437,13 @@ class MoveClips(Params):
     track_delta: int = Field(default=0, description="move up (+) / down (-) within the same track kind")
     include_linked: bool = True
     mode: Literal["overwrite", "insert"] = "overwrite"
+    duplicate: bool = Field(default=False, description="Alt-drag: leave the clips where they are and drop copies")
 
 
 @command("clip.move", MoveClips)
 def clip_move(ctx: Context, p: MoveClips):
-    """Drag clips in time and/or across tracks (overwrite, or Ctrl-drag insert)."""
+    """Drag clips in time and/or across tracks (overwrite, or Ctrl-drag insert); Alt-drag
+    duplicates them (duplicate). An overwrite reports the clips it covered (``covered``)."""
     seq = seq_of(ctx.doc, p.sequence_id)
     st = seq["settings"]
     if isinstance(p.delta, str) and p.delta.strip().startswith("-"):
@@ -456,17 +468,28 @@ def clip_move(ctx: Context, p: MoveClips):
         if c["start"] + delta < 0:
             raise CommandError("BAD_TIME", "cannot move before 0")
         moves.append((tid, dest, c))
-    for tid, _, c in moves:
-        ctx.m.delete(clip_path(seq, tid, c["id"]))
+    if p.duplicate:
+        # the copies keep their links among themselves, not with the originals
+        links: dict[str, str] = {}
+        moves = [(tid, dest, dict(c, id=new_id(), link_id=links.setdefault(c["link_id"], new_id()) if c.get("link_id") else None,
+                                  effects=[dict(e, id=new_id()) for e in c.get("effects") or []]))
+                 for tid, dest, c in moves]
+    else:
+        for tid, _, c in moves:
+            ctx.m.delete(clip_path(seq, tid, c["id"]))
+    covered: list[dict] = []
     for _, dest, c in moves:
         s, e = c["start"] + delta, c["end"] + delta
         if p.mode == "insert":
             razor_track(ctx, seq, dest, s, {})
             shift_from(ctx, seq, dest, s, e - s)
         else:
-            clear_range(ctx, seq, dest, s, e)
+            covered += clear_range(ctx, seq, dest, s, e)
         write_clip(ctx, seq, dest, dict(c, start=s, end=e))
-    return {"moved_clip_ids": ids, "delta": delta}
+    out = {"moved_clip_ids": ids, "delta": delta, "covered": covered}
+    if p.duplicate:
+        out = {"copied_from": ids, "clip_ids": [c["id"] for _, _, c in moves], "delta": delta, "covered": covered}
+    return out
 
 
 # ---------------------------------------------------------------- trim / speed

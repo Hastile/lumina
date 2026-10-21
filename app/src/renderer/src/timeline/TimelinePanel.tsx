@@ -57,7 +57,7 @@ type Area = 'caption' | 'video' | 'audio'
 type Row = { track: Track; label: string; kind: 'video' | 'audio'; area: Area; index: number; top: number; height: number }
 
 type Drag =
-  | { kind: 'move'; ids: string[]; anchorRow: number; startX: number; startY: number; dt: number; dRow: number; moved: boolean; base: Clip }
+  | { kind: 'move'; ids: string[]; anchorRow: number; startX: number; startY: number; dt: number; dRow: number; moved: boolean; base: Clip; dup: boolean }
   | { kind: 'trim'; clipId: string; edge: 'start' | 'end'; ripple: boolean; startX: number; dt: number }
   | { kind: 'hand'; startX: number; startScroll: number }
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: string[] }
@@ -99,6 +99,41 @@ function previewTool(seq: Sequence, d: Extract<Drag, { kind: 'tool' }>): Map<str
     }
   }
   return out
+}
+
+/** How far a Rolling Edit drag can move the edit point (engine clip.roll): neither clip may run out
+ * of media or shrink below a frame, and an edge with no neighbour stops at the next clip. */
+function rollRange(seq: Sequence, ids: string[], edge: 'start' | 'end', tpf: number, limitOf: (c: Clip) => number | null): [number, number] {
+  let lo = -Infinity
+  let hi = Infinity
+  for (const tr of Object.values(seq.tracks)) {
+    const clips = Object.values(tr.clips)
+    for (const c of clips) {
+      if (!ids.includes(c.id)) continue
+      const before = clips.find((o) => o.id !== c.id && o.end === c.start)
+      const after = clips.find((o) => o.id !== c.id && o.start === c.end)
+      const [l, r] = edge === 'end' ? [c, after] : [before, c]
+      if (l) {
+        const len = l.end - l.start
+        lo = Math.max(lo, tpf - len)
+        const lim = l.freeze != null ? null : limitOf(l)
+        if (l.speed > 0 && lim != null) hi = Math.min(hi, (lim - l.source_in) / l.speed - len)
+        if (l.speed < 0 && l.freeze == null) hi = Math.min(hi, l.source_in / -l.speed - len)
+        if (!r) for (const o of clips) if (o.id !== l.id && o.start >= l.end) hi = Math.min(hi, o.start - l.end)
+      }
+      if (r) {
+        hi = Math.min(hi, r.end - r.start - tpf)
+        const lim = limitOf(r)
+        if (r.freeze == null && r.speed > 0) lo = Math.max(lo, -r.source_in / r.speed)
+        if (r.freeze == null && r.speed < 0 && lim != null) lo = Math.max(lo, (lim - r.source_in) / r.speed)
+        if (!l) {
+          lo = Math.max(lo, -r.start)
+          for (const o of clips) if (o.id !== r.id && o.end <= r.start) lo = Math.max(lo, o.end - r.start)
+        }
+      }
+    }
+  }
+  return [Math.ceil(lo / tpf) * tpf, Math.floor(hi / tpf) * tpf]
 }
 
 /** Frames a linked clip is out of sync with its partner of the same source (engine edit_tools.sync_anchor),
@@ -327,6 +362,15 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
 
   const st = seq.settings
   const tpf = ticksPerFrame(st)
+  // how much source a clip can show (engine media_limit): stills have no end, nests end at their last clip
+  const mediaLimit = (c: Clip): number | null => {
+    if (c.sequence_id) {
+      const inner = get().doc?.sequences[c.sequence_id]
+      return inner ? Math.max(0, ...Object.values(inner.tracks).flatMap((t) => Object.values(t.clips).map((o) => o.end))) : null
+    }
+    const m = c.media_id ? media[c.media_id] : undefined
+    return !m || m.kind === 'image' ? null : m.duration
+  }
   const { rows } = layout
 
   // ------------------------------------------------------------ snapping
@@ -444,6 +488,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       return
     }
     if (tool === 'hand' || tool === 'zoom') return
+    if (e.altKey) window.lumina.altGesture()
     // selection / ripple tools
     const linked = e.altKey || !clip.link_id ? [clip.id] : Object.values(seq.tracks).flatMap((tr) => Object.values(tr.clips).filter((c) => c.link_id === clip.link_id).map((c) => c.id))
     let sel = get().selectedClips
@@ -464,7 +509,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     if (edge) {
       setDrag({ kind: 'trim', clipId: clip.id, edge, ripple: tool === 'ripple', startX: e.clientX, dt: 0 })
     } else if (tool === 'select' || tool === 'ripple') {
-      setDrag({ kind: 'move', ids: sel.includes(clip.id) ? sel : linked, anchorRow: rowIdx, startX: e.clientX, startY: e.clientY, dt: 0, dRow: 0, moved: false, base: clip })
+      setDrag({ kind: 'move', ids: sel.includes(clip.id) ? sel : linked, anchorRow: rowIdx, startX: e.clientX, startY: e.clientY, dt: 0, dRow: 0, moved: false, base: clip, dup: e.altKey })
     }
   }
 
@@ -519,7 +564,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         const { y } = laneXY(e)
         const r = rowAt(y)
         const dRow = r >= 0 && rows[r].kind === rows[drag.anchorRow].kind ? r - drag.anchorRow : drag.dRow
-        setDrag({ ...drag, dt, dRow, moved })
+        // Alt held while dragging duplicates (Premiere): the originals stay
+        setDrag({ ...drag, dt, dRow, moved, dup: e.altKey })
       } else if (drag.kind === 'trim') {
         const found = findClip(seq, drag.clipId)
         if (!found) return
@@ -534,6 +580,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         let dt = Math.round(raw / tpf) * tpf
         if (drag.tool === 'slide') dt += snapDelta([c.start + dt, c.end + dt], new Set(drag.ids))
         else if (drag.edge) dt += snapDelta([(drag.edge === 'start' ? c.start : c.end) + dt], new Set(drag.ids))
+        if (drag.tool === 'rolling' && drag.edge) {
+          // the edit point stops where the media (or the next clip) runs out
+          const [lo, hi] = rollRange(seq, drag.ids, drag.edge, tpf, mediaLimit)
+          dt = lo > hi ? 0 : Math.max(lo, Math.min(hi, dt))
+        }
         setDrag({ ...drag, dt })
       }
     }
@@ -543,10 +594,11 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       if (d.kind === 'move' && d.moved && (d.dt !== 0 || d.dRow !== 0)) {
         const row = rows[d.anchorRow]
         const trackDelta = row.kind === 'video' ? -d.dRow : d.dRow
-        await exec('clip.move', { sequence_id: seq.id, clip_ids: d.ids, delta: d.dt, track_delta: trackDelta, include_linked: false, mode: e.ctrlKey ? 'insert' : 'overwrite' }, 'Move')
+        const dup = d.dup || e.altKey
+        await exec('clip.move', { sequence_id: seq.id, clip_ids: d.ids, delta: d.dt, track_delta: trackDelta, include_linked: false, mode: e.ctrlKey ? 'insert' : 'overwrite', duplicate: dup }, dup ? tx('Duplicate') : 'Move')
       } else if (d.kind === 'tool' && d.dt !== 0) {
         const label = { rolling: tx('Rolling Edit'), rate: tx('Rate Stretch'), slip: tx('Slip'), slide: tx('Slide') }[d.tool]
-        await exec(EDIT_TOOLS[d.tool], { sequence_id: seq.id, clip_id: d.clipId, delta: d.dt, include_linked: d.ids.length > 1, ...(d.edge && d.tool !== 'slip' && d.tool !== 'slide' ? { edge: d.edge } : {}) }, label)
+        await exec(EDIT_TOOLS[d.tool], { sequence_id: seq.id, clip_id: d.clipId, delta: d.dt, include_linked: d.ids.length > 1, ...(d.edge && d.tool !== 'slip' && d.tool !== 'slide' ? { edge: d.edge } : {}), ...(d.tool === 'rolling' ? { clamp: true } : {}) }, label)
       } else if (d.kind === 'trim' && d.dt !== 0) {
         await exec('clip.trim', { sequence_id: seq.id, clip_id: d.clipId, edge: d.edge, delta: d.dt, ripple: d.ripple, include_linked: !e.altKey }, d.ripple ? 'Ripple Trim' : 'Trim')
       }
@@ -681,19 +733,19 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           : tool === 'slip' || tool === 'slide' ? 'ew-resize'
             : hover?.edge ? (tool === 'ripple' || tool === 'rolling' ? 'col-resize' : 'ew-resize') : 'default'
 
-  const renderClip = (clip: Clip, row: Row, rowIdx: number) => {
+  /** stay: the original of an Alt-drag duplicate, drawn where it is under its moving copy */
+  const renderClip = (clip: Clip, row: Row, rowIdx: number, stay = false) => {
     let start = clip.start
     let stop = clip.end
     let srcIn = clip.source_in
     let rowOffset = 0
-    const ghost = moveGhost && moveGhost.ids.includes(clip.id)
+    const ghost = !stay && moveGhost && moveGhost.ids.includes(clip.id)
     if (ghost) {
       start += moveGhost.dt
       stop += moveGhost.dt
       const anchor = rows[moveGhost.anchorRow]
+      // rows run top to bottom in every area; a linked partner on the other kind mirrors (V down = A up)
       rowOffset = anchor.kind === row.kind ? moveGhost.dRow : -moveGhost.dRow
-      // linked partner on the other kind mirrors visually (V up = A down)
-      if (anchor.kind !== row.kind) rowOffset = moveGhost.dRow
     }
     if (trimGhost && trimGhost.clipId === clip.id) {
       if (trimGhost.edge === 'start') {
@@ -715,12 +767,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     const x0 = toX(start)
     const x1 = toX(stop)
     if (x1 < -50 || x0 > width + 50) return null
-    const target = rows[rowIdx + (row.kind === 'video' ? -rowOffset : rowOffset)] ?? row
+    const target = rows[rowIdx + rowOffset] ?? row
     const m = clip.media_id ? media[clip.media_id] : undefined
     const isSel = selected.includes(clip.id)
     return (
       <div
-        key={clip.id}
+        key={stay ? `${clip.id}~stay` : clip.id}
         data-clip={clip.id}
         className={`lm-clip ${row.kind} ${clip.graphic ? 'graphic' : ''} ${clip.adjustment ? 'graphic adjustment' : ''} ${clip.caption ? 'graphic caption' : ''} ${clip.freeze != null ? 'held' : ''} ${clip.sequence_id ? 'nested' : ''} ${isSel ? 'selected' : ''} ${clip.enabled ? '' : 'disabled'} ${ghost || pv ? 'ghost' : ''}`}
         style={{ left: x0, width: Math.max(2, x1 - x0), top: target.top + 1, height: target.height - 2, ['--clip-color' as string]: `var(--label-${clip.label})` }}
@@ -1048,7 +1100,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
               {rows.map((r, i) => r.area === k && (
                 <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
               ))}
-              {rows.map((r, i) => r.area === k && Object.values(r.track.clips).map((c) => renderClip(c, r, i)))}
+              {rows.map((r, i) => r.area === k && Object.values(r.track.clips).map((c) =>
+                moveGhost?.dup && moveGhost.ids.includes(c.id) ? [renderClip(c, r, i, true), renderClip(c, r, i)] : renderClip(c, r, i)))}
               {rows.map((r) => r.area === k && trackTransitions(r.track).map((w) => renderTransition(w, r)))}
             </div>
           ))}
