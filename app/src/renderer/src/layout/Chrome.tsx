@@ -170,6 +170,7 @@ export function ContextMenuHost() {
           <div
             key={i}
             className={`item ${it.disabled ? 'disabled' : ''}`}
+            data-action={it.action}
             onClick={() => {
               if (it.disabled) return
               useCtx.setState({ menu: null })

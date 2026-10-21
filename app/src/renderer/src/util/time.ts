@@ -27,6 +27,15 @@ export function timecode(t: number, r: Rate): string {
   return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}:${pad(ff)}`
 }
 
+/** Timecode in audio time units: hh:mm:ss:samples (Premiere's Show Audio Time Units). */
+export function audioTimecode(t: number, sampleRate: number): string {
+  const seconds = t / TICKS_PER_SECOND
+  const total = Math.floor(seconds + 1e-9)
+  const samples = Math.floor((seconds - total) * sampleRate + 1e-6)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor(total / 60) % 60)}:${pad(total % 60)}:${String(samples).padStart(String(sampleRate - 1).length, '0')}`
+}
+
 /** Parse "00:00:05:12" (or fewer fields) typed into a timecode display. */
 export function parseTimecode(text: string, r: Rate): number | null {
   const parts = text.trim().split(/[:;.]/).map((p) => Number(p))

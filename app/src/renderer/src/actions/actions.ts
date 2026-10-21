@@ -2,17 +2,17 @@
 // context menus and toolbar buttons all invoke actions by id, and actions
 // only talk to the engine through commands - never by editing state locally.
 
-import type { Clip, Sequence } from '../engine/document'
+import type { Clip, Marker, Sequence } from '../engine/document'
 import { copySelectedKeyframes, deleteSelectedKeyframes, nudgeSelectedKeyframes, pasteKeyframes } from '../panels/KeyframeSelect'
 import { t } from '@shared/i18n'
 import { engine } from '../engine/client'
 import { factoryLayout, focusPanel, isLayoutLocked, resetToSaved, saveLayout, setLayoutLocked, toggleMaximize } from '../layout/dock'
 import { openDialog } from '../state/dialog'
 import { exportFrame, openExportDialog } from '../layout/ExportDialog'
-import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, type PanelId, type Tool } from '../state/store'
+import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, toggleFlag, type PanelId, type Tool } from '../state/store'
 import { nearestClipMarker } from '../util/markers'
 import { goTo, shuttle, slowShuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
-import { secondsToTicks, ticksPerFrame, ticksToSeconds } from '../util/time'
+import { secondsToTicks, TICKS_PER_SECOND, ticksPerFrame, ticksToSeconds } from '../util/time'
 
 export type Action = { id: string; label: string; run: () => void | Promise<void> }
 
@@ -619,6 +619,90 @@ def('markers.goOut', t('Go to Out'), () => {
   const t = m === 'source' ? sourceMedia()?.out_point : activeSequence()?.out_point
   if (t != null) goTo(m, t)
 })
+def('markers.markSelection', t('Mark Selection'), async () => {
+  const seq = seqOrToast()
+  if (!seq) return
+  const clips = get().selectedClips.map((id) => findClip(seq, id)?.clip).filter((c): c is NonNullable<typeof c> => !!c)
+  if (!clips.length) return
+  await exec('sequence.set_in_out', { sequence_id: seq.id, in_point: Math.min(...clips.map((c) => c.start)), out_point: Math.max(...clips.map((c) => c.end)) }, t('Mark Selection'))
+})
+def('markers.clearIn', t('Clear In'), async () => {
+  const seq = seqOrToast()
+  if (seq) await exec('sequence.set_in_out', { sequence_id: seq.id, clear_in: true }, t('Clear In'))
+})
+def('markers.clearOut', t('Clear Out'), async () => {
+  const seq = seqOrToast()
+  if (seq) await exec('sequence.set_in_out', { sequence_id: seq.id, clear_out: true }, t('Clear Out'))
+})
+
+/** The sequence marker under the playhead: one starting on this frame, else a range marker spanning it. */
+export function markerAtPlayhead(): Marker | null {
+  const seq = activeSequence()
+  if (!seq) return null
+  const t = get().programTime
+  const tpf = ticksPerFrame(seq.settings)
+  const ms = Object.values(seq.markers)
+  return ms.find((m) => Math.abs(m.start - t) < tpf / 2) ?? ms.find((m) => m.duration > 0 && m.start <= t && t < m.start + m.duration) ?? null
+}
+
+def('markers.addRange', t('Add Range Marker'), async () => {
+  // a range marker over the selected clips, else one second from the playhead
+  const seq = seqOrToast()
+  if (!seq) return
+  const clips = get().selectedClips.map((id) => findClip(seq, id)?.clip).filter((c): c is NonNullable<typeof c> => !!c)
+  const start = clips.length ? Math.min(...clips.map((c) => c.start)) : get().programTime
+  const end = clips.length ? Math.max(...clips.map((c) => c.end)) : start + TICKS_PER_SECOND
+  await exec('marker.add', { sequence_id: seq.id, at: start, duration: end - start }, t('Add Range Marker'))
+})
+def('markers.addRangeFromInOut', t('Add Range Marker from In and Out'), async () => {
+  const seq = seqOrToast()
+  if (!seq || seq.in_point == null || seq.out_point == null) return
+  await exec('marker.add', { sequence_id: seq.id, at: seq.in_point, duration: seq.out_point - seq.in_point }, t('Add Range Marker from In and Out'))
+})
+function goMarker(dir: 1 | -1) {
+  const seq = activeSequence()
+  if (!seq) return
+  const t = get().programTime
+  const pts = [...new Set(Object.values(seq.markers).map((m) => m.start))].sort((a, b) => a - b)
+  const target = dir > 0 ? pts.find((p) => p > t) : [...pts].reverse().find((p) => p < t)
+  if (target !== undefined) goTo('program', target)
+}
+def('markers.next', t('Go to Next Marker'), () => goMarker(1))
+def('markers.prev', t('Go to Previous Marker'), () => goMarker(-1))
+def('markers.clearCurrent', t('Clear Selected Marker'), async () => {
+  const seq = activeSequence()
+  const m = markerAtPlayhead()
+  if (seq && m) await exec('marker.remove', { sequence_id: seq.id, marker_ids: [m.id] }, t('Clear Selected Marker'))
+})
+def('markers.clearAll', t('Clear Markers'), async () => {
+  const seq = activeSequence()
+  const ids = seq ? Object.keys(seq.markers) : []
+  if (seq && ids.length) await exec('marker.remove', { sequence_id: seq.id, marker_ids: ids }, t('Clear Markers'))
+})
+const MARKER_COLORS = ['green', 'red', 'purple', 'orange', 'yellow', 'white', 'blue', 'cyan'] as const
+def('markers.edit', t('Edit Marker...'), () => {
+  const seq = activeSequence()
+  const m = markerAtPlayhead()
+  if (!seq || !m) return
+  openDialog({
+    title: t('Edit Marker...'),
+    fields: [
+      { key: 'name', label: t('Name'), type: 'text', value: m.name },
+      { key: 'comment', label: t('Comments'), type: 'text', value: m.comment },
+      { key: 'duration', label: t('Duration'), type: 'number', value: Math.round((m.duration / TICKS_PER_SECOND) * 1000) / 1000, min: 0, step: 0.1, suffix: 's' },
+      { key: 'color', label: t('Marker Color'), type: 'select', value: m.color, options: MARKER_COLORS.map((c) => ({ value: c, label: t(c[0].toUpperCase() + c.slice(1)) })) }
+    ],
+    onSubmit: async (v) => {
+      await exec('marker.update', {
+        sequence_id: seq.id, marker_id: m.id, name: String(v.name), comment: String(v.comment),
+        duration: Math.round(Number(v.duration) * TICKS_PER_SECOND), color: String(v.color)
+      }, t('Edit Marker...'))
+    }
+  })
+})
+def('view.rulerNumbers', t('Time Ruler Numbers'), () => toggleFlag('rulerNumbers'))
+def('view.audioTimeUnits', t('Show Audio Time Units'), () => toggleFlag('audioTimeUnits'))
+
 def('markers.add', t('Add Marker'), async () => {
   // Source monitor: a clip marker on the media at the source time
   if (monitor() === 'source') {

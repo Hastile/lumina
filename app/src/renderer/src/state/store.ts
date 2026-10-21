@@ -36,6 +36,8 @@ type State = {
   playing: 'source' | 'program' | null
   shuttle: number // J/K/L rate: negative = reverse
   playbackResolution: 1 | 0.5 | 0.25 // Program/Source monitor resolution while playing (paused = full), like Premiere
+  rulerNumbers: boolean // the time ruler's numbers (ruler menu > Time Ruler Numbers)
+  audioTimeUnits: boolean // timecode in audio samples instead of frames (ruler menu > Show Audio Time Units)
   ecView: { clipId: string; start: number; end: number } | null // Effect Controls timeline zoom (sequence ticks)
   audioScrub: boolean // Premiere's "Play audio while scrubbing"
   flashTracks: string[] // tracks an edit just landed on (highlighted briefly)
@@ -49,6 +51,26 @@ type State = {
 }
 
 const emptyHistory: HistoryState = { can_undo: false, can_redo: false, undo_label: null, redo_label: null, dirty: false, in_transaction: false }
+
+function loadFlag(key: string, fallback: boolean): boolean {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
+
+/** Flip a remembered display flag. */
+export function toggleFlag(key: 'rulerNumbers' | 'audioTimeUnits'): void {
+  const v = !useStore.getState()[key]
+  useStore.setState({ [key]: v } as Partial<State>)
+  try {
+    localStorage.setItem(`lumina.${key}`, v ? '1' : '0')
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 export const useStore = create<State>(() => ({
   connected: false,
@@ -73,6 +95,8 @@ export const useStore = create<State>(() => ({
   programTime: 0,
   playing: null,
   shuttle: 0,
+  rulerNumbers: loadFlag('lumina.rulerNumbers', true),
+  audioTimeUnits: loadFlag('lumina.audioTimeUnits', false),
   playbackResolution: (() => {
     try {
       const v = Number(localStorage.getItem('lumina.playbackResolution'))

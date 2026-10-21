@@ -7,13 +7,13 @@ import { t as tx } from '@shared/i18n'
 import { Lock, LockOpen, Eye, EyeOff, Magnet, Link2, Bookmark, Wrench, RefreshCcw, X, ChevronDown, ChevronRight } from 'lucide-react'
 import type { Asset, Clip, MediaItem, Sequence, Track } from '../engine/document'
 import { engine } from '../engine/client'
-import { runAction } from '../actions/actions'
+import { markerAtPlayhead, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { openDialog } from '../state/dialog'
 import { DRAG_MIME, draggedItems } from '../panels/ProjectPanel'
 import { activeSequence, closeSequence, exec, findClip, get, openSequence, sequenceEnd, set, toast, useStore } from '../state/store'
 import { goTo } from '../state/transport'
-import { floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
+import { audioTimecode, floorToFrame, parseTimecode, snapToFrame, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../util/time'
 import { drawWaveform, loadFilmstrip, loadWaveform } from './waveform'
 import { mediaUrl } from '../engine/client'
 import { clipMarkers } from '../util/markers'
@@ -236,6 +236,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   const playing = useStore((s) => s.playing === 'program')
   const flash = useStore((s) => s.flashTracks)
   const showKfs = useStore((s) => s.showClipKeyframes)
+  const rulerNumbers = useStore((s) => s.rulerNumbers)
+  const audioUnits = useStore((s) => s.audioTimeUnits)
 
   const lanesRef = useRef<HTMLDivElement>(null)
   const bodyRef = useRef<HTMLDivElement>(null)
@@ -905,6 +907,39 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
   }
 
   const inOut = seq.in_point != null || seq.out_point != null
+  /** Premiere's time ruler menu: In/Out, markers (no chapter or Flash cue markers) and the ruler display. */
+  const rulerMenu = (e: React.MouseEvent) => {
+    const hasIn = seq.in_point != null
+    const hasOut = seq.out_point != null
+    const here = markerAtPlayhead()
+    openContextMenu(e, [
+      { label: tx('Mark In'), action: 'markers.markIn' },
+      { label: tx('Mark Out'), action: 'markers.markOut' },
+      { label: tx('Mark Clip'), action: 'markers.markClip' },
+      { label: tx('Mark Selection'), action: 'markers.markSelection', disabled: !selected.length },
+      'sep',
+      { label: tx('Go to In'), action: 'markers.goIn', disabled: !hasIn },
+      { label: tx('Go to Out'), action: 'markers.goOut', disabled: !hasOut },
+      'sep',
+      { label: tx('Clear In'), action: 'markers.clearIn', disabled: !hasIn },
+      { label: tx('Clear Out'), action: 'markers.clearOut', disabled: !hasOut },
+      { label: tx('Clear In and Out'), action: 'markers.clearInOut', disabled: !hasIn && !hasOut },
+      'sep',
+      { label: tx('Add Marker'), action: 'markers.add' },
+      { label: tx('Add Range Marker'), action: 'markers.addRange' },
+      { label: tx('Add Range Marker from In and Out'), action: 'markers.addRangeFromInOut', disabled: !(hasIn && hasOut) },
+      { label: tx('Go to Next Marker'), action: 'markers.next' },
+      { label: tx('Go to Previous Marker'), action: 'markers.prev' },
+      'sep',
+      { label: tx('Clear Selected Marker'), action: 'markers.clearCurrent', disabled: !here },
+      { label: tx('Clear Markers'), action: 'markers.clearAll', disabled: !Object.keys(seq.markers).length },
+      'sep',
+      { label: tx('Edit Marker...'), action: 'markers.edit', disabled: !here },
+      'sep',
+      { label: `${audioUnits ? '✓ ' : ''}${tx('Show Audio Time Units')}`, action: 'view.audioTimeUnits' },
+      { label: `${rulerNumbers ? '✓ ' : ''}${tx('Time Ruler Numbers')}`, action: 'view.rulerNumbers' }
+    ])
+  }
   const clips_: Record<Area, string> = {
     caption: `inset(0 0 ${Math.max(0, bodyH - layout.capH)}px 0)`,
     video: `inset(${layout.videoTop}px 0 ${Math.max(0, bodyH - layout.videoTop - layout.videoH)}px 0)`,
@@ -931,7 +966,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       </div>
       <div className="lm-tl-top">
         <div className="lm-tl-corner" style={{ width: HEADER_W }}>
-          <PlayheadTimecode value={time} st={st} />
+          <PlayheadTimecode value={time} st={st} audio={audioUnits} />
           <div className="lm-tl-tools">
             <button className={`lm-iconbtn ${snapOn ? 'on' : ''}`} title="Snap in Timeline (S)" onClick={() => runAction('sequence.toggleSnap')}>
               <Magnet size={14} />
@@ -947,17 +982,20 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             </button>
           </div>
         </div>
-        <div className="lm-ruler" style={{ height: RULER_H }} onMouseDown={scrubRuler} onWheel={onWheel}>
+        <div className="lm-ruler" data-ruler="" style={{ height: RULER_H }} onMouseDown={(e) => e.button === 0 && scrubRuler(e)} onWheel={onWheel} onContextMenu={rulerMenu}>
           {ticks.map((s) => (
             <div key={s} className="tick" style={{ left: s * pps - scrollX }}>
-              <span>{timecode(Math.round(s * TICKS_PER_SECOND), st)}</span>
+              {rulerNumbers && <span>{audioUnits ? audioTimecode(Math.round(s * TICKS_PER_SECOND), st.sample_rate) : timecode(Math.round(s * TICKS_PER_SECOND), st)}</span>}
             </div>
           ))}
           {inOut && (
             <div className="inout" style={{ left: toX(seq.in_point ?? 0), width: toX(seq.out_point ?? end) - toX(seq.in_point ?? 0) }} />
           )}
           {Object.values(seq.markers).map((mk) => (
-            <div key={mk.id} className={`marker ${mk.color}`} style={{ left: toX(mk.start) }} title={mk.name || 'Marker'} />
+            <div key={mk.id} className={`marker ${mk.color} ${mk.duration > 0 ? 'range' : ''}`} data-seq-marker={mk.id}
+              style={{ left: toX(mk.start), width: mk.duration > 0 ? Math.max(2, toX(mk.start + mk.duration) - toX(mk.start)) : undefined }}
+              title={[mk.name || tx('Marker'), mk.comment].filter(Boolean).join(' · ')}
+              onDoubleClick={() => (goTo('program', mk.start), runAction('markers.edit'))} />
           ))}
           <div className="head" style={{ left: toX(time) }} />
         </div>
@@ -1143,7 +1181,7 @@ function ZoomBar({ width, contentW, pps, scrollX, end }: { width: number; conten
 
 // ---------------------------------------------------------------- pieces
 
-function PlayheadTimecode({ value, st }: { value: number; st: Sequence['settings'] }) {
+function PlayheadTimecode({ value, st, audio = false }: { value: number; st: Sequence['settings']; audio?: boolean }) {
   const [edit, setEdit] = useState<string | null>(null)
   if (edit !== null) {
     return (
@@ -1166,7 +1204,7 @@ function PlayheadTimecode({ value, st }: { value: number; st: Sequence['settings
   }
   return (
     <button className="lm-tc big" onClick={() => setEdit(timecode(value, st))}>
-      {timecode(value, st)}
+      {audio ? audioTimecode(value, st.sample_rate) : timecode(value, st)}
     </button>
   )
 }

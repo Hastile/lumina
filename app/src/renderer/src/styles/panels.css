@@ -357,6 +357,8 @@ input.val { color: #ddd; background: #111 !important; }
 .lm-ec .lane .kf-hidden.left { left: 1px; }
 .lm-ec .lane .kf-hidden.right { right: 1px; }
 
+/* a range marker on the ruler spans its duration */
+.lm-ruler .marker.range { border-radius: 0 0 2px 2px; opacity: 0.85; }
 /* clip markers (on the clip's media): a flag at the top of the clip */
 .lm-clip-markers { position: absolute; left: 0; right: 0; top: 0; height: 9px; pointer-events: none; z-index: 4; }
 .lm-clip-markers .mk { position: absolute; top: 0; width: 8px; height: 8px; margin-left: -4px; background: #3fbf6f; clip-path: polygon(0 0, 100% 0, 100% 60%, 50% 100%, 0 60%);
