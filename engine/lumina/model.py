@@ -185,7 +185,7 @@ class ShapeLayer(_Model):
 class ImageLayer(_Model):
     """A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,
     null = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation
-    apply around it."""
+    apply around it. Unlike Premiere, each image layer has its own crop."""
     id: str
     type: Literal["image"] = "image"
     path: str = Field(description="image file (png, jpg, webp, ...)")
@@ -197,6 +197,10 @@ class ImageLayer(_Model):
     uniform: bool = True
     rotation: float = 0.0
     opacity: float = 100.0
+    crop_left: float = Field(default=0.0, description="percent of the image hidden from the left (the picture does not move)")
+    crop_top: float = 0.0
+    crop_right: float = 0.0
+    crop_bottom: float = 0.0
     visible: bool = Field(default=True, description="the layer's eye toggle")
     blend: Literal["normal", "multiply"] = Field(default="normal", description="blended with everything below in the sequence")
 

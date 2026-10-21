@@ -187,6 +187,8 @@ function ImageView({ l }: { l: ImageLayer }) {
         transform: `rotate(${l.rotation}deg) scale(${sx}, ${l.scale / 100})`,
         opacity: l.opacity / 100,
         mixBlendMode: l.blend === 'multiply' ? 'multiply' : undefined,
+        // the layer's own crop hides part of the picture without moving it (compositor.place)
+        clipPath: l.crop_left || l.crop_top || l.crop_right || l.crop_bottom ? `inset(${l.crop_top}% ${l.crop_right}% ${l.crop_bottom}% ${l.crop_left}%)` : undefined,
         pointerEvents: 'auto'
       }}
     />

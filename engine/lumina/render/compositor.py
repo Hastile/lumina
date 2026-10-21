@@ -321,8 +321,9 @@ def _layer_image(layer: dict) -> tuple[Image.Image, dict] | None:
             return None
         img, ax, ay = render_text_layer(layer)
         s = sx = layer.get("scale", 100.0)
+    crop = {k: layer.get(k, 0.0) for k in ("crop_left", "crop_top", "crop_right", "crop_bottom")} if layer.get("type") == "image" else {}
     return img, {
-        "src_w": img.width, "src_h": img.height, "crop_left": 0, "crop_top": 0, "crop_right": 0, "crop_bottom": 0,
+        "src_w": img.width, "src_h": img.height, "crop_left": 0, "crop_top": 0, "crop_right": 0, "crop_bottom": 0, **crop,
         "position": layer["position"], "anchor": [ax, ay], "scale_x": sx, "scale_y": s,
         "rotation": layer.get("rotation", 0.0), "opacity": layer.get("opacity", 100.0),
     }

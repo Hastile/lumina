@@ -183,6 +183,32 @@ export function ImageLayerEditor({ c, layer, compact = false }: { c: ClipCtx; la
         <span className="k">{t('Opacity')}</span>
         <NumberScrub value={layer.opacity} min={0} max={100} digits={0} suffix=" %" onChange={(v) => set({ opacity: v }, t('Opacity'))} />
       </div>
+      <div className="row" data-image-crop={layer.id}>
+        <span className="k">{t('Crop')}</span>
+        {CROPS.map(([k, label, other]) => (
+          <NumberScrub
+            key={k}
+            value={layer[k]}
+            min={0}
+            // the opposite side's crop leaves at least 1% of the picture
+            max={Math.max(0, 99 - layer[other])}
+            digits={1}
+            suffix={` % ${label}`}
+            onChange={(v) => set({ [k]: v }, t('Crop'))}
+          />
+        ))}
+        {(layer.crop_left || layer.crop_top || layer.crop_right || layer.crop_bottom) ? (
+          <button className="lm-btn small" onClick={() => set({ crop_left: 0, crop_top: 0, crop_right: 0, crop_bottom: 0 }, t('Reset'))}>{t('Reset')}</button>
+        ) : null}
+      </div>
     </div>
   )
 }
+
+type CropKey = 'crop_left' | 'crop_top' | 'crop_right' | 'crop_bottom'
+const CROPS: [CropKey, string, CropKey][] = [
+  ['crop_left', 'L', 'crop_right'],
+  ['crop_top', 'T', 'crop_bottom'],
+  ['crop_right', 'R', 'crop_left'],
+  ['crop_bottom', 'B', 'crop_top']
+]

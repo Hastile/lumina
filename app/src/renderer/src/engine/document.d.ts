@@ -339,6 +339,13 @@ export type Uniform2 = boolean;
 export type Rotation3 = number;
 export type Opacity4 = number;
 /**
+ * percent of the image hidden from the left (the picture does not move)
+ */
+export type CropLeft1 = number;
+export type CropTop1 = number;
+export type CropRight1 = number;
+export type CropBottom1 = number;
+/**
  * the layer's eye toggle
  */
 export type Visible2 = boolean;
@@ -808,7 +815,7 @@ export interface ShapeLayer {
 /**
  * A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,
  * null = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation
- * apply around it.
+ * apply around it. Unlike Premiere, each image layer has its own crop.
  *
  * This interface was referenced by `Project`'s JSON-Schema
  * via the `definition` "ImageLayer".
@@ -825,6 +832,10 @@ export interface ImageLayer {
   uniform: Uniform2;
   rotation: Rotation3;
   opacity: Opacity4;
+  crop_left: CropLeft1;
+  crop_top: CropTop1;
+  crop_right: CropRight1;
+  crop_bottom: CropBottom1;
   visible: Visible2;
   blend: Blend1;
 }

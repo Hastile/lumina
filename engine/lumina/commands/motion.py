@@ -778,6 +778,10 @@ class ImageStyle(Params):
     uniform: bool | None = None
     rotation: float | None = None
     opacity: float | None = Field(default=None, ge=0, le=100)
+    crop_left: float | None = Field(default=None, ge=0, le=100, description="percent of the image hidden from the left")
+    crop_top: float | None = Field(default=None, ge=0, le=100)
+    crop_right: float | None = Field(default=None, ge=0, le=100)
+    crop_bottom: float | None = Field(default=None, ge=0, le=100)
     visible: bool | None = None
     blend: Literal["normal", "multiply"] | None = None
 
@@ -830,7 +834,7 @@ def graphic_add_image(ctx: Context, p: AddImage):
     fit = min(100.0, 100.0 * st["width"] / w, 100.0 * st["height"] / h)
     layer = {"id": new_id(), "type": "image", "path": p.path, "size": [w, h], "position": [st["width"] / 2, st["height"] / 2],
              "anchor": None, "scale": round(fit, 2), "scale_width": round(fit, 2), "uniform": True, "rotation": 0.0, "opacity": 100.0,
-             "visible": True, "blend": "normal"}
+             "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0, "visible": True, "blend": "normal"}
     layer.update(_image_changes(p))
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], clip["graphic"]["layers"] + [layer])
     return {"layer_id": layer["id"], "size": [w, h]}
@@ -845,7 +849,8 @@ class SetImage(ImageStyle):
 
 @command("graphic.set_image", SetImage)
 def graphic_set_image(ctx: Context, p: SetImage):
-    """Edit an image layer: replace its file, position, anchor, scale, rotation, opacity, visibility, blend."""
+    """Edit an image layer: replace its file, position, anchor, scale, rotation, opacity, crop (per layer, which
+    Premiere cannot do inside a graphic), visibility, blend."""
     seq, tid, clip, _ = _ctx(ctx, p.sequence_id, p.clip_id)
     layers = copy.deepcopy((clip.get("graphic") or {}).get("layers", []))
     layer = next((l for l in layers if l["id"] == p.layer_id), None)
@@ -857,6 +862,8 @@ def graphic_set_image(ctx: Context, p: SetImage):
     if p.path is not None:
         changes.update(path=p.path, size=_image_size(p.path))
     layer.update(changes)
+    if layer.get("crop_left", 0) + layer.get("crop_right", 0) >= 100 or layer.get("crop_top", 0) + layer.get("crop_bottom", 0) >= 100:
+        raise CommandError("BAD_VALUE", "the crop would hide the whole image")
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], layers)
 
 

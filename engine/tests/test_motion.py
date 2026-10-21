@@ -337,3 +337,26 @@ def test_image_layers_in_a_graphic(tmp_path):
         s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(tmp_path / "missing.png")})
     with pytest.raises(CommandError):
         s.execute("graphic.set_layer", {"clip_id": g["clip_id"], "layer_id": out["layer_id"], "text": "x"})
+
+
+def test_each_image_layer_crops_on_its_own(tmp_path):
+    from PIL import Image
+
+    from lumina.render.compositor import render_graphic
+
+    pic = tmp_path / "pic.png"
+    Image.new("RGBA", (200, 100), (0, 200, 0, 255)).save(pic)
+    s = Session(services=FakeServices())
+    s.execute("sequence.create", {"name": "s", "settings": {"width": 1080, "height": 1920, "fps_num": 30, "fps_den": 1}})
+    g = s.execute("graphic.create", {"at": 0})["result"]
+    a = s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(pic), "position": [300, 400]})["result"]["layer_id"]
+    s.execute("graphic.add_image", {"clip_id": g["clip_id"], "path": str(pic), "position": [700, 400]})
+    # crop the first one only: 25% off the left and 50% off the bottom; the picture stays where it was
+    s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": a, "crop_left": 25, "crop_bottom": 50})
+    clip = next(c for t in s.doc["sequences"][next(iter(s.doc["sequences"]))]["tracks"].values() for c in t["clips"].values() if c["id"] == g["clip_id"])
+    img = render_graphic(clip["graphic"], 1080, 1920)
+    alpha = img.getchannel("A")
+    assert alpha.crop((0, 0, 540, 1920)).getbbox() == (250, 350, 400, 400)
+    assert alpha.crop((540, 0, 1080, 1920)).getbbox() == (60, 350, 260, 450)
+    with pytest.raises(CommandError):
+        s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": a, "crop_right": 80})

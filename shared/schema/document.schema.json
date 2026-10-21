@@ -819,7 +819,7 @@
     },
     "ImageLayer": {
       "additionalProperties": false,
-      "description": "A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,\nnull = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation\napply around it.",
+      "description": "A picture placed in a graphic (Premiere: New Layer > From File). ``anchor`` (image pixels,\nnull = the image's centre) lands on ``position`` (sequence pixels), then scale and rotation\napply around it. Unlike Premiere, each image layer has its own crop.",
       "properties": {
         "id": {
           "title": "Id",
@@ -894,6 +894,27 @@
           "title": "Opacity",
           "type": "number"
         },
+        "crop_left": {
+          "default": 0.0,
+          "description": "percent of the image hidden from the left (the picture does not move)",
+          "title": "Crop Left",
+          "type": "number"
+        },
+        "crop_top": {
+          "default": 0.0,
+          "title": "Crop Top",
+          "type": "number"
+        },
+        "crop_right": {
+          "default": 0.0,
+          "title": "Crop Right",
+          "type": "number"
+        },
+        "crop_bottom": {
+          "default": 0.0,
+          "title": "Crop Bottom",
+          "type": "number"
+        },
         "visible": {
           "default": true,
           "description": "the layer's eye toggle",
@@ -923,6 +944,10 @@
         "uniform",
         "rotation",
         "opacity",
+        "crop_left",
+        "crop_top",
+        "crop_right",
+        "crop_bottom",
         "visible",
         "blend"
       ],

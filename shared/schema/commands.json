@@ -5858,6 +5858,63 @@
           "default": null,
           "title": "Opacity"
         },
+        "crop_left": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "percent of the image hidden from the left",
+          "title": "Crop Left"
+        },
+        "crop_top": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Top"
+        },
+        "crop_right": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Right"
+        },
+        "crop_bottom": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Bottom"
+        },
         "visible": {
           "anyOf": [
             {
@@ -5918,7 +5975,7 @@
   },
   {
     "name": "graphic.set_image",
-    "description": "Edit an image layer: replace its file, position, anchor, scale, rotation, opacity, visibility, blend.",
+    "description": "Edit an image layer: replace its file, position, anchor, scale, rotation, opacity, crop (per layer, which\nPremiere cannot do inside a graphic), visibility, blend.",
     "undoable": true,
     "params": {
       "additionalProperties": false,
@@ -6019,6 +6076,63 @@
           ],
           "default": null,
           "title": "Opacity"
+        },
+        "crop_left": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "percent of the image hidden from the left",
+          "title": "Crop Left"
+        },
+        "crop_top": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Top"
+        },
+        "crop_right": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Right"
+        },
+        "crop_bottom": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Crop Bottom"
         },
         "visible": {
           "anyOf": [
