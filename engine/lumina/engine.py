@@ -191,12 +191,13 @@ class Engine:
 
     def _new(self, p: dict) -> dict:
         if self._pristine(self.session):
+            snap = self.session.new(p.get("name", "Untitled"), p.get("template"))
             self.session.placeholder = False
-            snap = self.session.new(p.get("name", "Untitled"))
+            self._submit_missing_jobs()
             self._announce_projects()
             return snap
         s = Session(services=self.services)
-        s.new(p.get("name", "Untitled"))
+        s.new(p.get("name", "Untitled"), p.get("template"))
         return self._switch(self._add(s))
 
     def _activate(self, p: dict) -> dict:

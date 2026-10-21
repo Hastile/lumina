@@ -45,6 +45,23 @@ class _Txn:
     inverse: list[Patch] = field(default_factory=list)
 
 
+def _read_project(path: str) -> tuple[dict, int]:
+    """A .lumina file's document (normalized through the schema, which also migrates older files) and version."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise CommandError("NO_FILE", f"file not found: {path}") from exc
+    if raw.get("format") != FILE_FORMAT:
+        raise CommandError("BAD_FILE", f"{path} is not a Lumina project")
+    doc = validate_project(raw["document"]).model_dump(mode="json")
+    for seq in doc["sequences"].values():
+        # caption tracks sit above the video tracks (older files may have them anywhere)
+        vt = seq["video_tracks"]
+        caps = [t for t in vt if seq["tracks"][t].get("caption_style")]
+        seq["video_tracks"] = [t for t in vt if t not in caps] + caps
+    return doc, int(raw.get("version", 0))
+
+
 class Session:
     def __init__(self, services: Any = None, doc: dict | None = None):
         self.services = services
@@ -185,9 +202,16 @@ class Session:
         with self.lock:
             return {"version": self.version, "path": self.path, "document": self.doc, **self.history_state()}
 
-    def new(self, name: str = "Untitled") -> dict:
+    def new(self, name: str = "Untitled", template: str | None = None) -> dict:
+        """A new, never-saved project: empty, or a copy of a template project (the template file is only
+        read; the first save asks for a path of its own)."""
         with self.lock:
-            self._reset(new_project(name), None)
+            if template is None:
+                self._reset(new_project(name), None)
+            else:
+                doc, _ = _read_project(template)
+                doc["name"] = name
+                self._reset(doc, None)
             return self.snapshot()
 
     def save(self, path: str | None = None) -> dict:
@@ -210,17 +234,8 @@ class Session:
 
     def open(self, path: str) -> dict:
         with self.lock:
-            raw = json.loads(Path(path).read_text(encoding="utf-8"))
-            if raw.get("format") != FILE_FORMAT:
-                raise CommandError("BAD_FILE", f"{path} is not a Lumina project")
-            # normalizing through the schema also migrates older files (fills new fields with defaults)
-            doc = validate_project(raw["document"]).model_dump(mode="json")
-            for seq in doc["sequences"].values():
-                # caption tracks sit above the video tracks (older files may have them anywhere)
-                vt = seq["video_tracks"]
-                caps = [t for t in vt if seq["tracks"][t].get("caption_style")]
-                seq["video_tracks"] = [t for t in vt if t not in caps] + caps
-            self._reset(doc, str(Path(path).resolve()), version=int(raw.get("version", 0)))
+            doc, version = _read_project(path)
+            self._reset(doc, str(Path(path).resolve()), version=version)
             recovered = self._replay_oplog()
             snap = self.snapshot()
             snap["recovered_patches"] = recovered

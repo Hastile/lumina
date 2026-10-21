@@ -148,6 +148,7 @@ type Item = { label: string; action?: string; accel?: string; enabled?: boolean;
 const MENU: Record<string, Item[]> = {
   File: [
     { label: 'New Project...', action: 'file.newProject', accel: 'Ctrl+Alt+N' },
+    { label: 'New Project from Template...', action: 'file.newFromTemplate' },
     { label: 'New Sequence...', action: 'file.newSequence', accel: 'Ctrl+N' },
     { label: 'New Bin', action: 'file.newBin', accel: 'Ctrl+/' },
     'sep',

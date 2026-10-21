@@ -42,6 +42,10 @@ With no GUI running, they start a headless engine instead.
   `rollback_transaction`, `save_project`, `export_media` (render + ffprobe
   verification) and `get_frame_image` (returns the rendered frame as an image so
   an agent can look at its edit).
+- Templates: `new_project` with `template` (GUI: File > New Project from Template...) starts an unsaved copy of
+  a `.lumina` project; the template file is only read. `templates/caddynote.lumina` is the channel template
+  (from its Premiere template): both Shorts sequences carry three caption tracks, each with one effect preset
+  as a track effect (커졌다 줄어들기, 꽝 박히기, 밑에서 스무쓰하게 올라오기), and A2-A4 at -3 dB, A5 at -6 dB.
 - Shorts copy: `shorts_set_copy` sets the title copy on the graphic clip named
   `쇼츠 타이틀` (sub = upper text layer, main = lower). Each line is rendered in
   its own style and measured where it lands on screen; a line that would run

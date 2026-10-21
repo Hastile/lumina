@@ -53,7 +53,10 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                           "(with days). Open projects' files are regenerated.",
                           {"type": "object", "properties": {"mode": {"type": "string", "enum": ["unused", "all", "older"]},
                                                             "days": {"type": "number"}}}, None),
-    "new_project": ("project.new", "Start a new empty project (opened next to the open ones).", {"type": "object", "properties": {"name": {"type": "string"}}}, None),
+    "new_project": ("project.new", "Start a new project (opened next to the open ones): empty, or a copy of a template .lumina "
+                    "(the template is only read; the new project is unsaved until saved under its own path).",
+                    {"type": "object", "properties": {"name": {"type": "string"},
+                                                      "template": {"type": "string", "description": "a .lumina project to start from"}}}, None),
     "open_project": ("project.open", "Open a .lumina project.",
                      {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}, None),
     "save_project": ("project.save", "Save the project (path required the first time).",

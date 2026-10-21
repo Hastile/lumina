@@ -47,6 +47,25 @@ def test_new_reuses_the_blank_project_then_adds(tmp_path):
     assert e.session.doc["name"] == "A" and e.session.doc["sequences"]
 
 
+def test_new_project_from_a_template_copies_it_and_leaves_it_alone(tmp_path):
+    e, _ = make()
+    tpl = tmp_path / "channel.lumina"
+    e.dispatch("project.new", {"name": "channel"})
+    ex(e, "sequence.create", {"name": "Shorts"})
+    e.dispatch("project.save", {"path": str(tpl)})
+    before = tpl.read_bytes()
+    e.dispatch("project.new", {"name": "ep1", "template": str(tpl)})
+    assert e.session.doc["name"] == "ep1" and e.session.path is None
+    assert [q["name"] for q in e.session.doc["sequences"].values()] == ["Shorts"]
+    ex(e, "sequence.create", {"name": "More"})
+    with pytest.raises(CommandError):
+        e.dispatch("project.save", {})  # never saved: it needs a path of its own
+    e.dispatch("project.save", {"path": str(tmp_path / "ep1.lumina")})
+    assert tpl.read_bytes() == before
+    with pytest.raises(CommandError):
+        e.dispatch("project.new", {"name": "x", "template": str(tmp_path / "missing.lumina")})
+
+
 def test_events_of_background_projects_are_not_forwarded():
     e, events = make()
     e.dispatch("project.new", {"name": "A"})

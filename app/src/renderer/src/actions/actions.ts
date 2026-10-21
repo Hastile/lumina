@@ -281,6 +281,15 @@ const panel = (p: PanelId) => () => focusPanel(p)
 
 // File
 def('file.newProject', 'New Project', async () => void (await call('project.new', { name: 'Untitled' })))
+def('file.newFromTemplate', 'New Project from Template', async () => {
+  const [path] = await window.lumina.openDialog({
+    title: 'New Project from Template',
+    properties: ['openFile'],
+    filters: [{ name: 'Lumina Project', extensions: ['lumina'] }]
+  }, 'project')
+  // the template is only read: the new project is unsaved and Save asks for its own path
+  if (path) await call('project.new', { name: 'Untitled', template: path })
+})
 def('file.newSequence', t('New Sequence'), newSequenceDialog)
 def('file.newBin', t('New Bin'), async () => void (await exec('bin.create', { name: 'New Bin', parent_id: get().currentBin })))
 def('file.open', 'Open Project', async () => {
