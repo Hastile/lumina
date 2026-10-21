@@ -816,6 +816,13 @@ def _image_changes(p: ImageStyle) -> dict:
     return changes
 
 
+def _follow_uniform(layer: dict, changes: dict) -> dict:
+    """With uniform scale the width follows the scale, so turning uniform off starts from the same size."""
+    if "scale" in changes and "scale_width" not in changes and changes.get("uniform", layer.get("uniform", True)):
+        changes["scale_width"] = changes["scale"]
+    return changes
+
+
 class AddImage(ImageStyle):
     sequence_id: str | None = None
     clip_id: str
@@ -835,7 +842,7 @@ def graphic_add_image(ctx: Context, p: AddImage):
     layer = {"id": new_id(), "type": "image", "path": p.path, "size": [w, h], "position": [st["width"] / 2, st["height"] / 2],
              "anchor": None, "scale": round(fit, 2), "scale_width": round(fit, 2), "uniform": True, "rotation": 0.0, "opacity": 100.0,
              "crop_left": 0.0, "crop_top": 0.0, "crop_right": 0.0, "crop_bottom": 0.0, "visible": True, "blend": "normal"}
-    layer.update(_image_changes(p))
+    layer.update(_follow_uniform(layer, _image_changes(p)))
     ctx.m.set(clip_path(seq, tid, clip["id"]) + ["graphic", "layers"], clip["graphic"]["layers"] + [layer])
     return {"layer_id": layer["id"], "size": [w, h]}
 
@@ -858,7 +865,7 @@ def graphic_set_image(ctx: Context, p: SetImage):
         raise CommandError("NO_LAYER", f"layer not found: {p.layer_id}")
     if layer.get("type") != "image":
         raise CommandError("NOT_IMAGE", "use graphic.set_layer / graphic.set_shape for text and shape layers")
-    changes = _image_changes(p)
+    changes = _follow_uniform(layer, _image_changes(p))
     if p.path is not None:
         changes.update(path=p.path, size=_image_size(p.path))
     layer.update(changes)

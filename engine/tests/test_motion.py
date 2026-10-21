@@ -325,6 +325,7 @@ def test_image_layers_in_a_graphic(tmp_path):
     img = render_graphic(clip["graphic"], 1080, 1920)
     assert img.getchannel("A").getbbox() == (200, 350, 400, 450) and img.getpixel((300, 400))[:3] == (255, 0, 0)
     s.execute("graphic.set_image", {"clip_id": g["clip_id"], "layer_id": out["layer_id"], "scale": 50, "opacity": 50})
+    assert clip["graphic"]["layers"][0]["scale_width"] == 50  # uniform: the width follows
     img = render_graphic(clip["graphic"], 1080, 1920)
     assert img.getchannel("A").getbbox() == (250, 375, 350, 425) and abs(img.getpixel((300, 400))[3] - 128) <= 2
     # a picture larger than the frame is scaled down to fit; replacing the file keeps the placement
