@@ -56,3 +56,15 @@ def test_hashes_and_films_are_not_episodes():
     from lumina.sourcedb.ingest import episode_of
     assert episode_of("0ef71181ed7db912a1acd8676c741a4d") is None
     assert episode_of("극장판 애니 _ 체인소 맨 레제편 😜 01 - Anime - Linkkf 애니 TV") == ("Film", None)
+
+
+def test_long_shots_split_at_their_strongest_soft_change():
+    from fractions import Fraction as F
+    from lumina.sourcedb.ingest import split_long
+    scores = [(F(i, 10), 0.01) for i in range(0, 300)]
+    scores[90] = (F(9), 0.2)      # inside the 0-22 s "shot"
+    scores[150] = (F(15), 0.25)
+    scores[50] = (F(5), 0.11)     # below the soft threshold
+    edges = split_long([F(22)], scores, F(30))
+    assert edges == [F(9), F(15), F(22)]
+    assert split_long([F(5)], scores, F(10)) == [F(5)]  # nothing long

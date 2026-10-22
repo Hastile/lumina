@@ -31,7 +31,7 @@ from .ingest import thumb_path
 from ..timebase import TICKS_PER_SECOND
 
 S = TICKS_PER_SECOND
-VERSION = "claude-sonnet@3"
+VERSION = "claude-sonnet@4"
 MODEL = "sonnet"
 PER_SHEET = 12
 COLS = 4
@@ -63,6 +63,8 @@ SCHEMA = {
             "variant": {"type": "string", "enum": ["", "original", "copy", "official", "fan"],
                         "description": "원작/모방작(copy)/공식/팬메이드. 모르면 빈 문자열"},
             "text": {"type": "string", "description": "화면 속 글자 원문, 40자 이내. 없으면 빈 문자열"},
+            "speech_ko": {"type": "string",
+                          "description": "타일 정보에 대사가 있으면 그 뜻을 한국어로 한 줄 (외국어 대사를 한국어로 검색하게). 없으면 빈 문자열"},
             "text_overlay": {"type": "number", "description": "덧씌운 글자가 화면을 덮는 비율 0~1"},
             "subject_x": {"type": "number", "description": "주 피사체 중심의 가로 위치 0~1"},
             "subject_area": {"type": "number", "description": "주 피사체가 화면을 차지하는 비율 0~1"},
@@ -71,7 +73,7 @@ SCHEMA = {
             "use_case": {"type": "array", "items": {"type": "string"},
                          "description": "이 컷이 어울리는 내레이션 1~2개, 짧은 한국어 구절"},
         },
-        "required": ["n", "desc", "shot", "source_type", "characters", "works", "variant", "text",
+        "required": ["n", "desc", "shot", "source_type", "characters", "works", "variant", "text", "speech_ko",
                      "text_overlay", "subject_x", "subject_area", "mood", "action", "use_case"],
     }}},
     "required": ["tiles"],
@@ -81,8 +83,10 @@ SYSTEM = (
     "너는 쇼츠 편집용 소스 DB에 장면 메타데이터를 쓰는 분석가다. 콘택트 시트의 번호 붙은 타일마다 JSON 한 "
     "항목을 쓴다. 보이는 것만 쓰고 추측하지 않는다. 작품과 인물은 화면 속 글자, 파일 제목, 대사, 또는 네가 "
     "확실히 아는 캐릭터의 생김새로 알아볼 때만 쓰고, 한국어·원어·로마자 이름을 각 칸에 하나씩 쓴다. 작품명에 '원작', '모방작' 같은 말을 붙이지 않고 variant에 쓴다. 모르는 인물은 "
-    "이름 대신 desc에 생김새로 쓴다(예: 분홍 머리 소녀). 타일마다 따로 판단한다: 같은 시트라고 같은 작품이 "
-    "아니다. 설명은 검색어가 될 명사와 동사를 담은 한국어 한 줄."
+    "이름 대신 desc에 생김새로 쓴다(예: 분홍 머리 소녀). 출연진 후보 목록이 주어지면, 생김새로 알아본 인물은 "
+    "그 목록의 표기를 쓰고 desc에도 이름을 넣는다(예: 후시구로 토우지가 씩 웃는 클로즈업). 목록은 후보일 뿐 "
+    "그 인물이 나온다는 뜻이 아니다. 타일마다 따로 판단한다: 같은 시트라고 같은 작품이 아니다. 설명은 검색어가 "
+    "될 명사와 동사를 담은 한국어 한 줄."
 )
 
 
@@ -127,9 +131,10 @@ def _tile_context(con, m, c) -> str:
     by: dict[str, list[str]] = {}
     for f in facts:
         by.setdefault(f["kind"], []).append(f["name"] or f["value"])
-    for k, limit in (("title", 1), ("credit", 1), ("work", 2), ("character", 3), ("speech", 2)):
+    for k, limit, width in (("title", 1, 80), ("credit", 1, 80), ("work", 2, 80), ("character", 3, 80),
+                            ("speech", 12, 240)):
         if k in by:
-            parts.append(f"{k}: {' / '.join(dict.fromkeys(by[k][:limit]))[:80]}")
+            parts.append(f"{k}: {' / '.join(dict.fromkeys(by[k][:limit]))[:width]}")
     used = con.execute(
         "SELECT caption FROM usage WHERE media_id = ? AND caption IS NOT NULL AND src_in_ticks <= ? AND src_out_ticks >= ?",
         (m["media_id"], t1, t0),
@@ -142,10 +147,33 @@ def _tile_context(con, m, c) -> str:
 
 
 
-def ask_claude(sheet: Path, lines: list[str]) -> list[dict]:
+def _cast(con, media_ids: list[int]) -> str:
+    """Who could be on screen: the cast of every work the media might be
+    (any unrejected work fact, the folder's guess included), from the
+    catalog, plus the channel's own characters seen with that work. A list
+    of a whole cast, not anyone's guess about this shot, so an agreement
+    with the folder or the tagger stays independent."""
+    lines = []
+    for ref, name, eid in con.execute(
+            f"SELECT DISTINCT e.catalog_ref, e.name, e.entity_id FROM fact f JOIN entity e ON e.entity_id = f.ref_id "
+            f"WHERE f.kind = 'work' AND f.status != 'rejected' AND f.media_id IN ({','.join('?' * len(media_ids))})",
+            media_ids).fetchall():
+        names = [f"{ko}({native})" if native else ko for ko, native in (catalog.characters_of(ref) if ref else [])]
+        own = [r[0] for r in con.execute(
+            "SELECT DISTINCT c.name FROM fact cf JOIN entity c ON c.entity_id = cf.ref_id "
+            "WHERE cf.kind = 'character' AND cf.status = 'accepted' AND cf.media_id IN "
+            "(SELECT media_id FROM fact WHERE kind = 'work' AND ref_id = ? AND status = 'accepted')", (eid,))]
+        names += [n for n in own if not any(n == x.split("(")[0] for x in names)]
+        if names:
+            lines.append(f"{name}: " + ", ".join(names[:60]))
+    return "\n".join(lines)
+
+
+def ask_claude(sheet: Path, lines: list[str], cast: str = "") -> list[dict]:
     prompt = (
         f"{sheet.name} 를 Read로 열어 보고 타일 {len(lines)}개를 분석해.\n\n"
-        "타일별로 확인된 정보 (파일 제목, 확정된 작품과 인물, 대사, 이 컷이 쓰인 내레이션):\n"
+        + (f"출연진 후보 (작품별, 이 시트에 나온다는 뜻은 아님):\n{cast}\n\n" if cast else "")
+        + "타일별로 확인된 정보 (파일 제목, 확정된 작품과 인물, 대사, 이 컷이 쓰인 내레이션):\n"
         + "\n".join(f"{i + 1}. {l}" for i, l in enumerate(lines))
     )
     proc = subprocess.run(
@@ -177,6 +205,8 @@ def _facts_from_tile(con, tile: dict, sp: dict) -> list[dict]:
         v = tile.get(k)
         if isinstance(v, (int, float)) and 0 <= v <= 1:
             rows.append({"kind": k, "num": round(float(v), 2), **sp})
+    if tile.get("speech_ko"):
+        rows.append({"kind": "speech_ko", "value": tile["speech_ko"], **sp})
     if tile.get("text"):
         rows.append({"kind": "ocr", "value": tile["text"], **sp})
     for k, kind in (("mood", "mood"), ("action", "action"), ("use_case", "use_case")):
@@ -226,7 +256,8 @@ def run(con, media_ids: Optional[list[int]] = None, log: Callable[[str], None] =
             contact_sheet([thumb_path(m["sha256"], c["keyframe_ticks"]) for m, c in group], sheet)
             log(f"sheet {gi + 1}/{len(groups)}: {len(group)} tiles")
             try:
-                tiles = {t["n"]: t for t in ask_claude(sheet, [_tile_context(con, m, c) for m, c in group])}
+                cast = _cast(con, sorted({m["media_id"] for m, _ in group}))
+                tiles = {t["n"]: t for t in ask_claude(sheet, [_tile_context(con, m, c) for m, c in group], cast)}
             except Exception as e:
                 log(f"    FAILED: {e}")
                 for m, _ in group:

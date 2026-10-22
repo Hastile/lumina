@@ -207,6 +207,7 @@ def _hydrate(con, cut_ids: list[int]) -> dict[int, Hit]:
         f"SELECT media_id, src_in_ticks, src_out_ticks, caption, approved FROM usage WHERE media_id IN ({mq})",
         media_ids,
     ).fetchall()
+    shot_level_cast = {f["media_id"] for f in facts if f["kind"] == "character" and f["t0_ticks"] is not None}
     by_media: dict[int, list[Hit]] = {}
     for h in hits.values():
         by_media.setdefault(h.media_id, []).append(h)
@@ -220,6 +221,11 @@ def _hydrate(con, cut_ids: list[int]) -> dict[int, Hit]:
                 if f["name"] not in h.works and name not in h.works:
                     h.works.append(name)
             elif k == "character" and f["name"]:
+                # Who is in this shot: when the media has per-shot character
+                # facts, a whole-media one (a folder named after a character)
+                # says only that the clip features them, not this shot.
+                if f["t0_ticks"] is None and f["media_id"] in shot_level_cast:
+                    continue
                 # Unconfirmed machine guesses carry a "?" so they are never
                 # read as fact (a tagger names characters it was never taught).
                 name = f["name"] if f["status"] == "accepted" else f["name"] + "?"

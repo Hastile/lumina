@@ -177,3 +177,19 @@ def find_entity(con, type_: str, names: list[str], *, ip_ref: Optional[str] = No
         if keys & {key(n) for n in (r["name"], *r["aliases"].split("\n")) if n}:
             return r["entity_id"]
     return None
+
+
+def characters_of(ip_ref: str, limit: int = 60) -> list[tuple[str, Optional[str]]]:
+    """(Korean name, native name) of a work's characters, best known first:
+    the cast Claude chooses from when it names who is on screen."""
+    ip = catalog().by_ref(ip_ref)
+    if ip is None or not CATALOG_PATH.exists():
+        return []
+    con = sqlite3.connect(f"file:{CATALOG_PATH.as_posix()}?mode=ro", uri=True)
+    try:
+        return [(r[0], r[1]) for r in con.execute(
+            "SELECT canonical_name_ko, name_native FROM character_entity WHERE ip_id = ? AND is_active = 1 "
+            "AND needs_label = 0 ORDER BY COALESCE(popularity, 0) DESC, COALESCE(danbooru_post_count, 0) DESC "
+            "LIMIT ?", (ip.catalog_id, limit))]
+    finally:
+        con.close()

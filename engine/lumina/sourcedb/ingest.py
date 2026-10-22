@@ -38,10 +38,13 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews", "Adobe Premiere Pro Video Previews"}
 
 PROBE_V = "probe@2"
-CUTS_V = "cuts@2"
+CUTS_V = "cuts@3"
 FILENAME_V = "filename@4"
 
 SCENE_THRESHOLD = 0.3
+SOFT_THRESHOLD = 0.12   # inside a long shot only: dark scenes and slow moves change less between shots
+LONG_CUT_SECONDS = 8
+MIN_SPLIT_SECONDS = 1.5
 MIN_CUT_SECONDS = 0.25  # a shorter "shot" is a flash or a detector stutter
 
 
@@ -142,16 +145,54 @@ def stream_timing(path: Path) -> tuple[Fraction, Fraction, bool]:
     return start, r, cfr
 
 
-def scene_times(path: Path, start: Fraction) -> list[Fraction]:
-    """Seconds (from the first frame) where a new shot starts."""
+def scene_scores(path: Path, start: Fraction) -> list[tuple[Fraction, float]]:
+    """(seconds from the first frame, scene-change score) for every frame,
+    from one decode of a 320 px copy."""
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-an", "-sn",
-         "-vf", f"scale=320:-2,select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],
+         "-vf", "scale=320:-2,select='gte(scene,0)',metadata=print:key=lavfi.scene_score",
+         "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
-    times = {Fraction(m.group(1)).limit_denominator(1_000_000) - start
-             for m in re.finditer(r"pts_time:([0-9.]+)", proc.stderr)}
-    return sorted(t for t in times if t > 0)
+    out, t = [], None
+    for line in proc.stderr.splitlines():
+        m = re.search(r"pts_time:([0-9.]+)", line)
+        if m:
+            t = Fraction(m.group(1)).limit_denominator(1_000_000) - start
+            continue
+        m = re.search(r"lavfi\.scene_score=([0-9.]+)", line)
+        if m and t is not None:
+            out.append((t, float(m.group(1))))
+            t = None
+    return out
+
+
+def scene_times(path: Path, start: Fraction) -> list[Fraction]:
+    """Seconds (from the first frame) where a new shot starts."""
+    return sorted(t for t, s in scene_scores(path, start) if s > SCENE_THRESHOLD and t > 0)
+
+
+def split_long(edges: list[Fraction], scores: list[tuple[Fraction, float]], duration: Fraction) -> list[Fraction]:
+    """More edges inside shots longer than LONG_CUT_SECONDS. Dark scenes and
+    slow camera moves change less than SCENE_THRESHOLD between shots, so a
+    long "shot" is often several; inside one, the strongest change above
+    SOFT_THRESHOLD becomes an edge, again and again, while it leaves both
+    pieces at least MIN_SPLIT_SECONDS long."""
+    edges = sorted(set(e for e in edges if 0 < e < duration))
+    changed = True
+    while changed:
+        changed = False
+        bounds = [Fraction(0), *edges, duration]
+        for a, b in zip(bounds, bounds[1:]):
+            if b - a <= LONG_CUT_SECONDS:
+                continue
+            inside = [(s, t) for t, s in scores
+                      if a + MIN_SPLIT_SECONDS <= t <= b - MIN_SPLIT_SECONDS and s > SOFT_THRESHOLD]
+            if inside:
+                edges = sorted({*edges, max(inside)[1]})
+                changed = True
+                break
+    return edges
 
 
 def to_ticks(seconds: Fraction, fps: Fraction, cfr: bool) -> int:
@@ -232,7 +273,10 @@ def analyze_file(path: Path, kind: str, sha256: Optional[str] = None) -> dict:
         thumbs = [t]
     else:
         start, fps, cfr = stream_timing(path)
-        edges = [to_ticks(t, fps, cfr) for t in scene_times(path, start)]
+        scores = scene_scores(path, start)
+        seconds = Fraction(info["duration_ticks"], S)
+        hard = [t for t, sc in scores if sc > SCENE_THRESHOLD and t > 0]
+        edges = [to_ticks(t, fps, cfr) for t in split_long(hard, scores, seconds)]
         cuts = []
         for a, b in plan_cuts(edges, info["duration_ticks"]):
             k = to_ticks(Fraction(a + b, 2 * S), fps, cfr)
@@ -255,6 +299,13 @@ def run_cuts(con, media_id: int, path: Path) -> None:
     r = analyze_file(path, m["kind"], m["sha256"])
     db.set_cuts(con, media_id, r["cuts"])
     db.put_facts(con, media_id, CUTS_V, r["measures"])
+    invalidate_keyframe_stages(con, media_id)
+
+
+def invalidate_keyframe_stages(con, media_id: int) -> None:
+    """New cuts mean new keyframes: the tagger and the embeddings run again
+    (their job rows go). Descriptions are anchored to time and stay."""
+    con.execute("DELETE FROM job WHERE media_id = ? AND stage IN ('tagger', 'embed')", (media_id,))
 
 
 def _analyze_job(args):
@@ -309,6 +360,7 @@ def ingest_many(con, roots: list[Path], *, workers: int = 6, log=print) -> dict:
                     db.set_cuts(con, media_id, r["cuts"])
                     db.put_facts(con, media_id, CUTS_V, r["measures"])
                     db.job_done(con, media_id, "cuts", CUTS_V)
+                    invalidate_keyframe_stages(con, media_id)
                 db.put_facts(con, media_id, FILENAME_V,
                              filename_facts(con, path, root_of[path], folder_work[root_of[path]]))
                 db.job_done(con, media_id, "filename", FILENAME_V)

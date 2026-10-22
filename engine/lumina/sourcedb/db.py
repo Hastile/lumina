@@ -54,6 +54,7 @@ KINDS: tuple[tuple[str, str, int, str], ...] = (
     ("time_of_day", "text", 1, "day, night, sunset (lexicon category)"),
     ("use_case", "text", 1, "the kind of narration line it fits"),
     ("speech", "text", 1, "spoken or sung words, with their span"),
+    ("speech_ko", "text", 1, "Korean gist of what is said in the span (for Korean searches of foreign dialogue)"),
     ("ocr", "text", 1, "text visible in the frame"),
     ("note", "text", 1, "a person's memo"),
     # raw model output kept for re-mapping, not searched
