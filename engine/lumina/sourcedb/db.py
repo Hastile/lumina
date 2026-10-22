@@ -107,7 +107,7 @@ def connect(path: "str | Path" = DEFAULT_DB_PATH) -> sqlite3.Connection:
     path = Path(path)
     if str(path) != ":memory:":
         path.parent.mkdir(parents=True, exist_ok=True)
-    con = sqlite3.connect(str(path))
+    con = sqlite3.connect(str(path), timeout=60)  # analyzers and ingest may write at the same time
     con.row_factory = sqlite3.Row
     con.execute("PRAGMA foreign_keys = ON")
     version = con.execute("PRAGMA user_version").fetchone()[0]

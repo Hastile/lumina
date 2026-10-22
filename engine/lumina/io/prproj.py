@@ -696,7 +696,8 @@ def _motion(g: Graph, cti: ET.Element, seq_w: int, seq_h: int, media: dict | Non
             effects.append(_effect(g, comp, EFFECT_PARAMS[match], sw, sh))
         else:
             stats["effects"] += 1
-            stats.setdefault("effect_names", set()).add(_text(comp, "DisplayName") or match)
+            # Some components carry neither a display name nor a match name.
+            stats.setdefault("effect_names", set()).add(_text(comp, "DisplayName") or match or "unnamed effect")
     return {"motion": motion, "keyframes": keyframes, "opacity": opacity, "effects": effects}
 
 

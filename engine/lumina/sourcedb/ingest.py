@@ -16,6 +16,7 @@ environment (engine/analyzers) and write through db.py the same way.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from fractions import Fraction
@@ -36,7 +37,7 @@ VIDEO_EXT = {".mp4", ".mkv", ".webm", ".mov", ".m4v", ".avi"}
 IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews", "Adobe Premiere Pro Video Previews"}
 
-PROBE_V = "probe@1"
+PROBE_V = "probe@2"
 CUTS_V = "cuts@2"
 FILENAME_V = "filename@2"
 
@@ -103,7 +104,7 @@ def discover(root: Path) -> list[tuple[Path, str]]:
 def probe(path: Path, kind: str) -> dict:
     info = json.loads(subprocess.run(
         ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-         "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames:format=duration",
+         "stream=width,height,r_frame_rate,avg_frame_rate,nb_frames,duration:format=duration",
          "-of", "json", str(path)],
         capture_output=True, text=True, encoding="utf-8", check=True,
     ).stdout)
@@ -112,7 +113,9 @@ def probe(path: Path, kind: str) -> dict:
     if kind == "video":
         fps = Fraction(st.get("r_frame_rate") or st.get("avg_frame_rate") or "30/1")
         out["fps_num"], out["fps_den"] = fps.numerator, fps.denominator
-        dur = float(info.get("format", {}).get("duration") or 0)
+        # The picture's own length: the file's can be longer when the audio
+        # runs past the last frame, and a cut there would show nothing.
+        dur = float(st.get("duration") or info.get("format", {}).get("duration") or 0)
         out["duration_ticks"] = round(Fraction(dur).limit_denominator(1_000_000) * S)
     return out
 
@@ -184,7 +187,8 @@ def extract_frame(path: Path, seconds: Fraction, out: Path) -> None:
     subprocess.run(
         ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{float(seconds):.6f}", "-i", str(path),
          "-an", "-sn", "-frames:v", "1",
-         "-vf", f"scale='if(gt(iw,ih),{THUMB_SIZE},-2)':'if(gt(iw,ih),-2,{THUMB_SIZE})'", "-q:v", "3", str(out)],
+         "-vf", f"scale='if(gt(iw,ih),{THUMB_SIZE},-2)':'if(gt(iw,ih),-2,{THUMB_SIZE})',format=yuvj420p",
+         "-q:v", "3", str(out)],
         check=True,
     )
     if not out.exists():
@@ -360,6 +364,24 @@ def usage_from_lumina(con, project_path: Path, *, sequences: Optional[Iterable[s
     return _usage_from_document(con, project_path, doc, sequences=sequences, approved=approved)
 
 
+CHANNEL_ROOT = Path("D:/유튜브 채널")
+
+
+def locate(path: str) -> str:
+    """Where a project's media path is now. Projects made on another machine
+    point at C:/Users/<them>/OneDrive/유튜브 채널/...; the same tree now lives
+    at CHANNEL_ROOT, so the part after the channel folder's name is kept."""
+    if os.path.exists(path):
+        return path
+    parts = Path(path).parts
+    for i, part in enumerate(parts):
+        if part == CHANNEL_ROOT.name:
+            moved = CHANNEL_ROOT.joinpath(*parts[i + 1:])
+            if moved.exists():
+                return str(moved)
+    return path
+
+
 TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "templates" / "caddynote.lumina"
 
 
@@ -435,7 +457,7 @@ def _usage_from_document(con, project_path: Path, doc: dict, *, sequences: Optio
             if t.kind != "video" or item is None or item.kind not in ("video", "image") or not c.enabled:
                 continue
             try:
-                media_id = db.media_id_for_path(con, item.path)
+                media_id = db.media_id_for_path(con, locate(item.path))
             except OSError:
                 media_id = None
             if media_id is None:
