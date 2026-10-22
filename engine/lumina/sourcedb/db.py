@@ -205,6 +205,12 @@ def media_path(con: sqlite3.Connection, media_id: int) -> Optional[str]:
     return None
 
 
+def move_path(con: sqlite3.Connection, old: "str | Path", new: "str | Path") -> None:
+    """A file renamed or moved by us: same content, so only its path changes."""
+    con.execute("UPDATE media_file SET path = ?, seen_ms = ? WHERE path = ?",
+                (str(Path(new).resolve()), now_ms(), str(Path(old).resolve())))
+
+
 def media_id_for_path(con: sqlite3.Connection, path: "str | Path") -> Optional[int]:
     row = con.execute(
         "SELECT media_id FROM media_file WHERE path = ?", (str(Path(path).resolve()),)

@@ -338,6 +338,8 @@ _EP_PATTERNS = (
     re.compile(r"(?i)\bS(?P<s>\d{1,2})\s*E(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?"),
     # Linkkf downloads: 귀멸의 칼날 3기 대장장이 마을 편 BD 😜 11 - Anime - Linkkf ...
     re.compile(r"(?P<pre>.*?)😜\s*(?P<e>\d{1,4})\s*-\s*Anime"),
+    # player tab titles: JUJUTSU KAISEN Season 2 - Episode 16  /  Episode 7
+    re.compile(r"(?i)(?:\bseason\s*(?P<s>\d{1,2})\W{0,6})?\bepisode\s*(?P<e>\d{1,4})\b"),
     # E01 0005 청산싫어  /  EP1 001256 재의 왕을 ...
     re.compile(r"(?i)(?<![A-Za-z])EP?\.?\s*(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?(?![A-Za-z])"),
     # 리제로 4기 11화 고점  /  4기 8화 레이드  /  3화
