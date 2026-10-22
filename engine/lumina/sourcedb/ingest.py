@@ -64,12 +64,16 @@ def own_exports(folder: Path) -> set[str]:
     names = set()
     for proj in list(folder.glob("*.lumina")) + list(folder.glob("*.prproj")):
         names.add(proj.stem)
-        if proj.suffix == ".lumina":
-            try:
+        try:
+            if proj.suffix == ".lumina":
                 doc = json.loads(proj.read_text(encoding="utf-8"))["document"]
                 names.update(s["name"] for s in doc.get("sequences", {}).values())
-            except (OSError, ValueError, KeyError):
-                pass
+            else:
+                from ..io import prproj
+                g = prproj.load(str(proj))
+                names.update(n for e in g.root if e.tag == "Sequence" and (n := prproj._text(e, "Name")))
+        except Exception:  # an unreadable project only means fewer names to exclude
+            pass
     return names
 
 
@@ -139,7 +143,7 @@ def scene_times(path: Path, start: Fraction) -> list[Fraction]:
     """Seconds (from the first frame) where a new shot starts."""
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-an", "-sn",
-         "-vf", f"select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],
+         "-vf", f"scale=320:-2,select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     times = {Fraction(m.group(1)).limit_denominator(1_000_000) - start
@@ -211,33 +215,106 @@ def luma(img: Image.Image) -> float:
     return float(np.asarray(img.convert("L"), dtype=np.float32).mean() / 255.0)
 
 
-def run_cuts(con, media_id: int, path: Path) -> None:
-    m = con.execute("SELECT * FROM media WHERE media_id = ?", (media_id,)).fetchone()
+def analyze_file(path: Path, kind: str, sha256: Optional[str] = None) -> dict:
+    """Everything token-free about one file, without touching the DB, so it
+    can run in a worker process: hash, probe, cuts, thumbnails, pHash, luma."""
+    sha256 = sha256 or db.sha256_file(path)
+    info = probe(path, kind)
     measures = []
-    if m["kind"] == "image":
-        t = thumb_path(m["sha256"], 0)
+    if kind == "image":
+        t = thumb_path(sha256, 0)
         image_thumb(path, t)
         cuts = [{"start_ticks": 0, "end_ticks": 0, "keyframe_ticks": 0}]
         thumbs = [t]
     else:
         start, fps, cfr = stream_timing(path)
         edges = [to_ticks(t, fps, cfr) for t in scene_times(path, start)]
-        ranges = plan_cuts(edges, m["duration_ticks"])
         cuts = []
-        for a, b in ranges:
+        for a, b in plan_cuts(edges, info["duration_ticks"]):
             k = to_ticks(Fraction(a + b, 2 * S), fps, cfr)
             cuts.append({"start_ticks": a, "end_ticks": b, "keyframe_ticks": min(max(k, a), b - 1)})
-        thumbs = [thumb_path(m["sha256"], c["keyframe_ticks"]) for c in cuts]
+        thumbs = [thumb_path(sha256, c["keyframe_ticks"]) for c in cuts]
         for c, t in zip(cuts, thumbs):
-            extract_frame(path, start + Fraction(c["keyframe_ticks"], S), t)
+            if not t.exists():
+                extract_frame(path, start + Fraction(c["keyframe_ticks"], S), t)
     for c, t in zip(cuts, thumbs):
         with Image.open(t) as im:
             c["phash"] = phash(im)
-            span = {} if m["kind"] == "image" else {"t0_ticks": c["start_ticks"], "t1_ticks": c["end_ticks"]}
+            span = {} if kind == "image" else {"t0_ticks": c["start_ticks"], "t1_ticks": c["end_ticks"]}
             measures.append({"kind": "luma", "num": round(luma(im), 4), "status": "accepted",
                              "basis": "keyframe mean", **span})
-    db.set_cuts(con, media_id, cuts)
-    db.put_facts(con, media_id, CUTS_V, measures)
+    return {"sha256": sha256, "probe": info, "cuts": cuts, "measures": measures}
+
+
+def run_cuts(con, media_id: int, path: Path) -> None:
+    m = con.execute("SELECT * FROM media WHERE media_id = ?", (media_id,)).fetchone()
+    r = analyze_file(path, m["kind"], m["sha256"])
+    db.set_cuts(con, media_id, r["cuts"])
+    db.put_facts(con, media_id, CUTS_V, r["measures"])
+
+
+def _analyze_job(args):
+    path, kind = args
+    try:
+        return path, kind, analyze_file(path, kind), None
+    except Exception as e:  # reported by the caller, which keeps going
+        return path, kind, None, f"{type(e).__name__}: {e}"
+
+
+def ingest_many(con, roots: list[Path], *, workers: int = 6, log=print) -> dict:
+    """ingest_folder for many folders, with the expensive work (hashing,
+    scene detection, keyframes) in `workers` processes. Only this process
+    writes the DB. Files already done at the current versions are skipped
+    without being hashed again."""
+    from concurrent.futures import ProcessPoolExecutor, as_completed
+
+    jobs, folder_work, root_of = [], {}, {}
+    for root in roots:
+        folder_work[root] = catalog.find_entity(con, "work", [root.name])
+        for path, kind in discover(root):
+            root_of[path] = root
+            mid = db.media_id_for_path(con, path)
+            st = path.stat()
+            row = con.execute("SELECT size, mtime_ms FROM media_file WHERE path = ?", (str(path.resolve()),)).fetchone()
+            unchanged = row and row["size"] == st.st_size and row["mtime_ms"] == int(st.st_mtime * 1000)
+            if unchanged and db.job_version(con, mid, "cuts") == CUTS_V and db.job_version(con, mid, "filename") == FILENAME_V:
+                continue
+            jobs.append((path, kind))
+    con.commit()
+    log(f"{len(jobs)} files to analyse in {len(roots)} folders")
+    done = failed = 0
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(_analyze_job, j) for j in jobs]
+        for fut in as_completed(futures):
+            path, kind, r, err = fut.result()
+            if err:
+                failed += 1
+                log(f"  FAILED {path}: {err}")
+                continue
+            try:
+                media_id, _ = db.register_file(con, path, kind, probe=r["probe"], sha256=r["sha256"])
+                p = r["probe"]
+                con.execute(
+                    "UPDATE media SET width = ?, height = ?, duration_ticks = ?, fps_num = ?, fps_den = ? WHERE media_id = ?",
+                    (p.get("width"), p.get("height"), p.get("duration_ticks"), p.get("fps_num"), p.get("fps_den"), media_id))
+                db.job_done(con, media_id, "probe", PROBE_V)
+                if db.job_version(con, media_id, "cuts") != CUTS_V:
+                    db.set_cuts(con, media_id, r["cuts"])
+                    db.put_facts(con, media_id, CUTS_V, r["measures"])
+                    db.job_done(con, media_id, "cuts", CUTS_V)
+                db.put_facts(con, media_id, FILENAME_V,
+                             filename_facts(con, path, root_of[path], folder_work[root_of[path]]))
+                db.job_done(con, media_id, "filename", FILENAME_V)
+                db.set_status(con, media_id, "live")
+                con.commit()
+                done += 1
+                if done % 50 == 0:
+                    log(f"  {done}/{len(jobs)} done, {failed} failed")
+            except Exception as e:
+                con.rollback()
+                failed += 1
+                log(f"  FAILED {path}: {type(e).__name__}: {e}")
+    return {"files": len(jobs), "done": done, "failed": failed}
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +356,53 @@ def filename_facts(con, path: Path, root: Path, folder_work: Optional[int]) -> l
 
 def usage_from_lumina(con, project_path: Path, *, sequences: Optional[Iterable[str]] = None,
                       approved: Iterable[str] = ()) -> int:
+    doc = json.loads(project_path.read_text(encoding="utf-8"))["document"]
+    return _usage_from_document(con, project_path, doc, sequences=sequences, approved=approved)
+
+
+TEMPLATE_PATH = Path(__file__).resolve().parents[3] / "templates" / "caddynote.lumina"
+
+
+def template_sequences() -> set[str]:
+    """The channel template's own sequences (intro, frame, the empty Shorts
+    sequence): every project has them, and their clips say nothing."""
+    try:
+        doc = json.loads(TEMPLATE_PATH.read_text(encoding="utf-8"))["document"]
+        return {s["name"] for s in doc["sequences"].values() if s["name"] != "시퀀스 02 (shorts)"}
+    except (OSError, ValueError, KeyError):
+        return set()
+
+
+def rendered_names(*folders: Path) -> set[str]:
+    """Stems of rendered videos: a sequence rendered under its own name was
+    finished, which is the best available sign it was published."""
+    out = set()
+    for f in folders:
+        if f.is_dir():
+            out.update(p.stem for p in f.rglob("*") if p.suffix.lower() in VIDEO_EXT)
+    return out
+
+
+def usage_from_project(con, project_path: Path, *, rendered: set[str] = frozenset()) -> int:
+    """Usage from a .lumina or a .prproj (opened through Lumina's own Premiere
+    import, headless). Template sequences are skipped; a sequence counts as
+    approved when a render of it exists."""
+    if project_path.suffix.lower() == ".lumina":
+        doc = json.loads(project_path.read_text(encoding="utf-8"))["document"]
+    else:
+        from ..session import Session
+
+        sess = Session(services=None)
+        sess.execute("project.import_premiere", {"path": str(project_path), "into_root": True}, record=False)
+        doc = sess.doc
+    skip = template_sequences()
+    names = [s["name"] for s in doc["sequences"].values() if s["name"] not in skip]
+    return _usage_from_document(con, project_path, doc, sequences=names,
+                                approved=[n for n in names if n in rendered])
+
+
+def _usage_from_document(con, project_path: Path, doc: dict, *, sequences: Optional[Iterable[str]] = None,
+                         approved: Iterable[str] = ()) -> int:
     """Every picture placed on a video track, with the words on screen over it.
 
     The words are caption cues and graphic text overlapping the clip. The
@@ -288,7 +412,6 @@ def usage_from_lumina(con, project_path: Path, *, sequences: Optional[Iterable[s
     from ..commands.shorts import TITLE_CLIP
     from ..model import Project
 
-    doc = json.loads(project_path.read_text(encoding="utf-8"))["document"]
     p = Project.model_validate(doc)
     approved = set(approved)
     rows = []
@@ -427,7 +550,7 @@ def ingest_folder(con, root: Path, *, work: Optional[int] = None, log=print) -> 
     """Every picture and recording under root. The folder's name proposes
     the work (resolved through the catalog) unless `work` is given."""
     if work is None:
-        work = catalog.resolve_entity(con, "work", [root.name])
+        work = catalog.find_entity(con, "work", [root.name])
         con.commit()  # a failing file rolls back; the work must survive it
     ids = []
     for path, kind in discover(root):

@@ -159,3 +159,21 @@ def resolve_entity(con, type_: str, names: list[str], *, ip_ref: Optional[str] =
         current = hangul[0]
     db.entity(con, type_, current, aliases=names + extra, catalog_ref=m.ref if m else None)
     return found
+
+
+def find_entity(con, type_: str, names: list[str], *, ip_ref: Optional[str] = None) -> Optional[int]:
+    """Like resolve_entity, but never invents a new name: only an entity the
+    source DB already has or the catalog knows. For weak evidence such as a
+    folder name, which is as often a character, a director or a topic
+    (고죠 사토루, 신카이 마코토, 수익창출 항소) as a work."""
+    names = clean_names(names)
+    if not names:
+        return None
+    ip = catalog().by_ref(ip_ref) if ip_ref else None
+    if catalog().resolve(type_, names, ip.catalog_id if ip else None) is not None:
+        return resolve_entity(con, type_, names, ip_ref=ip_ref)
+    keys = {key(n) for n in names}
+    for r in con.execute("SELECT entity_id, name, aliases FROM entity WHERE type = ?", (type_,)):
+        if keys & {key(n) for n in (r["name"], *r["aliases"].split("\n")) if n}:
+            return r["entity_id"]
+    return None

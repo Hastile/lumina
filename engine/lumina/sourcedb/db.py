@@ -158,7 +158,8 @@ def sha256_file(path: "str | Path", chunk: int = 1 << 20) -> str:
 
 
 def register_file(
-    con: sqlite3.Connection, path: "str | Path", kind: str, *, probe: Optional[dict] = None
+    con: sqlite3.Connection, path: "str | Path", kind: str, *, probe: Optional[dict] = None,
+    sha256: Optional[str] = None,
 ) -> tuple[int, bool]:
     """Return (media_id, is_new_content). Unchanged paths are not re-hashed.
 
@@ -171,7 +172,7 @@ def register_file(
     if row and row["size"] == st.st_size and row["mtime_ms"] == mtime:
         con.execute("UPDATE media_file SET seen_ms = ? WHERE path = ?", (now_ms(), path))
         return row["media_id"], False
-    digest = sha256_file(path)
+    digest = sha256 or sha256_file(path)
     found = con.execute("SELECT media_id FROM media WHERE sha256 = ?", (digest,)).fetchone()
     is_new = found is None
     if is_new:
