@@ -6,6 +6,7 @@
   usage <project.lumina> [--approved SEQ ...] [--sequences SEQ ...]
   describe [media_id ...] [--redo]    Claude scene descriptions of media never described, then verify
   verify                              re-check agreement on every media
+  reprobe                             re-measure media probed by an older version
   status                              what has run on how much
 
 GPU stages (tagger, embed, speech) run in engine/analyzers:
@@ -46,6 +47,7 @@ def main(argv=None) -> None:
     p.add_argument("media", nargs="*", type=int)
     p.add_argument("--redo", action="store_true", help="describe again media an older version already did (costs tokens)")
     sub.add_parser("verify")
+    sub.add_parser("reprobe")
     sub.add_parser("status")
     a = ap.parse_args(argv)
 
@@ -79,6 +81,8 @@ def main(argv=None) -> None:
     elif a.cmd == "describe":
         describe.run(con, a.media or None, redo=a.redo)
         print("accepted by agreement:", _verify_all(con))
+    elif a.cmd == "reprobe":
+        print("last cuts clipped to the picture's length:", ingest.reprobe(con))
     elif a.cmd == "verify":
         print("accepted by agreement:", _verify_all(con))
     elif a.cmd == "status":

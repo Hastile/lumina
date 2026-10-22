@@ -603,3 +603,34 @@ def ingest_folder(con, root: Path, *, work: Optional[int] = None, log=print) -> 
             con.rollback()
             log(f"  FAILED {path.name}: {e}")
     return ids
+
+
+def reprobe(con, log=print) -> int:
+    """Bring media probed by an older probe version up to date without
+    re-cutting: the new length clips a last cut that ran past it."""
+    fixed = 0
+    rows = con.execute("SELECT media_id, kind FROM media WHERE status != 'missing'").fetchall()
+    for r in rows:
+        if db.job_version(con, r["media_id"], "probe") == PROBE_V:
+            continue
+        path = db.media_path(con, r["media_id"])
+        if path is None:
+            continue
+        try:
+            info = probe(Path(path), r["kind"])
+        except Exception as e:
+            log(f"  FAILED {path}: {e}")
+            continue
+        con.execute("UPDATE media SET width = ?, height = ?, duration_ticks = ?, fps_num = ?, fps_den = ? WHERE media_id = ?",
+                    (info.get("width"), info.get("height"), info.get("duration_ticks"),
+                     info.get("fps_num"), info.get("fps_den"), r["media_id"]))
+        dur = info.get("duration_ticks")
+        if dur:
+            n = con.execute("UPDATE cut SET end_ticks = ? WHERE media_id = ? AND end_ticks > ? AND start_ticks < ?",
+                            (dur, r["media_id"], dur, dur)).rowcount
+            if n:
+                fixed += n
+                db.rebuild_docs(con, r["media_id"])
+        db.job_done(con, r["media_id"], "probe", PROBE_V)
+        con.commit()
+    return fixed
