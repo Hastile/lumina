@@ -32,3 +32,27 @@ def test_episode_from_the_channels_clip_names():
     assert episode_of("『チェンソーマン』第４話ノンクレジットエンディング") == ("E04", None)
     assert episode_of("Escape the Walls 원작 (pandorioltd)") is None
     assert episode_of("화려한 무대") is None
+
+
+def test_more_episode_formats():
+    from lumina.sourcedb.ingest import episode_of
+    assert episode_of("귀멸의 칼날 3기 대장장이 마을 편 BD 😜 11 - Anime - Linkkf 애니 TV (자막 - 더빙)") == ("S3 E11", None)
+    assert episode_of("귀멸의 칼날_ 유곽 편 (2기) BD 😜 1 - Anime - Linkkf 애니 TV (자") == ("S2 E01", None)
+    assert episode_of("드래곤볼 카이(改) 😜 123 - Anime - Linkkf 애니 TV (자막 - 더빙)") == ("E123", None)
+    assert episode_of("JoJo's Bizarre Adventure - Opening 4 v3 [4K 60FPS") == ("OP4", None)
+    assert episode_of("[Neobrane] JoJo's Bizarre Adventure - Ending 3 [4K") == ("ED3", None)
+    assert episode_of("demon_slayer_op_5") == ("OP5", None)
+    assert episode_of("1기 영역전개") == ("S1", None)
+    assert episode_of("4부 손가락") == ("Part 4", None)
+    assert episode_of("(스포) 스타레일 3.3 컷신 모음 - YouTube - Chrome 2025-07-03") == ("v3.3", None)
+    assert episode_of("akaza_1") is None
+    assert episode_of("vs 아카이누 2") is None
+    assert episode_of("2026-07-28 23-54-08") is None
+    assert episode_of("4115174-uhd_4096_2160_25fps") is None
+    assert episode_of("부산 여행") is None
+
+
+def test_hashes_and_films_are_not_episodes():
+    from lumina.sourcedb.ingest import episode_of
+    assert episode_of("0ef71181ed7db912a1acd8676c741a4d") is None
+    assert episode_of("극장판 애니 _ 체인소 맨 레제편 😜 01 - Anime - Linkkf 애니 TV") == ("Film", None)

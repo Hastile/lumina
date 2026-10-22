@@ -39,7 +39,7 @@ SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews"
 
 PROBE_V = "probe@2"
 CUTS_V = "cuts@2"
-FILENAME_V = "filename@3"
+FILENAME_V = "filename@4"
 
 SCENE_THRESHOLD = 0.3
 MIN_CUT_SECONDS = 0.25  # a shorter "shot" is a flash or a detector stutter
@@ -332,9 +332,12 @@ _YTDLP = re.compile(r"^\[(?P<uploader>[^\]]+)\]\s*(?P<title>.+?)\s*\((?P<id>[A-Z
 
 
 _FULLWIDTH = str.maketrans("０１２３４５６７８９", "0123456789")
+_SEASON = re.compile(r"(?<!\d)(?P<s>\d{1,2})\s*기(?![가-힣])")
 _EP_PATTERNS = (
     # S2 E04 0931 저 구름 고기만두  /  S1 E3 3253 ...
     re.compile(r"(?i)\bS(?P<s>\d{1,2})\s*E(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?"),
+    # Linkkf downloads: 귀멸의 칼날 3기 대장장이 마을 편 BD 😜 11 - Anime - Linkkf ...
+    re.compile(r"(?P<pre>.*?)😜\s*(?P<e>\d{1,4})\s*-\s*Anime"),
     # E01 0005 청산싫어  /  EP1 001256 재의 왕을 ...
     re.compile(r"(?i)(?<![A-Za-z])EP?\.?\s*(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?(?![A-Za-z])"),
     # 리제로 4기 11화 고점  /  4기 8화 레이드  /  3화
@@ -342,12 +345,23 @@ _EP_PATTERNS = (
     # 第1話  /  第４話
     re.compile(r"第\s*(?P<e>\d{1,3})\s*話"),
 )
+# Not an episode, but the same kind of "where in the work": opening and
+# ending numbers, a season or part alone, a game's version.
+_OTHER = (
+    (re.compile(r"(?i)(?<![A-Za-z0-9])(?P<k>opening|ending|op|ed)[\s_]*(?P<n>\d{1,2})(?!\d)"),
+     lambda m: ("OP" if m["k"].lower().startswith("op") else "ED") + str(int(m["n"]))),
+    (re.compile(r"(?<!\d)(?P<n>\d{1,2})\s*부(?![가-힣])"), lambda m: f"Part {int(m['n'])}"),
+    (_SEASON, lambda m: f"S{int(m['s'])}"),
+    (re.compile(r"(?<![\d.])(?P<v>\d\.\d)(?![\d.])(?=\s*(?:컷신|개척|버전|ver|PV|업데이트))", re.I), lambda m: f"v{m['v']}"),
+)
 
 
 def episode_of(name: str) -> Optional[tuple[str, Optional[int]]]:
     """('S2 E04', seconds into the episode) from the channel's clip names,
     or None. The time is the 4-digit mmss or 6-digit hhmmss after the
-    episode: where the clip was cut from, to find the moment again."""
+    episode: where the clip was cut from, to find the moment again. Without
+    an episode, an opening/ending number, a season or part, or a game
+    version is the label."""
     name = name.translate(_FULLWIDTH)
     for pat in _EP_PATTERNS:
         m = pat.search(name)
@@ -357,13 +371,23 @@ def episode_of(name: str) -> Optional[tuple[str, Optional[int]]]:
         e = int(d["e"])
         if e == 0:
             continue
-        label = (f"S{int(d['s'])} " if d.get("s") else "") + f"E{e:02d}"
+        season = d.get("s")
+        if season is None and d.get("pre") is not None:
+            sm = _SEASON.search(d["pre"])
+            season = sm["s"] if sm else None
+        if "극장판" in (d.get("pre") or ""):  # a film's download numbers its parts, not episodes
+            return "Film", None
+        label = (f"S{int(season)} " if season else "") + f"E{e:02d}"
         t, seconds = d.get("t"), None
         if t:
             parts = [int(t[i:i + 2]) for i in range(0, len(t), 2)]
             if all(p < 60 for p in parts[1:]):
                 seconds = sum(p * 60 ** (len(parts) - 1 - i) for i, p in enumerate(parts))
         return label, seconds
+    for pat, label in _OTHER:
+        m = pat.search(name)
+        if m:
+            return label(m), None
     return None
 
 
