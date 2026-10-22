@@ -8,7 +8,11 @@ local facts for those keyframes as text. It answers in a fixed JSON shape,
 one entry per tile, which becomes proposed facts.
 
 Everything it writes is 'proposed'. A fact becomes accepted only when a
-person accepts it or another producer agrees (see verify in ingest).
+person accepts it or an independent source agrees (see verify in ingest).
+So Claude is never shown another producer's unconfirmed guess about who or
+what is on screen: a guess it repeats would then "agree" with itself. It
+names works and characters from what it sees, in Korean and in the original
+spelling, and catalog.resolve_entity turns every spelling into one entity.
 """
 
 from __future__ import annotations
@@ -22,12 +26,12 @@ from typing import Callable, Optional
 
 from PIL import Image, ImageDraw, ImageFont
 
-from . import db
+from . import catalog, db
 from .ingest import thumb_path
 from ..timebase import TICKS_PER_SECOND
 
 S = TICKS_PER_SECOND
-VERSION = "claude-sonnet@1"
+VERSION = "claude-sonnet@3"
 MODEL = "sonnet"
 PER_SHEET = 12
 COLS = 4
@@ -36,6 +40,14 @@ CELL = (384, 288)
 SHOTS = ["extreme_close", "close", "medium", "wide", "insert", "ui", "text", "collage"]
 SOURCE_TYPES = ["trailer", "pv", "mv", "gameplay", "key_visual", "illustration", "fanart", "design_sheet",
                 "screenshot", "sns_post", "article", "store_page", "search_result", "recording", "meme", "logo"]
+
+NAME = {
+    "type": "object",
+    "properties": {"ko": {"type": "string", "description": "한국에서 부르는 이름"},
+                   "original": {"type": "string", "description": "원어 표기 (일본어 등)"},
+                   "romaji": {"type": "string", "description": "로마자/영어 표기 (예: Gotoh Hitori)"}},
+    "required": ["ko", "original", "romaji"],
+}
 
 SCHEMA = {
     "type": "object",
@@ -46,9 +58,10 @@ SCHEMA = {
             "desc": {"type": "string", "description": "한국어 한 줄, 25자 안팎: 누가 무엇을 하는 화면인지"},
             "shot": {"type": "string", "enum": SHOTS},
             "source_type": {"type": "string", "enum": SOURCE_TYPES},
-            "characters": {"type": "array", "items": {"type": "string"},
-                           "description": "확실히 알아본 인물만. 모르면 비움"},
-            "works": {"type": "array", "items": {"type": "string"}, "description": "화면이 속한 작품. 모르면 비움"},
+            "characters": {"type": "array", "items": NAME, "description": "알아본 인물만. 모르면 비움"},
+            "works": {"type": "array", "items": NAME, "description": "화면이 속한 작품. 모르면 비움"},
+            "variant": {"type": "string", "enum": ["", "original", "copy", "official", "fan"],
+                        "description": "원작/모방작(copy)/공식/팬메이드. 모르면 빈 문자열"},
             "text": {"type": "string", "description": "화면 속 글자 원문, 40자 이내. 없으면 빈 문자열"},
             "text_overlay": {"type": "number", "description": "덧씌운 글자가 화면을 덮는 비율 0~1"},
             "subject_x": {"type": "number", "description": "주 피사체 중심의 가로 위치 0~1"},
@@ -58,16 +71,18 @@ SCHEMA = {
             "use_case": {"type": "array", "items": {"type": "string"},
                          "description": "이 컷이 어울리는 내레이션 1~2개, 짧은 한국어 구절"},
         },
-        "required": ["n", "desc", "shot", "source_type", "characters", "works", "text",
+        "required": ["n", "desc", "shot", "source_type", "characters", "works", "variant", "text",
                      "text_overlay", "subject_x", "subject_area", "mood", "action", "use_case"],
     }}},
     "required": ["tiles"],
 }
 
 SYSTEM = (
-    "너는 쇼츠 편집용 소스 DB에 장면 메타데이터를 쓰는 분석가다. 주어진 콘택트 시트의 번호 붙은 타일마다 "
-    "JSON 한 항목을 쓴다. 보이는 것만 쓰고 추측하지 않는다. 인물과 작품은 확실할 때만, 힌트 목록의 표기를 "
-    "그대로 쓴다(괄호 속 별칭은 빼고 이름만). 설명은 검색어가 될 명사와 동사를 담은 한국어 한 줄."
+    "너는 쇼츠 편집용 소스 DB에 장면 메타데이터를 쓰는 분석가다. 콘택트 시트의 번호 붙은 타일마다 JSON 한 "
+    "항목을 쓴다. 보이는 것만 쓰고 추측하지 않는다. 작품과 인물은 화면 속 글자, 파일 제목, 대사, 또는 네가 "
+    "확실히 아는 캐릭터의 생김새로 알아볼 때만 쓰고, 한국어·원어·로마자 이름을 각 칸에 하나씩 쓴다. 작품명에 '원작', '모방작' 같은 말을 붙이지 않고 variant에 쓴다. 모르는 인물은 "
+    "이름 대신 desc에 생김새로 쓴다(예: 분홍 머리 소녀). 타일마다 따로 판단한다: 같은 시트라고 같은 작품이 "
+    "아니다. 설명은 검색어가 될 명사와 동사를 담은 한국어 한 줄."
 )
 
 
@@ -103,18 +118,16 @@ def _tile_context(con, m, c) -> str:
     parts = []
     facts = con.execute(
         "SELECT f.kind, f.value, f.num, f.status, e.name FROM fact f LEFT JOIN entity e ON e.entity_id = f.ref_id "
-        "WHERE f.media_id = ? AND f.status != 'rejected' AND f.kind IN ('title','credit','work','speech','subject','character') "
+        "WHERE f.media_id = ? AND f.kind IN ('title','credit','work','speech','character') "
+        "AND (f.status = 'accepted' OR f.kind IN ('speech')) "
         "AND (f.t0_ticks IS NULL OR (f.t0_ticks < ? AND f.t1_ticks > ?) OR (f.t0_ticks = f.t1_ticks AND f.t0_ticks BETWEEN ? AND ?)) "
         "ORDER BY f.kind, f.num DESC",
         (m["media_id"], max(t1, t0 + 1), t0, t0, t1),
     ).fetchall()
     by: dict[str, list[str]] = {}
     for f in facts:
-        v = f["name"] or f["value"]
-        if f["kind"] == "character" and f["status"] != "accepted":
-            v += "?"
-        by.setdefault(f["kind"], []).append(v)
-    for k, limit in (("title", 1), ("credit", 1), ("work", 2), ("character", 3), ("subject", 4), ("speech", 2)):
+        by.setdefault(f["kind"], []).append(f["name"] or f["value"])
+    for k, limit in (("title", 1), ("credit", 1), ("work", 2), ("character", 3), ("speech", 2)):
         if k in by:
             parts.append(f"{k}: {' / '.join(dict.fromkeys(by[k][:limit]))[:80]}")
     used = con.execute(
@@ -128,25 +141,11 @@ def _tile_context(con, m, c) -> str:
     return "; ".join(parts)
 
 
-def _hints(con) -> str:
-    """Names to write with: works, and characters with a Korean name (the
-    channel's, or the catalog's). A tagger's raw Latin guess is not a hint."""
-    def named(type_):
-        out = []
-        for r in con.execute("SELECT name, aliases FROM entity WHERE type = ? ORDER BY name", (type_,)):
-            if type_ == "character" and not any("가" <= ch <= "힣" for ch in r["name"]):
-                continue
-            al = [a for a in r["aliases"].split("\n") if a]
-            out.append(r["name"] + (f" (별칭: {', '.join(al)})" if al else ""))
-        return out
-    return (f"알려진 작품: {'; '.join(named('work')) or '없음'}\n"
-            f"알려진 인물: {'; '.join(named('character')) or '없음'}")
 
-
-def ask_claude(sheet: Path, lines: list[str], hints: str) -> list[dict]:
+def ask_claude(sheet: Path, lines: list[str]) -> list[dict]:
     prompt = (
-        f"{sheet.name} 를 Read로 열어 보고 타일 {len(lines)}개를 분석해.\n{hints}\n\n"
-        "타일별로 이미 아는 정보 (틀릴 수 있음, ?는 미확인):\n"
+        f"{sheet.name} 를 Read로 열어 보고 타일 {len(lines)}개를 분석해.\n\n"
+        "타일별로 확인된 정보 (파일 제목, 확정된 작품과 인물, 대사, 이 컷이 쓰인 내레이션):\n"
         + "\n".join(f"{i + 1}. {l}" for i, l in enumerate(lines))
     )
     proc = subprocess.run(
@@ -172,6 +171,8 @@ def _facts_from_tile(con, tile: dict, sp: dict) -> list[dict]:
         {"kind": "shot", "value": tile["shot"], **sp},
         {"kind": "source_type", "value": tile["source_type"], **sp},
     ]
+    if tile.get("variant"):
+        rows.append({"kind": "variant", "value": tile["variant"], **sp})
     for k in ("text_overlay", "subject_x", "subject_area"):
         v = tile.get(k)
         if isinstance(v, (int, float)) and 0 <= v <= 1:
@@ -181,29 +182,31 @@ def _facts_from_tile(con, tile: dict, sp: dict) -> list[dict]:
     for k, kind in (("mood", "mood"), ("action", "action"), ("use_case", "use_case")):
         for v in tile.get(k, [])[:2]:
             rows.append({"kind": kind, "value": v, **sp})
-    for type_, key in (("character", "characters"), ("work", "works")):
-        for name in tile.get(key, []):
-            eid = _match_entity(con, type_, name)
-            rows.append({"kind": type_, "ref_id": eid, "basis": f"claude saw {name}", **sp})
+    work_ref = None
+    for w in tile.get("works", []):
+        eid = catalog.resolve_entity(con, "work", [w.get("ko", ""), w.get("original", ""), w.get("romaji", "")])
+        if eid:
+            rows.append({"kind": "work", "ref_id": eid, "basis": f"claude saw {w.get('original') or w.get('ko')}", **sp})
+            work_ref = work_ref or con.execute("SELECT catalog_ref FROM entity WHERE entity_id = ?", (eid,)).fetchone()[0]
+    for c in tile.get("characters", []):
+        eid = catalog.resolve_entity(con, "character", [c.get("ko", ""), c.get("original", ""), c.get("romaji", "")],
+                                     ip_ref=work_ref)
+        if eid:
+            rows.append({"kind": "character", "ref_id": eid, "basis": f"claude saw {c.get('original') or c.get('ko')}", **sp})
     return rows
 
 
-def _match_entity(con, type_: str, name: str) -> int:
-    """An existing entity whose name or alias is this name, else a new one.
-    A hint copied whole ("팜술 (별칭: Femme Soule)") still names 팜술."""
-    name = re.sub(r"\s*[(\[].*$", "", name).strip()
-    key = db.name_key(name)
-    for r in con.execute("SELECT entity_id, name, aliases FROM entity WHERE type = ?", (type_,)):
-        if key in {db.name_key(n) for n in (r["name"], *r["aliases"].split("\n")) if n}:
-            return r["entity_id"]
-    return db.entity(con, type_, name)
 
 
-def run(con, media_ids: Optional[list[int]] = None, log: Callable[[str], None] = print) -> None:
-    """Describe every cut of the given media (default: all not yet done)."""
+def run(con, media_ids: Optional[list[int]] = None, log: Callable[[str], None] = print, *, redo: bool = False) -> None:
+    """Describe every cut of the given media (default: all never described).
+
+    A new VERSION does not re-describe what an older one did: that costs
+    tokens, so it happens only with redo=True."""
     todo = [
         m for m in con.execute("SELECT * FROM media WHERE kind IN ('video','image') AND status != 'dropped' ORDER BY kind DESC, media_id")
-        if (media_ids is None or m["media_id"] in media_ids) and db.job_version(con, m["media_id"], "describe") != VERSION
+        if (media_ids is None or m["media_id"] in media_ids)
+        and (redo or db.job_version(con, m["media_id"], "describe") is None)
     ]
     # Video sheets hold one media's cuts in order; images share sheets.
     groups: list[list[tuple]] = []
@@ -215,7 +218,6 @@ def run(con, media_ids: Optional[list[int]] = None, log: Callable[[str], None] =
         else:
             groups += [[(m, c) for c in cuts[i:i + PER_SHEET]] for i in range(0, len(cuts), PER_SHEET)]
     groups += [images[i:i + PER_SHEET] for i in range(0, len(images), PER_SHEET)]
-    hints = _hints(con)
     pending: dict[int, list[dict]] = {}
     left = {m["media_id"]: sum(1 for g in groups for mm, _ in g if mm["media_id"] == m["media_id"]) for m in todo}
     with tempfile.TemporaryDirectory(prefix="lumina-describe-") as tmp:
@@ -224,7 +226,7 @@ def run(con, media_ids: Optional[list[int]] = None, log: Callable[[str], None] =
             contact_sheet([thumb_path(m["sha256"], c["keyframe_ticks"]) for m, c in group], sheet)
             log(f"sheet {gi + 1}/{len(groups)}: {len(group)} tiles")
             try:
-                tiles = {t["n"]: t for t in ask_claude(sheet, [_tile_context(con, m, c) for m, c in group], hints)}
+                tiles = {t["n"]: t for t in ask_claude(sheet, [_tile_context(con, m, c) for m, c in group])}
             except Exception as e:
                 log(f"    FAILED: {e}")
                 for m, _ in group:

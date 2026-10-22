@@ -21,15 +21,14 @@ sys.path.insert(0, str(ENGINE))
 import numpy as np  # noqa: E402
 from PIL import Image  # noqa: E402
 
-from lumina.sourcedb import db  # noqa: E402
+from lumina.sourcedb import catalog, db  # noqa: E402
 from lumina.sourcedb.ingest import thumb_path  # noqa: E402
 from lumina.timebase import TICKS_PER_SECOND  # noqa: E402
 
 S = TICKS_PER_SECOND
 MODELS = Path.home() / ".lumina" / "models"
-ENTITY_CATALOG = Path("D:/Dev/shared/entity_catalog.db")
 
-TAGGER_V = "wd-swinv2-v3@1"
+TAGGER_V = "wd-swinv2-v3@2"
 EMBED_V = "siglip2-so400m-384@1"
 EMBED_MODEL = "siglip2-so400m-384"
 SPEECH_V = "whisper-large-v3@1"
@@ -61,21 +60,6 @@ def span(m, c) -> dict:
 # WD tagger
 # ---------------------------------------------------------------------------
 
-def _catalog_character(tag: str):
-    """(Korean name, aliases) from the shared entity catalog, if it has one."""
-    if not ENTITY_CATALOG.exists():
-        return None
-    cat = sqlite3.connect(f"file:{ENTITY_CATALOG.as_posix()}?mode=ro", uri=True)
-    try:
-        r = cat.execute(
-            "SELECT canonical_name_ko, name_native, name_english, needs_label FROM character_entity "
-            "WHERE danbooru_tag = ? AND is_active = 1 ORDER BY popularity DESC LIMIT 1", (tag,)
-        ).fetchone()
-    finally:
-        cat.close()
-    if r is None or r[3]:
-        return None
-    return r[0], [a for a in (r[1], r[2], tag) if a]
 
 
 def stage_tagger(con):
@@ -119,9 +103,7 @@ def stage_tagger(con):
                     rows.append({"kind": kind, "value": value, "num": round(float(p[i]), 3),
                                  "basis": f"danbooru {names[i]}", **sp})
             for i in np.where((cats == 4) & (p >= CHARACTER_MIN))[0]:
-                found = _catalog_character(names[i])
-                name, aliases = found if found else (names[i], [])
-                eid = db.entity(con, "character", name, aliases=aliases, catalog_ref=f"danbooru:{names[i]}")
+                eid = catalog.resolve_entity(con, "character", [names[i]])
                 rows.append({"kind": "character", "ref_id": eid, "num": round(float(p[i]), 3),
                              "basis": f"wd {names[i]} {p[i]:.2f}", **sp})
         db.put_facts(con, m["media_id"], TAGGER_V, rows)

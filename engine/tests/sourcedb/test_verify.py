@@ -52,3 +52,16 @@ def test_character_named_in_the_caption_it_was_used_under(tmp_path):
                                  "rec_in_ticks": 0, "caption": "팜술이 잘 보이는 구도"}])
     assert ingest.verify(con, mid) == 1
     assert _status(con) == {("claude@1", 0): "accepted", ("claude@1", 4 * S): "proposed"}
+
+
+def test_named_in_the_file_title(tmp_path):
+    con, mid = _setup(tmp_path)
+    work = db.entity(con, "work", "퓨키 가디스 샷 트릭", aliases=["PUKEY GODDESS SHOT TRICK"])
+    other = db.entity(con, "work", "Escape the Walls")
+    db.put_facts(con, mid, "filename@2", [{"kind": "title", "value": "『PUKEY GODDESS SHOT TRICK』セカンドトレーラー",
+                                           "status": "accepted"}])
+    db.put_facts(con, mid, "claude@2", [{"kind": "work", "ref_id": work, "t0_ticks": 0, "t1_ticks": 4 * S},
+                                        {"kind": "work", "ref_id": other, "t0_ticks": 4 * S, "t1_ticks": 8 * S}])
+    assert ingest.verify(con, mid) == 1
+    assert _status(con)[("claude@2", 0)] == "accepted"
+    assert _status(con)[("claude@2", 4 * S)] == "proposed"

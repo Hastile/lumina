@@ -137,3 +137,11 @@ def test_embeddings_round_trip(con, tmp_path):
     keys, vecs = db.load_embeddings(con, "m")
     assert keys.tolist() == [[mid, S]]
     assert np.allclose(vecs[0], v, atol=1e-3)
+
+
+def test_upgraded_producer_replaces_its_old_version(con, tmp_path):
+    mid = _media(con, tmp_path)
+    db.put_facts(con, mid, "vlm@1", [{"kind": "description", "value": "old"}])
+    db.put_facts(con, mid, "vlm@2", [{"kind": "description", "value": "new"}])
+    db.put_facts(con, mid, "vlmx@1", [{"kind": "description", "value": "another family"}])
+    assert sorted(r[0] for r in con.execute("SELECT value FROM fact")) == ["another family", "new"]

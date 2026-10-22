@@ -25,7 +25,7 @@ from typing import Iterable, Optional
 import numpy as np
 from PIL import Image
 
-from . import db
+from . import catalog, db
 from ..timebase import TICKS_PER_SECOND
 
 S = TICKS_PER_SECOND
@@ -37,8 +37,8 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews", "Adobe Premiere Pro Video Previews"}
 
 PROBE_V = "probe@1"
-CUTS_V = "cuts@1"
-FILENAME_V = "filename@1"
+CUTS_V = "cuts@2"
+FILENAME_V = "filename@2"
 
 SCENE_THRESHOLD = 0.3
 MIN_CUT_SECONDS = 0.25  # a shorter "shot" is a flash or a detector stutter
@@ -117,28 +117,53 @@ def probe(path: Path, kind: str) -> dict:
 # cuts
 # ---------------------------------------------------------------------------
 
-def scene_frames(path: Path, fps: Fraction) -> list[int]:
-    """Frame numbers where a new shot starts (excluding 0)."""
+def stream_timing(path: Path) -> tuple[Fraction, Fraction, bool]:
+    """(first frame's pts in seconds, nominal fps, constant frame rate?).
+
+    Screen recordings are often variable-rate: r_frame_rate says 59.94 while
+    frames arrive at 26. Frame numbers mean nothing there, so cut edges are
+    timestamps; on a constant-rate stream they snap to its frame grid."""
+    st = json.loads(subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
+         "stream=r_frame_rate,avg_frame_rate,start_time", "-of", "json", str(path)],
+        capture_output=True, text=True, encoding="utf-8", check=True,
+    ).stdout)["streams"][0]
+    r = Fraction(st.get("r_frame_rate") or "0/1")
+    avg = Fraction(st.get("avg_frame_rate") or "0/1")
+    start = Fraction(st.get("start_time") or "0").limit_denominator(1_000_000)
+    cfr = r > 0 and avg > 0 and abs(avg - r) / r < Fraction(1, 200)
+    return start, r, cfr
+
+
+def scene_times(path: Path, start: Fraction) -> list[Fraction]:
+    """Seconds (from the first frame) where a new shot starts."""
     proc = subprocess.run(
         ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path), "-an", "-sn",
          "-vf", f"select='gt(scene,{SCENE_THRESHOLD})',showinfo", "-f", "null", "-"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
-    frames = []
-    for m in re.finditer(r"pts_time:([0-9.]+)", proc.stderr):
-        frames.append(round(Fraction(m.group(1)) * fps))
-    return sorted(set(f for f in frames if f > 0))
+    times = {Fraction(m.group(1)).limit_denominator(1_000_000) - start
+             for m in re.finditer(r"pts_time:([0-9.]+)", proc.stderr)}
+    return sorted(t for t in times if t > 0)
 
 
-def plan_cuts(starts: list[int], total_frames: int, fps: Fraction) -> list[tuple[int, int]]:
-    """[start, end) frame ranges. Too-short shots merge into the one before."""
-    edges = [0, *[f for f in starts if 0 < f < total_frames], total_frames]
-    min_frames = max(1, round(MIN_CUT_SECONDS * fps))
+def to_ticks(seconds: Fraction, fps: Fraction, cfr: bool) -> int:
+    """Media time in ticks, on the frame grid when the stream has one."""
+    if cfr:
+        try:
+            return frame_ticks(round(seconds * fps), fps)
+        except ValueError:
+            pass
+    return round(seconds * S)
+
+
+def plan_cuts(edges: list[int], total: int) -> list[tuple[int, int]]:
+    """[start, end) tick ranges. Too-short shots merge into the one before."""
+    edges = [0, *[e for e in edges if 0 < e < total], total]
+    min_len = round(MIN_CUT_SECONDS * S)
     ranges: list[list[int]] = []
     for a, b in zip(edges, edges[1:]):
-        if ranges and b - a < min_frames:
-            ranges[-1][1] = b
-        elif ranges and ranges[-1][1] - ranges[-1][0] < min_frames:
+        if ranges and (b - a < min_len or ranges[-1][1] - ranges[-1][0] < min_len):
             ranges[-1][1] = b
         else:
             ranges.append([a, b])
@@ -149,33 +174,17 @@ def thumb_path(sha256: str, t_ticks: int) -> Path:
     return THUMB_ROOT / sha256[:2] / f"{sha256}_{t_ticks}.jpg"
 
 
-FRAMES_PER_PASS = 30  # ffmpeg's expression parser fails on much longer select expressions
-
-
-def extract_frames(path: Path, frames: list[int], out: list[Path]) -> None:
-    """Exact frames by number, a decode pass per FRAMES_PER_PASS frames."""
-    for i in range(0, len(frames), FRAMES_PER_PASS):
-        _extract_pass(path, frames[i:i + FRAMES_PER_PASS], out[i:i + FRAMES_PER_PASS])
-
-
-def _extract_pass(path: Path, frames: list[int], out: list[Path]) -> None:
-    expr = "+".join(f"eq(n\\,{f})" for f in frames)
-    tmp = out[0].parent / f"_{out[0].stem}_%05d.jpg"
-    out[0].parent.mkdir(parents=True, exist_ok=True)
+def extract_frame(path: Path, seconds: Fraction, out: Path) -> None:
+    """The frame shown at `seconds` (input seeking decodes up to it exactly)."""
+    out.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", str(path), "-an", "-sn",
-         "-vf", f"select='{expr}',scale='if(gt(iw,ih),{THUMB_SIZE},-2)':'if(gt(iw,ih),-2,{THUMB_SIZE})'",
-         "-fps_mode", "passthrough", "-q:v", "3", str(tmp)],
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{float(seconds):.6f}", "-i", str(path),
+         "-an", "-sn", "-frames:v", "1",
+         "-vf", f"scale='if(gt(iw,ih),{THUMB_SIZE},-2)':'if(gt(iw,ih),-2,{THUMB_SIZE})'", "-q:v", "3", str(out)],
         check=True,
     )
-    made = sorted(tmp.parent.glob(f"_{out[0].stem}_*.jpg"))
-    if len(made) != len(frames):
-        for m in made:
-            m.unlink()
-        raise RuntimeError(f"asked for {len(frames)} frames, got {len(made)}")
-    for src, dst in zip(made, out):
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        src.replace(dst)
+    if not out.exists():
+        raise RuntimeError(f"no frame at {float(seconds):.3f}s")
 
 
 def image_thumb(path: Path, dst: Path) -> None:
@@ -211,16 +220,16 @@ def run_cuts(con, media_id: int, path: Path) -> None:
         cuts = [{"start_ticks": 0, "end_ticks": 0, "keyframe_ticks": 0}]
         thumbs = [t]
     else:
-        fps = Fraction(m["fps_num"], m["fps_den"])
-        total = int(Fraction(m["duration_ticks"]) * fps / S)
-        ranges = plan_cuts(scene_frames(path, fps), total, fps)
-        keys = [(a + b) // 2 for a, b in ranges]
-        cuts = [
-            {"start_ticks": frame_ticks(a, fps), "end_ticks": frame_ticks(b, fps), "keyframe_ticks": frame_ticks(k, fps)}
-            for (a, b), k in zip(ranges, keys)
-        ]
+        start, fps, cfr = stream_timing(path)
+        edges = [to_ticks(t, fps, cfr) for t in scene_times(path, start)]
+        ranges = plan_cuts(edges, m["duration_ticks"])
+        cuts = []
+        for a, b in ranges:
+            k = to_ticks(Fraction(a + b, 2 * S), fps, cfr)
+            cuts.append({"start_ticks": a, "end_ticks": b, "keyframe_ticks": min(max(k, a), b - 1)})
         thumbs = [thumb_path(m["sha256"], c["keyframe_ticks"]) for c in cuts]
-        extract_frames(path, keys, thumbs)
+        for c, t in zip(cuts, thumbs):
+            extract_frame(path, start + Fraction(c["keyframe_ticks"], S), t)
     for c, t in zip(cuts, thumbs):
         with Image.open(t) as im:
             c["phash"] = phash(im)
@@ -238,7 +247,7 @@ def run_cuts(con, media_id: int, path: Path) -> None:
 _YTDLP = re.compile(r"^\[(?P<uploader>[^\]]+)\]\s*(?P<title>.+?)\s*\((?P<id>[A-Za-z0-9_-]{11})\)$")
 
 
-def filename_facts(con, path: Path, folder_work: Optional[int]) -> list[dict]:
+def filename_facts(con, path: Path, root: Path, folder_work: Optional[int]) -> list[dict]:
     rows = []
     m = _YTDLP.match(path.stem)
     if m:
@@ -251,6 +260,16 @@ def filename_facts(con, path: Path, folder_work: Optional[int]) -> list[dict]:
         rows.append({"kind": "title", "value": path.stem, "status": "accepted", "basis": "file name"})
     if folder_work is not None:
         rows.append({"kind": "work", "ref_id": folder_work, "status": "proposed", "basis": "project folder"})
+        # A subfolder named after one of the work's characters (봇치 더 록/키타
+        # 이쿠요). Only a catalog match counts: subfolders are also named 효과음,
+        # 레퍼런스, 2화 ...
+        ref = con.execute("SELECT catalog_ref FROM entity WHERE entity_id = ?", (folder_work,)).fetchone()[0]
+        ip = catalog.catalog().by_ref(ref) if ref else None
+        for part in path.relative_to(root).parts[:-1]:
+            m = catalog.catalog().resolve("character", [part], ip.catalog_id if ip else None)
+            if m and ip and m.ip_id == ip.catalog_id:
+                eid = catalog.resolve_entity(con, "character", [part], ip_ref=ref)
+                rows.append({"kind": "character", "ref_id": eid, "status": "proposed", "basis": "subfolder name"})
     return rows
 
 
@@ -338,12 +357,23 @@ def _family(producer: str) -> str:
     return producer.split("@")[0]
 
 
+def _names_in(names: list[str], text: str) -> bool:
+    """Whether text spells one of the names. Short Latin keys ('fern') are
+    too common inside other words to count."""
+    t = catalog.key(text)
+    for n in names:
+        k = catalog.key(n)
+        if len(k) >= (4 if k.isascii() else 2) and k in t:
+            return True
+    return False
+
+
 def verify(con, media_id: int) -> int:
     """Accept a proposed fact when an independent source says the same.
 
-    Independent means another producer (the folder and Claude, the tagger
-    and Claude), or the person's own words: a character named in the
-    captions the span was used under. One machine alone never makes a fact
+    Independent means another producer that did not see this one's guess
+    (the folder and Claude, the tagger and Claude), the file's own title, or
+    the person's own words: the captions the span was used under. One machine alone never makes a fact
     accepted. Returns the number of facts accepted.
     """
     facts = con.execute(
@@ -356,6 +386,8 @@ def verify(con, media_id: int) -> int:
         "SELECT src_in_ticks, src_out_ticks, caption FROM usage WHERE media_id = ? AND caption IS NOT NULL",
         (media_id,),
     ).fetchall()
+    titles = [r[0] for r in con.execute(
+        "SELECT value FROM fact WHERE media_id = ? AND kind = 'title' AND status = 'accepted'", (media_id,))]
     accept: dict[int, str] = {}
     for f in facts:
         if f["status"] != "proposed":
@@ -369,13 +401,17 @@ def verify(con, media_id: int) -> int:
             if db._overlaps(f["t0_ticks"], f["t1_ticks"], g["t0_ticks"], g["t1_ticks"]):
                 accept[f["fact_id"]] = f"agrees with {g['producer']}"
                 break
-        if f["fact_id"] not in accept and f["kind"] == "character" and f["name"]:
-            names = [f["name"], *[a for a in (f["aliases"] or "").split("\n") if a]]
-            for u in usage:
-                if db._overlaps(f["t0_ticks"], f["t1_ticks"], u["src_in_ticks"], u["src_out_ticks"]) \
-                        and any(n in u["caption"] for n in names):
-                    accept[f["fact_id"]] = "named in the caption it was used under"
-                    break
+        if f["fact_id"] in accept or f["ref_id"] is None:
+            continue
+        names = [f["name"], *[a for a in (f["aliases"] or "").split("\n") if a]]
+        if any(_names_in(names, t) for t in titles):
+            accept[f["fact_id"]] = "named in the file title"
+            continue
+        for u in usage:
+            if db._overlaps(f["t0_ticks"], f["t1_ticks"], u["src_in_ticks"], u["src_out_ticks"]) \
+                    and _names_in(names, u["caption"]):
+                accept[f["fact_id"]] = "named in the caption it was used under"
+                break
     for fid, basis in accept.items():
         con.execute("UPDATE fact SET status = 'accepted', basis = ? WHERE fact_id = ?", (basis, fid))
     if accept:
@@ -388,6 +424,11 @@ def verify(con, media_id: int) -> int:
 # ---------------------------------------------------------------------------
 
 def ingest_folder(con, root: Path, *, work: Optional[int] = None, log=print) -> list[int]:
+    """Every picture and recording under root. The folder's name proposes
+    the work (resolved through the catalog) unless `work` is given."""
+    if work is None:
+        work = catalog.resolve_entity(con, "work", [root.name])
+        con.commit()  # a failing file rolls back; the work must survive it
     ids = []
     for path, kind in discover(root):
         try:
@@ -407,7 +448,7 @@ def ingest_folder(con, root: Path, *, work: Optional[int] = None, log=print) -> 
                 run_cuts(con, media_id, path)
                 db.job_done(con, media_id, "cuts", CUTS_V)
             if db.job_version(con, media_id, "filename") != FILENAME_V:
-                db.put_facts(con, media_id, FILENAME_V, filename_facts(con, path, work))
+                db.put_facts(con, media_id, FILENAME_V, filename_facts(con, path, root, work))
                 db.job_done(con, media_id, "filename", FILENAME_V)
             con.commit()
             n = con.execute("SELECT count(*) FROM cut WHERE media_id = ?", (media_id,)).fetchone()[0]

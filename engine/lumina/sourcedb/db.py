@@ -223,13 +223,29 @@ def name_key(name: str) -> str:
     return re.sub(r"[\s·・\-_.]+", "", name).casefold()
 
 
+def rename_entity(con: sqlite3.Connection, entity_id: int, name: str) -> None:
+    """A new display name; the old one stays as an alias."""
+    old = con.execute("SELECT name, aliases FROM entity WHERE entity_id = ?", (entity_id,)).fetchone()
+    aliases = [a for a in dict.fromkeys([old["name"], *old["aliases"].split("\n")]) if a and a != name]
+    con.execute("UPDATE entity SET name = ?, aliases = ? WHERE entity_id = ?", (name, "\n".join(aliases), entity_id))
+    for (m,) in con.execute("SELECT DISTINCT media_id FROM fact WHERE ref_id = ?", (entity_id,)).fetchall():
+        rebuild_docs(con, m)
+
+
+def set_aliases(con: sqlite3.Connection, entity_id: int, aliases: Iterable[str]) -> None:
+    """Replace the alias list (cleaning model-written noise)."""
+    name = con.execute("SELECT name FROM entity WHERE entity_id = ?", (entity_id,)).fetchone()[0]
+    clean = [a for a in dict.fromkeys(a.strip() for a in aliases) if a and a != name]
+    con.execute("UPDATE entity SET aliases = ? WHERE entity_id = ?", ("\n".join(clean), entity_id))
+
+
 def merge_entity(con: sqlite3.Connection, duplicate: int, keep: int) -> None:
     """Point everything at `keep`; the duplicate's names become its aliases."""
     d = con.execute("SELECT * FROM entity WHERE entity_id = ?", (duplicate,)).fetchone()
     k = con.execute("SELECT * FROM entity WHERE entity_id = ?", (keep,)).fetchone()
     if d is None or k is None or d["type"] != k["type"]:
         raise ValueError("both must exist and be the same type")
-    entity(con, k["type"], k["name"], aliases=[d["name"], *d["aliases"].split("\n")])
+    entity(con, k["type"], k["name"], aliases=[d["name"], *d["aliases"].split("\n")], catalog_ref=d["catalog_ref"])
     media = [r[0] for r in con.execute("SELECT DISTINCT media_id FROM fact WHERE ref_id = ?", (duplicate,))]
     con.execute("UPDATE fact SET ref_id = ? WHERE ref_id = ?", (keep, duplicate))
     con.execute("DELETE FROM entity WHERE entity_id = ?", (duplicate,))
@@ -322,7 +338,8 @@ def put_facts(
     con: sqlite3.Connection, media_id: int, producer: str, rows: Sequence[dict], *,
     span: Optional[tuple[int, int]] = None, rebuild: bool = True,
 ) -> int:
-    """Replace this producer's facts on the media (or within `span`) by rows.
+    """Replace this producer's facts (any version of it) on the media, or
+    within `span`, by rows.
 
     rows: dicts with kind and any of value, num, ref_id, t0_ticks, t1_ticks,
     status ('proposed' default, or 'accepted'), basis. Returns rows written.
@@ -331,7 +348,11 @@ def put_facts(
     """
     if producer == HUMAN:
         raise ValueError("human facts go through add_human_fact")
-    where, args = "media_id = ? AND producer = ? AND status != 'rejected'", [media_id, producer]
+    # The whole family (name@any version): an upgraded producer replaces its
+    # old version's rows instead of leaving them beside the new ones.
+    family = producer.split("@")[0]
+    where = "media_id = ? AND (producer = ? OR producer LIKE ?) AND status != 'rejected'"
+    args = [media_id, family, family + "@%"]
     if span is not None:
         where += " AND t0_ticks IS NOT NULL AND t0_ticks < ? AND t1_ticks > ?"
         args += [span[1], span[0]]
