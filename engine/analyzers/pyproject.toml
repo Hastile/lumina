@@ -1,0 +1,27 @@
+[project]
+name = "lumina-analyzers"
+version = "0.1.0"
+description = "GPU analyzers for the Lumina source DB (tagger, embeddings, speech). Kept out of the engine's runtime environment."
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "numpy>=2.2",
+    "pillow>=11",
+    "torch>=2.8",
+    "transformers>=4.56",
+    "onnxruntime-gpu>=1.22",
+    "faster-whisper>=1.2",
+    # CTranslate2 (faster-whisper) is built for CUDA 12; torch here is CUDA 13.
+    "nvidia-cublas-cu12>=12.9",
+    "nvidia-cudnn-cu12>=9.10",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true

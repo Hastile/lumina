@@ -132,6 +132,103 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
 }
 
 
+# Answered in this process from the source DB; no project or engine involved.
+_FILTERS = {
+    "work": {"type": "string", "description": "work name or alias"},
+    "character": {"type": "string"},
+    "media_kind": {"type": "string", "enum": ["video", "image"]},
+    "source_type": {"type": "string", "description": "trailer, pv, mv, gameplay, key_visual, illustration, fanart, "
+                                                     "sns_post, article, store_page, search_result, ..."},
+    "variant": {"type": "string", "enum": ["original", "copy", "official", "fan"]},
+    "min_seconds": {"type": "number", "description": "usable length after keeping edge_margin clear of each scene edge"},
+    "min_luma": {"type": "number", "description": "0..1; 0.15 drops near-black shots"},
+    "max_text_overlay": {"type": "number", "description": "0..1; 0.2 drops shots covered in lyric/title typography"},
+    "unused_only": {"type": "boolean"}, "used_only": {"type": "boolean"},
+}
+SOURCE_TOOLS: dict[str, tuple[str, dict]] = {
+    "source_search": (
+        "Find shots for a narration line in the source DB. One line per hit: #cut_id, work, span, source type, shot, "
+        "characters (? = unconfirmed), description, [dark/text/x(off-centre)/usedN]. Read lines, not pictures; look with "
+        "source_sheet only at the final candidates. Place a hit with its path and span (source_in = start).",
+        {"type": "object", "properties": {"text": {"type": "string", "description": "the narration line or keywords"},
+                                          **_FILTERS, "limit": {"type": "integer", "default": 8}}}),
+    "source_similar": (
+        "Shots that look like a given cut (image embedding).",
+        {"type": "object", "properties": {"cut_id": {"type": "integer"}, "limit": {"type": "integer", "default": 8}},
+         "required": ["cut_id"]}),
+    "source_cut": (
+        "Everything known about cuts: file path, span in seconds and ticks, every fact with its producer and status, "
+        "and where each was used.",
+        {"type": "object", "properties": {"cut_ids": {"type": "array", "items": {"type": "integer"}}},
+         "required": ["cut_ids"]}),
+    "source_sheet": (
+        "Look at candidate cuts: their keyframes on one numbered contact sheet (about 1.5k tokens for 12).",
+        {"type": "object", "properties": {"cut_ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 12}},
+         "required": ["cut_ids"]}),
+}
+
+
+def _source_call(name: str, args: dict) -> types.CallToolResult:
+    import base64
+    import tempfile
+    from pathlib import Path
+
+    from .sourcedb import db, query
+    from .sourcedb.describe import contact_sheet
+    from .sourcedb.ingest import thumb_path
+
+    con = db.connect(db.DEFAULT_DB_PATH)
+    try:
+        if name == "source_search":
+            f = query.Filters(**{k: v for k, v in args.items() if k in _FILTERS})
+            hits = query.search(con, args.get("text"), f, limit=int(args.get("limit", 8)))
+            text = "\n".join(h.line() for h in hits) or "(no hits)"
+        elif name == "source_similar":
+            hits = query.similar(con, int(args["cut_id"]), "siglip2-so400m-384", limit=int(args.get("limit", 8)))
+            text = "\n".join(f"{h.score:.2f} {h.line()}" for h in hits) or "(no embeddings)"
+        elif name == "source_cut":
+            out = []
+            for cid in args["cut_ids"]:
+                c = con.execute("SELECT c.*, m.kind, m.sha256 FROM cut c JOIN media m USING (media_id) WHERE cut_id = ?",
+                                (cid,)).fetchone()
+                if c is None:
+                    out.append({"cut_id": cid, "error": "no such cut"})
+                    continue
+                S = query.S
+                facts = con.execute(
+                    "SELECT f.kind, COALESCE(e.name, f.value) AS value, f.num, f.producer, f.status, f.t0_ticks, f.t1_ticks "
+                    "FROM fact f LEFT JOIN entity e ON e.entity_id = f.ref_id WHERE f.media_id = ? AND f.status != 'rejected' "
+                    "AND f.kind NOT IN ('wd_tag', 'rating')", (c["media_id"],)).fetchall()
+                used = con.execute("SELECT project, sequence, src_in_ticks, src_out_ticks, caption, scale, pos_x, pos_y "
+                                   "FROM usage WHERE media_id = ?", (c["media_id"],)).fetchall()
+                out.append({
+                    "cut_id": cid, "path": db.media_path(con, c["media_id"]), "kind": c["kind"],
+                    "start_s": c["start_ticks"] / S, "end_s": c["end_ticks"] / S,
+                    "start_ticks": c["start_ticks"], "end_ticks": c["end_ticks"],
+                    "facts": [{k: f[k] for k in ("kind", "value", "num", "producer", "status")} for f in facts
+                              if db._overlaps(f["t0_ticks"], f["t1_ticks"], c["start_ticks"], c["end_ticks"])],
+                    "used": [{"project": Path(u["project"]).stem, "sequence": u["sequence"], "caption": u["caption"],
+                              "src_s": [u["src_in_ticks"] / S, u["src_out_ticks"] / S], "scale": u["scale"],
+                              "pos": [u["pos_x"], u["pos_y"]]} for u in used
+                             if db._overlaps(u["src_in_ticks"], u["src_out_ticks"], c["start_ticks"], c["end_ticks"])],
+                })
+            text = json.dumps(out, ensure_ascii=False)
+        else:  # source_sheet
+            rows = [con.execute("SELECT c.keyframe_ticks, m.sha256 FROM cut c JOIN media m USING (media_id) WHERE cut_id = ?",
+                                (cid,)).fetchone() for cid in args["cut_ids"][:12]]
+            with tempfile.TemporaryDirectory() as tmp:
+                sheet = Path(tmp) / "sheet.jpg"
+                contact_sheet([thumb_path(r["sha256"], r["keyframe_ticks"]) for r in rows if r], sheet)
+                data = base64.b64encode(sheet.read_bytes()).decode("ascii")
+            legend = " ".join(f"{i + 1}=#{cid}" for i, cid in enumerate(args["cut_ids"][:12]))
+            return types.CallToolResult(content=[
+                types.ImageContent(type="image", data=data, mime_type="image/jpeg"),
+                types.TextContent(type="text", text=legend)])
+    finally:
+        con.close()
+    return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
+
+
 def tool_name(command: str) -> str:
     return command.replace(".", "_")
 
@@ -144,6 +241,8 @@ def build_tools() -> list[types.Tool]:
         desc = spec.description + ("" if spec.undoable else " (not undoable)")
         tools.append(types.Tool(name=tool_name(spec.name), description=desc, input_schema=spec.json_schema()))
     for name, (_, desc, schema, _) in EXTRA_TOOLS.items():
+        tools.append(types.Tool(name=name, description=desc, input_schema=schema))
+    for name, (desc, schema) in SOURCE_TOOLS.items():
         tools.append(types.Tool(name=name, description=desc, input_schema=schema))
     return tools
 
@@ -183,6 +282,8 @@ def make_server(engine) -> Server:
                 result = await anyio.to_thread.run_sync(
                     lambda: engine.dispatch("execute", {"name": by_tool[params.name], "params": args, "label": f"Agent: {params.name}"})
                 )
+            elif params.name in SOURCE_TOOLS:
+                return await anyio.to_thread.run_sync(lambda: _source_call(params.name, args))
             elif params.name in EXTRA_TOOLS:
                 method, _, _, mapper = EXTRA_TOOLS[params.name]
                 mapped = mapper(args) if mapper else args

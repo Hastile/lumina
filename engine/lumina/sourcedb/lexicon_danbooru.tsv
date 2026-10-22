@@ -1,0 +1,430 @@
+# danbooru tag -> the channel's word. kind empty = deliberately not mapped.
+1boy	subject	남성 1인	curated
+1girl	subject	여성 1인	curated
+2boys	subject	남성 2인	curated
+2girls	subject	여성 2인	curated
+3boys	subject	남성 3인	curated
+3girls	subject	여성 3인	curated
+4boys	subject	사람 네 명	model
+:3	subject	고양이 입	model
+:d			rejected
+:i	subject	삐죽 내민 입	model
+=_=			rejected
+>_<	action	눈 질끈 감기	model
+absurdres			rejected
+afro	subject	아프로	model
+alternate_universe			rejected
+android	subject	로봇	model
+anger_vein	subject	분노 힘줄 표시	model
+angry	mood	분노	curated
+animal	subject	동물	curated
+animal_costume	subject	동물 복장	model
+animal_ears	subject	동물귀	curated
+animal_hood	subject	동물 후드	curated
+anime_coloring	subject	애니메이션 색상	model
+apron	subject	앞치마	curated
+armor	subject	갑옷	curated
+artist_name			rejected
+ass	subject	엉덩이	model
+backlighting	condition	역광	curated
+backpack	subject	배낭	curated
+bad_id			rejected
+bad_link			rejected
+bag	subject	가방	curated
+bald	subject	머리 없음	model
+beach	setting	해변	curated
+bed	subject	침대	model
+bedroom	setting	침실	curated
+belt	subject	벨트	model
+bikini	subject	비키니	model
+bikini_top_only	subject	비키니 상의만 착용	model
+bird	subject	새	curated
+black_background	subject	검은 배경	model
+black_cape	subject	검은 케이프	model
+black_cloak	subject	검은 망토	model
+black_coat	subject	검은 코트	model
+black_eyes	subject	검은 눈	curated
+black_footwear	subject	검은 신발	model
+black_gloves	subject	검은 장갑	model
+black_hair	subject	검은 머리	curated
+black_jacket	subject	검은 재킷	model
+black_pants	subject	검은 바지	model
+black_pantyhose	subject	검정 팬티스타킹	model
+black_robe	subject	검은 로브	model
+black_shorts	subject	검은 반바지	model
+blonde_hair	subject	금발	curated
+blood	condition	유혈	curated
+blue_background			rejected
+blue_eyes	subject	파란 눈	curated
+blue_hair	subject	파란 머리	curated
+blue_sky	subject	파란 하늘	model
+blunt_bangs	subject	일자 앞머리	model
+blurry			rejected
+blurry_background	subject	흐린 배경	model
+blurry_foreground			rejected
+blush	mood	홍조	curated
+blush_stickers	mood	홍조	curated
+bodysuit	subject	복장	model
+book	subject	책	curated
+boots	subject	부츠	model
+border			rejected
+bow_(weapon)	subject	활	curated
+box	subject	상자	model
+braid	subject	땋은 머리	model
+breasts	subject	가슴	model
+bridge	setting	다리	curated
+briefcase	subject	가방	model
+brown_eyes	subject	갈색 눈	curated
+brown_footwear	subject	갈색 신발	model
+brown_hair	subject	갈색 머리	curated
+building	subject	건물	model
+candy	subject	캔디	model
+cane	subject	스틱	model
+cape	subject	망토	curated
+capelet	subject	짧은 망토	model
+car	subject	자동차	curated
+cardboard_box	subject	종이상자	model
+castle	setting	성	curated
+cat	subject	고양이	curated
+chair	subject	의자	model
+chibi	subject	치비	curated
+child	subject	아이	curated
+chinese_text	subject	중국어 글자	model
+chips_(food)	subject	치킨	model
+city	setting	도시	curated
+cityscape	setting	도시	curated
+classroom	setting	교실	curated
+cleavage	subject	가슴골	model
+clenched_teeth	action	이 악물기	model
+cloak	subject	망토	model
+close-up			rejected
+closed_eyes	mood	눈 감음	curated
+closed_mouth	action	입을 닫기	model
+clothes	subject	의류	model
+clothing_cutout	subject	옷 노출 구멍	model
+cloud			rejected
+cloudy_sky	condition	흐림	curated
+coat	subject	코트	curated
+collar	subject	목걸이	model
+comic	subject	만화	model
+commentary			rejected
+commentary_request			rejected
+computer	subject	컴퓨터	curated
+constricted_pupils	subject	작아진 동공	model
+controller	subject	컨트롤러	model
+copyright_name			rejected
+corpse	subject	시체	model
+cosplay	subject	코스프레	model
+cropped			rejected
+cross-laced_footwear	subject	십자 끈 신발	model
+crossed_arms	action	팔짱 끼기	model
+crowd	subject	인파	curated
+crown	subject	왕관	model
+crown_braid	subject	왕관 땋은 머리	model
+crying	mood	울음	curated
+cup	subject	컵	curated
+curtains	subject	커튼	model
+dark			rejected
+darkness	condition	어둠	curated
+dated			rejected
+day	time_of_day	낮	curated
+depth_of_field			rejected
+desk	subject	책상	model
+dog	subject	개	curated
+door			rejected
+dress	subject	드레스	curated
+dress_shirt	subject	정장 셔츠	model
+drill_hair	subject	드릴 머리	model
+drinking	action	마시기	curated
+drooling	mood	침 흘림	curated
+dusk	time_of_day	저녁	curated
+earrings	subject	귀걸이	model
+eating	action	먹기	curated
+elf	subject	엘프	model
+embarrassed	mood	당황	curated
+english_text	subject	영어 글자	model
+evening	time_of_day	저녁	curated
+explosion	condition	폭발	curated
+expressionless	mood	무표정	curated
+facial_hair	subject	얼굴 털	model
+facing_away	action	뒤돌아보기	model
+fake_screenshot			rejected
+feet			rejected
+field	setting	들판	curated
+fighting	action	전투	curated
+fire	condition	화재	curated
+flower	subject	꽃	curated
+flying	action	비행	curated
+fog	condition	안개	curated
+food	subject	음식	curated
+forest	setting	숲	curated
+formal	subject	정장	curated
+freckles			rejected
+frilled_collar	subject	프릴 옷깃	model
+frilled_dress	subject	프릴 드레스	model
+frills	subject	프릴	model
+from_above	subject	위에서	model
+from_behind			rejected
+from_below			rejected
+full_body			rejected
+fur-trimmed_capelet	subject	털 장식 케이플릿	model
+fur_trim	subject	모피 장식	model
+game_controller	subject	게임 컨트롤러	model
+gamepad	subject	게임패드	model
+glasses	subject	안경	curated
+gloves	subject	장갑	curated
+green_bodysuit	subject	녹색 상의	model
+green_eyes	subject	초록 눈	curated
+green_hair	subject	초록 머리	curated
+grey_hair	subject	회색 머리	model
+grin	mood	웃음	curated
+groin	subject	사타구니	model
+group	subject	군상	curated
+gun	subject	총	curated
+hair_flower	subject	머리 꽃	model
+hair_ornament	subject	머리 장식	curated
+hair_ribbon	subject	머리 리본	model
+hair_slicked_back	subject	올백 머리	model
+hairband	subject	머리 밴드	model
+halloween	subject	핼러윈	model
+halloween_costume	subject	할로윈 의상	model
+hallway	setting	복도	curated
+hamster	subject	햄스터	curated
+hat	subject	모자	curated
+head_back	action	머리 뒤로 돌리기	model
+head_out_of_frame			rejected
+helmet	subject	헬멧	model
+heterochromia	subject	오드아이	curated
+highleg	subject	하이레그	model
+highres			rejected
+holding	action	들고 있기	curated
+holding_book	action	책 들기	model
+holding_hands	action	손 잡기	model
+holding_sword	action	검 들기	curated
+holding_weapon	action	무기 들기	curated
+hood	subject	후드	curated
+hood_down	subject	hood 내리기	model
+hoodie	subject	후드티	model
+horns			rejected
+hug	action	껴안기	model
+hugging	action	포옹	curated
+indoors	setting	실내	curated
+jacket	subject	재킷	curated
+jewelry	subject	장신구	model
+jumping	action	점프	curated
+kimono	subject	기모노	curated
+kitchen	setting	주방	curated
+knee_boots	subject	무릎 부츠	model
+kneeling	action	무릎 꿇기	model
+knife	subject	칼	curated
+korean_text	subject	한국어 글자	model
+lace-up_boots	subject	끈 부츠	model
+large_breasts	subject	큰 가슴	model
+laughing	mood	웃음	curated
+leaning_forward	action	앞으로 기울기	model
+letterboxed			rejected
+letterboxed_frame			rejected
+library	setting	도서관	curated
+logo			rejected
+long_hair	subject	긴 머리	curated
+long_sleeves	subject	긴 소매	model
+looking_at_another	action	다른 사람을 바라보기	model
+looking_at_viewer	action	정면 응시	curated
+looking_back	action	돌아보기	curated
+looking_down	action	내려다보기	curated
+looking_up	action	올려다보기	curated
+lowres			rejected
+lying	action	눕기	curated
+maid	subject	메이드복	curated
+male_focus	subject	남자 주인공	model
+mask	subject	마스크	model
+mecha	subject	메카	curated
+meme			rejected
+messy_hair	subject	凌乱한 머리	model
+midriff	subject	드러난 허리	model
+military_uniform	subject	군복	curated
+mini_crown	subject	미니 왕관	model
+monochrome	condition	흑백	curated
+monster	subject	괴물	curated
+morning	time_of_day	아침	curated
+motor_vehicle	subject	자동차	model
+mountain	setting	산	curated
+multi-tied_hair	subject	여러 갈래로 묶은 머리	model
+multicolored_hair	subject	투톤 머리	curated
+multiple_boys	subject	여러 남성	curated
+multiple_girls	subject	여러 여성	curated
+navel	subject	배꼽	model
+necklace	subject	목걸이	model
+necktie	subject	넥타이	curated
+night	time_of_day	야간	curated
+no_humans	subject	인물 없음	curated
+ocean	setting	바다	curated
+office	setting	사무실	curated
+official_art			rejected
+official_style			rejected
+old			rejected
+old_man	subject	노인	model
+on_back	action	드러눕기	curated
+on_floor	action	바닥에 있기	curated
+one_eye_closed	action	한쪽 눈 감기	model
+open_door	subject	열린 문	model
+open_mouth	mood	입 벌림	curated
+orange_cape	subject	주황색 케이프	model
+orange_scarf	subject	주황색 목도리	model
+outdoors	setting	야외	curated
+pajamas	subject	잠옷	curated
+panties	subject	속옷	model
+pantyhose	subject	스타킹	model
+parody	use_case	패러디	curated
+parted_bangs	subject	갈라진 앞머리	model
+parted_lips	subject	벌어진 입술	model
+peeking_out	action	빼꼼 내다보기	model
+phone	subject	휴대폰	curated
+photoshop_(medium)			rejected
+pillar	subject	기둥	model
+pillow	subject	패드	model
+pink_gloves	subject	분홍 장갑	model
+pink_hair	subject	분홍 머리	curated
+playing_games	action	게임하기	curated
+playstation_controller	subject	플레이스테이션 컨트롤러	model
+pleated_skirt	subject	접이 스커트	model
+pointing	action	가리키기	curated
+pointy_ears	subject	뾰족귀	curated
+ponytail	subject	포니테일	curated
+portrait			rejected
+poster_(object)	subject	포스터	model
+pout	mood	삐침	curated
+pov			rejected
+power_lines	subject	전선	model
+purple_eyes	subject	보라 눈	curated
+purple_hair	subject	보라 머리	curated
+purple_ribbon	subject	보라색 리본	model
+railing			rejected
+rain	condition	우천	curated
+raining	condition	우천	curated
+reading	action	독서	curated
+red_capelet	subject	빨간 짧은 망토	model
+red_dress	subject	빨간 드레스	model
+red_eyes	subject	빨간 눈	curated
+red_hair	subject	빨간 머리	curated
+red_skirt	subject	빨간 스커트	model
+restaurant	setting	식당	curated
+revision			rejected
+ribbon	subject	리본	curated
+road	setting	도로	curated
+robot	subject	로봇	curated
+rolling_suitcase	subject	롤링 가방	model
+rooftop	setting	옥상	curated
+ruins	condition	폐허	curated
+running	action	달리기	curated
+sad	mood	슬픔	curated
+saliva	mood	침 흘림	curated
+scan			rejected
+scared	mood	공포	curated
+scarf	subject	목도리	model
+scene_reference			rejected
+scenery	subject	경관	model
+school	setting	학교	curated
+school_bag	subject	학교 가방	model
+school_uniform	subject	교복	curated
+serafuku	subject	세일러복	curated
+serious	mood	진지	curated
+shield	subject	방패	curated
+shirt	subject	셔츠	curated
+shop	setting	상점	curated
+short_hair	subject	단발	curated
+short_shorts	subject	짧은 반바지	model
+shorts	subject	반바지	model
+sidelocks	subject	옆머리	model
+signature			rejected
+silhouette	condition	실루엣	curated
+silver_hair	subject	은발	curated
+simple_background			rejected
+single_boot	subject	부츠 한 짝	model
+single_braid	subject	외갈래 땋은 머리	model
+sitting	action	앉기	curated
+skirt	subject	치마	curated
+skull	subject	해골	model
+sky	setting	하늘	curated
+sleeping	action	잠자기	curated
+sleepy	mood	졸림	curated
+smile	mood	미소	curated
+smoke	condition	연기	curated
+smug	mood	의기양양	curated
+snow	condition	설경	curated
+snowing	condition	설경	curated
+solo	subject	단독 인물	curated
+solo_focus			rejected
+sparkle	action	반짝이기	model
+spider	subject	거미	curated
+staff	subject	지팡이	curated
+stairs	setting	계단	curated
+standing	action	서기	curated
+star_(symbol)	subject	별 모양	model
+starry_sky	condition	별하늘	curated
+stomach			rejected
+straight_hair	subject	생머리	model
+street	setting	거리	curated
+striped_clothes	subject	줄무늬 옷	model
+striped_pantyhose	subject	줄무늬 팬티스타킹	model
+stuffed_animal	subject	인형	curated
+stuffed_toy	subject	인형	curated
+subtitled			rejected
+suit	subject	정장	curated
+sunlight	condition	햇빛	curated
+sunrise	time_of_day	아침	curated
+sunset	time_of_day	저녁	curated
+surprised	mood	놀람	curated
+sweat			rejected
+sweatdrop	mood	진땀	curated
+swimsuit	subject	수영복	curated
+sword	subject	검	curated
+table	subject	테이블	model
+tail	subject	꼬리	model
+talking	action	대화	curated
+tearing_up	action	눈물 맺히기	model
+tears	mood	눈물	curated
+teeth	subject	치아	model
+text_focus			rejected
+thighhighs	subject	종아리 위로 오르는 양말	model
+title	subject	제목 글자	model
+torn_clothes	subject	찢어진 옷	model
+train	subject	기차	curated
+train_interior	setting	열차 내부	curated
+translated			rejected
+translation_request			rejected
+twilight	time_of_day	저녁	curated
+twin_drills	subject	양갈래 드릴 머리	model
+twintails	subject	트윈테일	curated
+two-tone_cape	subject	두 색 케이프	model
+umbrella	subject	우산	curated
+underwear	subject	속옷	model
+upper_body	subject	상반신	model
+upper_teeth_only	subject	윗니만 보임	model
+upside-down			rejected
+utility_pole	subject	전봇대	model
+vehicle_focus	subject	차량에 집중	model
+very_long_hair	subject	긴 머리	model
+vest	subject	조끼	model
+virtual_youtuber	subject	버추얼 유튜버	model
+walking	action	걷기	curated
+watermark			rejected
+waving	action	손 흔들기	curated
+weapon	subject	무기	curated
+web_address			rejected
+wheelchair	subject	휠체어	model
+white_capelet	subject	흰 짧은 망토	model
+white_dress	subject	흰색 원피스	model
+white_flower	subject	흰 꽃	model
+white_gloves	subject	화이트 글러브	model
+white_hair	subject	흰 머리	curated
+white_shirt	subject	흰 셔츠	model
+wide-eyed	subject	크게 뜬 눈	model
+wide_shot			rejected
+window	setting	창가	curated
+witch_hat	subject	마녀 모자	curated
+wooden_floor	subject	나무 바닥	model
+x_hair_ornament	subject	X자 머리 장식	model
+yellow_cape	subject	노란 갑옷	model
+yellow_eyes	subject	노란 눈	curated
+zettai_ryouiki			rejected
