@@ -122,3 +122,82 @@ def test_without_a_player_the_recording_keeps_its_name(channel):
     rec = Recorder(tmp / "s.db", run_analyzers=False, log=lambda *_: None)
     rec.file(clip, Take(time.monotonic(), None, None))
     assert (folder / "2026-10-22 21-00-00.mp4").exists()
+
+
+def test_plans_read_like_the_channel_writes_times():
+    clips = recorder.parse_plan("""
+# 고죠 컷들
+folder: D:/유튜브 채널/Project/주술회전/고죠 사토루
+S2 E16 09:20-09:45 고죠 등장
+S2 E16 0931-0940
+E04 1:02:03-1:02:10 https://example.test/ep4#player 마지막
+12:00 - 12:05
+""")
+    assert [(c.episode, c.start, c.end) for c in clips] == [
+        ("S2 E16", 560, 585), ("S2 E16", 571, 580), ("E04", 3723, 3730), (None, 720, 725)]
+    assert clips[0].note == "고죠 등장" and str(clips[0].folder).endswith("고죠 사토루")
+    assert clips[2].url == "https://example.test/ep4#player" and clips[2].note == "마지막"
+    with pytest.raises(ValueError):
+        recorder.parse_plan("S2 E16 09:45-09:20")
+
+
+class FakePlayer:
+    """The extension and a video, in one thread: reports every 20 ms, obeys
+    the commands in the answers, and keeps time while playing."""
+
+    def __init__(self, board, title, url="https://example.test/16"):
+        import threading
+        self.board, self.title, self.url = board, title, url
+        self.t, self.playing, self.stop = 0.0, False, threading.Event()
+        threading.Thread(target=self.loop, daemon=True).start()
+
+    def loop(self):
+        last = time.monotonic()
+        while not self.stop.is_set():
+            now = time.monotonic()
+            if self.playing:
+                self.t += now - last
+            last = now
+            cmd = self.board.report(Playback("9:0", self.title, self.url, self.t, 1400, not self.playing))
+            for k, v in (cmd or {}).items():
+                if k == "seek":
+                    self.t = v
+                elif k == "play":
+                    self.playing = True
+                elif k == "pause":
+                    self.playing = False
+                elif k == "navigate":
+                    self.url, self.title = v, "JUJUTSU KAISEN Season 2 - Episode 17 | Site"
+            time.sleep(0.02)
+
+
+class FakeObs:
+    def __init__(self, rec, player):
+        self.rec, self.player, self.log = rec, player, []
+
+    def request(self, kind):
+        self.log.append((kind, round(self.player.t, 2)))
+        state = "OBS_WEBSOCKET_OUTPUT_STARTED" if kind == "StartRecord" else "OBS_WEBSOCKET_OUTPUT_STOPPED"
+        self.rec.on_record(state, "C:/fake.mp4" if kind == "StopRecord" else None)
+        return {}
+
+
+def test_a_plan_seeks_plays_and_records_each_clip(monkeypatch):
+    monkeypatch.setattr(recorder, "PREROLL", 0.3)
+    rec = Recorder(run_analyzers=False, log=lambda *_: None)
+    player = FakePlayer(rec.board, "JUJUTSU KAISEN Season 2 - Episode 16 | Site - Chrome")
+    obs = FakeObs(rec, player)
+    try:
+        ok = recorder.PlanRunner(rec, obs, log=lambda *_: None, poll=0.02).run(
+            [recorder.Clip("S2 E16", 571.0, 571.5), recorder.Clip("S2 E17", 10.0, 10.4, url="https://example.test/17")])
+    finally:
+        player.stop.set()
+    assert ok == [True, True]
+    (s1, t1), (e1, u1), (s2, t2), (e2, u2) = obs.log
+    assert (s1, e1, s2, e2) == ("StartRecord", "StopRecord", "StartRecord", "StopRecord")
+    assert 570.6 <= t1 <= 571.0 and u1 >= 571.7          # starts just before, stops just after the end
+    assert 9.6 <= t2 <= 10.0 and u2 >= 10.6
+    assert player.url.endswith("/17")                      # it opened the second episode itself
+    path, take = rec.jobs.get_nowait()
+    assert take.playback.title.startswith("JUJUTSU KAISEN Season 2 - Episode 16")
+    assert abs(take.player_at_start - t1) < 0.2

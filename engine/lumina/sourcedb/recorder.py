@@ -8,8 +8,9 @@ moved into the chosen project folder, named the way the channel names clips
 ("S2 E16 0931 첫 대사.mp4"), and ingested with its episode and source time.
 No AI tokens are spent.
 
-    python -m lumina.sourcedb.recorder [--folder <project folder>]
-    python -m lumina.sourcedb.recorder folder <project folder>   # change it while running
+    python -m lumina.sourcedb.recorder [--folder <project folder>]   # file what you record by hand
+    python -m lumina.sourcedb.recorder plan clips.txt [--folder ...]  # record a list of clips by itself
+    python -m lumina.sourcedb.recorder folder <project folder>        # change the folder while running
 """
 
 from __future__ import annotations
@@ -115,6 +116,7 @@ class Playback:
     current: float
     duration: float
     paused: bool
+    seeking: bool = False
     received: float = field(default_factory=time.monotonic)
 
     def now(self) -> float:
@@ -123,13 +125,22 @@ class Playback:
 
 
 class PlaybackBoard:
+    """The latest report of every playing frame, and the commands waiting to
+    be handed to a frame in the answer to its next report."""
+
     def __init__(self):
         self._lock = threading.Lock()
         self._tabs: dict[str, Playback] = {}
+        self._commands: dict[str, dict] = {}
 
-    def report(self, p: Playback) -> None:
+    def report(self, p: Playback) -> Optional[dict]:
         with self._lock:
             self._tabs[p.tab] = p
+            return self._commands.pop(p.tab, None)
+
+    def send(self, tab: str, **cmd) -> None:
+        with self._lock:
+            self._commands.setdefault(tab, {}).update(cmd)
 
     def current(self) -> Optional[Playback]:
         """The video playing now: freshest report, playing over paused."""
@@ -139,18 +150,34 @@ class PlaybackBoard:
             return None
         return max(fresh, key=lambda p: (not p.paused, p.received))
 
+    def get(self, tab: str) -> Optional[Playback]:
+        with self._lock:
+            p = self._tabs.get(tab)
+        return p if p and time.monotonic() - p.received < FRESH_SECONDS else None
+
 
 def serve_board(board: PlaybackBoard, port: int = PORT) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):  # noqa: N802 - http.server API
             try:
                 d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))))
-                board.report(Playback(str(d["tab"]), d.get("title") or "", d.get("url") or "",
-                                      float(d["currentTime"]), float(d.get("duration") or 0), bool(d.get("paused"))))
-                self.send_response(204)
+                cmd = board.report(Playback(str(d["tab"]), d.get("title") or "", d.get("url") or "",
+                                            float(d["currentTime"]), float(d.get("duration") or 0),
+                                            bool(d.get("paused")), bool(d.get("seeking"))))
             except (ValueError, KeyError, TypeError):
                 self.send_response(400)
-            self.end_headers()
+                self.end_headers()
+                return
+            if cmd:
+                body = json.dumps(cmd).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            else:
+                self.send_response(204)
+                self.end_headers()
 
         def log_message(self, *a):
             pass
@@ -169,34 +196,65 @@ def obs_auth(password: str, salt: str, challenge: str) -> str:
     return base64.b64encode(hashlib.sha256((secret + challenge).encode()).digest()).decode()
 
 
-def obs_record_events(on_event: Callable[[str, Optional[str]], None], *, stop: threading.Event) -> None:
-    """Call on_event(state, output_path) for every RecordStateChanged, and
-    reconnect whenever OBS is closed and opened again."""
-    from websockets.sync.client import connect
+class ObsClient:
+    """Record-state events in, StartRecord / StopRecord out. Reconnects
+    whenever OBS is closed and opened again."""
 
-    while not stop.is_set():
-        try:
-            cfg = json.loads(OBS_CONFIG.read_text(encoding="utf-8"))
-            with connect(f"ws://127.0.0.1:{cfg.get('server_port', 4455)}", open_timeout=3) as ws:
-                hello = json.loads(ws.recv())["d"]
-                ident = {"rpcVersion": 1, "eventSubscriptions": 1 << 6}  # Outputs
-                if "authentication" in hello:
-                    a = hello["authentication"]
-                    ident["authentication"] = obs_auth(cfg.get("server_password", ""), a["salt"], a["challenge"])
-                ws.send(json.dumps({"op": 1, "d": ident}))
-                print("OBS connected")
-                while not stop.is_set():
-                    try:
-                        msg = json.loads(ws.recv(timeout=1))
-                    except TimeoutError:
-                        continue
-                    if msg.get("op") == 5 and msg["d"].get("eventType") == "RecordStateChanged":
-                        e = msg["d"].get("eventData", {})
-                        on_event(e.get("outputState", ""), e.get("outputPath"))
-        except Exception as e:  # OBS closed, not started yet, or restarted
-            if not stop.is_set():
-                print(f"OBS not reachable ({type(e).__name__}); retrying")
-                stop.wait(5)
+    def __init__(self, on_record: Callable[[str, Optional[str]], None], log=print):
+        self.on_record, self.log = on_record, log
+        self._ws = None
+        self._send_lock = threading.Lock()
+        self._pending: dict[str, "queue.Queue[dict]"] = {}
+        self.connected = threading.Event()
+
+    def run(self, stop: threading.Event) -> None:
+        from websockets.sync.client import connect
+
+        while not stop.is_set():
+            try:
+                cfg = json.loads(OBS_CONFIG.read_text(encoding="utf-8"))
+                with connect(f"ws://127.0.0.1:{cfg.get('server_port', 4455)}", open_timeout=3) as ws:
+                    hello = json.loads(ws.recv())["d"]
+                    ident = {"rpcVersion": 1, "eventSubscriptions": 1 << 6}  # Outputs
+                    if "authentication" in hello:
+                        a = hello["authentication"]
+                        ident["authentication"] = obs_auth(cfg.get("server_password", ""), a["salt"], a["challenge"])
+                    ws.send(json.dumps({"op": 1, "d": ident}))
+                    self._ws = ws
+                    while not stop.is_set():
+                        try:
+                            msg = json.loads(ws.recv(timeout=1))
+                        except TimeoutError:
+                            continue
+                        op, d = msg.get("op"), msg.get("d", {})
+                        if op == 2:
+                            self.connected.set()
+                            self.log("OBS connected")
+                        elif op == 5 and d.get("eventType") == "RecordStateChanged":
+                            e = d.get("eventData", {})
+                            self.on_record(e.get("outputState", ""), e.get("outputPath"))
+                        elif op == 7 and d.get("requestId") in self._pending:
+                            self._pending.pop(d["requestId"]).put(d)
+            except Exception as e:  # OBS closed, not started yet, or restarted
+                self.connected.clear()
+                self._ws = None
+                if not stop.is_set():
+                    self.log(f"OBS not reachable ({type(e).__name__}); retrying")
+                    stop.wait(5)
+
+    def request(self, kind: str, timeout: float = 10) -> dict:
+        if not self.connected.wait(timeout):
+            raise ConnectionError("OBS is not connected")
+        rid = f"{kind}-{time.monotonic_ns()}"
+        box: "queue.Queue[dict]" = queue.Queue()
+        self._pending[rid] = box
+        with self._send_lock:
+            self._ws.send(json.dumps({"op": 6, "d": {"requestType": kind, "requestId": rid}}))
+        d = box.get(timeout=timeout)
+        status = d.get("requestStatus", {})
+        if not status.get("result"):
+            raise RuntimeError(f"OBS {kind}: {status.get('comment') or status.get('code')}")
+        return d.get("responseData") or {}
 
 
 # ---------------------------------------------------------------------------
@@ -255,6 +313,7 @@ class Recorder:
         self.board = PlaybackBoard()
         self.take: Optional[Take] = None
         self.jobs: "queue.Queue[tuple[Path, Take]]" = queue.Queue()
+        self.busy = False
 
     # OBS event
     def on_record(self, state: str, path: Optional[str]) -> None:
@@ -274,10 +333,13 @@ class Recorder:
                 path, take = self.jobs.get(timeout=1)
             except queue.Empty:
                 continue
+            self.busy = True
             try:
                 self.file(path, take)
             except Exception as e:
                 self.log(f"  FAILED {path.name}: {type(e).__name__}: {e}")
+            finally:
+                self.busy = False
 
     # one finished recording
     def file(self, path: Path, take: Take) -> Optional[int]:
@@ -379,10 +441,160 @@ def ingest_refresh_title(con, media_id: int, path: Path) -> None:
     db.put_facts(con, media_id, ingest.FILENAME_V, ingest.filename_facts(con, path, root or path.parent, work))
 
 
+# ---------------------------------------------------------------------------
+# recording a list of clips
+# ---------------------------------------------------------------------------
+
+PREROLL = 1.0       # seconds played before the clip, so the player is running when recording starts
+START_LEAD = 0.3    # recording starts this early; the clip's source_time records the true start
+POSTROLL = 0.3
+STALL_LIMIT = 20.0  # seconds without the clock moving (buffering, an ad) before a clip is given up
+PAGE_WAIT = 600.0   # how long to wait for the right episode page to be opened
+
+_TIME = r"(?:\d{1,2}:)?\d{1,2}:\d{2}(?:\.\d+)?|\d{4}(?:\d{2})?"
+
+
+@dataclass
+class Clip:
+    episode: Optional[str]
+    start: float
+    end: float
+    note: str = ""
+    url: Optional[str] = None
+    folder: Optional[Path] = None
+
+
+def parse_time(t: str) -> float:
+    """'09:20', '1:02:03', '0920' (mmss) or '010203' (hhmmss) -> seconds."""
+    if ":" in t:
+        parts = [float(x) for x in t.split(":")]
+    else:
+        parts = [int(t[i:i + 2]) for i in range(0, len(t), 2)]
+    return float(sum(p * 60 ** (len(parts) - 1 - i) for i, p in enumerate(parts)))
+
+
+def parse_plan(text: str) -> list[Clip]:
+    """One clip per line: '[episode] start-end [url] [note]'. A line
+    'folder: <path>' sends the clips after it to that project folder; a line
+    starting with '#' is a comment. The episode is optional (then: whatever page is open)."""
+    clips, folder = [], None
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("folder:"):
+            folder = Path(line.split(":", 1)[1].strip().strip('"'))
+            continue
+        m = re.search(rf"(?P<a>{_TIME})\s*[-~–]\s*(?P<b>{_TIME})", line)
+        if not m:
+            raise ValueError(f"no start-end time in: {raw}")
+        ep = ingest.episode_of(line[:m.start()])
+        rest = line[m.end():].strip()
+        url = None
+        um = re.search(r"https?://\S+", rest)
+        if um:
+            url, rest = um.group(), (rest[:um.start()] + rest[um.end():]).strip()
+        start, end = parse_time(m["a"]), parse_time(m["b"])
+        if end <= start:
+            raise ValueError(f"end before start in: {raw}")
+        clips.append(Clip(ep[0] if ep else None, start, end, rest, url, folder))
+    return clips
+
+
+class PlanRunner:
+    """Seek, play, record, stop - for each clip of a plan, on the player the
+    Chrome extension reports. OBS events go to the Recorder as usual, so
+    every clip is filed and ingested the same way as a hand-made recording."""
+
+    def __init__(self, rec: "Recorder", obs, log=print, poll: float = 0.1):
+        self.rec, self.obs, self.log, self.poll = rec, obs, log, poll
+
+    def _wait(self, cond: Callable[[], bool], timeout: float) -> bool:
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if cond():
+                return True
+            time.sleep(self.poll)
+        return False
+
+    def _page_for(self, clip: Clip) -> Optional[Playback]:
+        def right() -> Optional[Playback]:
+            p = self.rec.board.current()
+            if p is None:
+                return None
+            if clip.episode is None:
+                return p
+            ep = ingest.episode_of(clean_title(p.title))
+            return p if ep and ep[0] == clip.episode else None
+
+        if right() is None and clip.url:
+            p = self.rec.board.current()
+            if p is not None:
+                self.rec.board.send(p.tab, navigate=clip.url)
+            self.log(f"opening {clip.url}")
+        elif right() is None:
+            self.log(f"open the page of {clip.episode} in Chrome")
+        found: list[Playback] = []
+        self._wait(lambda: bool(found.append(right()) or found[-1]), PAGE_WAIT if not clip.url else 60)
+        return found[-1] if found else None
+
+    def record(self, clip: Clip) -> bool:
+        board = self.rec.board
+        p = self._page_for(clip)
+        if p is None:
+            self.log(f"  skipped {clip.episode} {clip.start:.0f}s: the page never opened")
+            return False
+        tab = p.tab
+        board.send(tab, seek=max(0.0, clip.start - PREROLL), pause=True)
+        at = lambda: board.get(tab)  # noqa: E731
+        if not self._wait(lambda: (q := at()) is not None and not q.seeking
+                          and abs(q.current - max(0.0, clip.start - PREROLL)) < 1.0, 20):
+            self.log("  skipped: the player did not seek")
+            return False
+        board.send(tab, play=True)
+        if not self._progress(tab, clip.start - START_LEAD):
+            board.send(tab, pause=True)
+            self.log("  skipped: the player did not start")
+            return False
+        if clip.folder:
+            set_target_folder(clip.folder)
+        self.obs.request("StartRecord")
+        ok = self._progress(tab, clip.end + POSTROLL)
+        self.obs.request("StopRecord")
+        board.send(tab, pause=True)
+        if not ok:
+            self.log(f"  stalled before {clip.end:.1f}s; the recording is kept as it is")
+        self._wait(lambda: self.rec.take is None, 15)  # the stop event has filed it
+        return ok
+
+    def _progress(self, tab: str, target: float) -> bool:
+        """Wait for the player's clock to reach target, giving up when it
+        stops moving for STALL_LIMIT seconds."""
+        last, moved = None, time.monotonic()
+        while True:
+            q = self.rec.board.get(tab)
+            if q is not None:
+                if q.now() >= target:
+                    return True
+                if last is None or q.current > last + 0.01:
+                    last, moved = q.current, time.monotonic()
+            if time.monotonic() - moved > STALL_LIMIT:
+                return False
+            time.sleep(self.poll)
+
+    def run(self, clips: list[Clip]) -> list[bool]:
+        results = []
+        for i, c in enumerate(clips, 1):
+            self.log(f"[{i}/{len(clips)}] {c.episode or '(open page)'} {c.start:.1f}-{c.end:.1f}s {c.note}")
+            results.append(self.record(c))
+        return results
+
+
+
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="python -m lumina.sourcedb.recorder")
-    ap.add_argument("cmd", nargs="?", choices=["run", "folder"], default="run")
-    ap.add_argument("path", nargs="?")
+    ap.add_argument("cmd", nargs="?", choices=["run", "folder", "plan"], default="run")
+    ap.add_argument("path", nargs="?", help="folder: the project folder; plan: the list of clips")
     ap.add_argument("--folder", help="project folder recordings go to")
     ap.add_argument("--no-analyzers", action="store_true", help="skip tagger, speech and embeddings")
     a = ap.parse_args(argv)
@@ -395,13 +607,26 @@ def main(argv=None) -> None:
         return
     if a.folder:
         set_target_folder(Path(a.folder))
+    clips = parse_plan(Path(a.path).read_text(encoding="utf-8")) if a.cmd == "plan" else None
     rec = Recorder(run_analyzers=not a.no_analyzers)
     stop = threading.Event()
     serve_board(rec.board)
-    threading.Thread(target=rec.work_forever, args=(stop,), daemon=True).start()
+    obs = ObsClient(rec.on_record)
+    threading.Thread(target=obs.run, args=(stop,), daemon=True).start()
+    worker = threading.Thread(target=rec.work_forever, args=(stop,), daemon=True)
+    worker.start()
     print(f"listening for the player on 127.0.0.1:{PORT}; recordings go to {target_folder() or 'the OBS folder'}")
     try:
-        obs_record_events(rec.on_record, stop=stop)
+        if clips is None:
+            stop.wait()
+        else:
+            if not obs.connected.wait(30):
+                raise SystemExit("OBS is not running or obs-websocket is off")
+            results = PlanRunner(rec, obs).run(clips)
+            print(f"recorded {sum(results)}/{len(results)} clips; filing the rest")
+            while not rec.jobs.empty() or rec.busy:
+                time.sleep(1)
+            stop.set()
     except KeyboardInterrupt:
         stop.set()
 
