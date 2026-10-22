@@ -34,7 +34,7 @@ KINDS: tuple[tuple[str, str, int, str], ...] = (
     ("person", "ref", 1, "a real person: voice actor, developer, streamer"),
     ("org", "ref", 1, "a company, studio, publisher or channel"),
     # where it came from
-    ("source_type", "text", 1, "trailer, pv, mv, gameplay, key_visual, illustration, fanart, "
+    ("source_type", "text", 1, "episode (a scene of a TV episode), film, trailer, pv, mv, gameplay, key_visual, illustration, fanart, "
                                "design_sheet, screenshot, sns_post, article, store_page, "
                                "search_result, recording, meme, logo"),
     ("variant", "text", 1, "original, copy (an imitation), official, fan"),
@@ -42,6 +42,7 @@ KINDS: tuple[tuple[str, str, int, str], ...] = (
     ("credit", "text", 1, "author or account that made or posted it"),
     ("origin_url", "text", 0, "where it was fetched from"),
     ("episode", "text", 1, "episode, chapter or arc"),
+    ("source_time", "num", 0, "seconds into the episode or original video where this clip starts"),
     # what is on screen
     ("description", "text", 1, "one line on what happens in the shot"),
     ("shot", "text", 1, "extreme_close, close, medium, wide, insert, ui"),

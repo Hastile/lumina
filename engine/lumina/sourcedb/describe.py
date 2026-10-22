@@ -38,7 +38,7 @@ COLS = 4
 CELL = (384, 288)
 
 SHOTS = ["extreme_close", "close", "medium", "wide", "insert", "ui", "text", "collage"]
-SOURCE_TYPES = ["trailer", "pv", "mv", "gameplay", "key_visual", "illustration", "fanart", "design_sheet",
+SOURCE_TYPES = ["episode", "film", "trailer", "pv", "mv", "gameplay", "key_visual", "illustration", "fanart", "design_sheet",
                 "screenshot", "sns_post", "article", "store_page", "search_result", "recording", "meme", "logo"]
 
 NAME = {

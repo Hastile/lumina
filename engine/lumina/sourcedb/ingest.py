@@ -39,7 +39,7 @@ SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews"
 
 PROBE_V = "probe@2"
 CUTS_V = "cuts@2"
-FILENAME_V = "filename@2"
+FILENAME_V = "filename@3"
 
 SCENE_THRESHOLD = 0.3
 MIN_CUT_SECONDS = 0.25  # a shorter "shot" is a flash or a detector stutter
@@ -281,7 +281,10 @@ def ingest_many(con, roots: list[Path], *, workers: int = 6, log=print) -> dict:
             st = path.stat()
             row = con.execute("SELECT size, mtime_ms FROM media_file WHERE path = ?", (str(path.resolve()),)).fetchone()
             unchanged = row and row["size"] == st.st_size and row["mtime_ms"] == int(st.st_mtime * 1000)
-            if unchanged and db.job_version(con, mid, "cuts") == CUTS_V and db.job_version(con, mid, "filename") == FILENAME_V:
+            if unchanged and db.job_version(con, mid, "cuts") == CUTS_V:
+                if db.job_version(con, mid, "filename") != FILENAME_V:  # cheap: no need to re-analyse
+                    db.put_facts(con, mid, FILENAME_V, filename_facts(con, path, root, folder_work[root]))
+                    db.job_done(con, mid, "filename", FILENAME_V)
                 continue
             jobs.append((path, kind))
     con.commit()
@@ -328,6 +331,42 @@ def ingest_many(con, roots: list[Path], *, workers: int = 6, log=print) -> dict:
 _YTDLP = re.compile(r"^\[(?P<uploader>[^\]]+)\]\s*(?P<title>.+?)\s*\((?P<id>[A-Za-z0-9_-]{11})\)$")
 
 
+_FULLWIDTH = str.maketrans("０１２３４５６７８９", "0123456789")
+_EP_PATTERNS = (
+    # S2 E04 0931 저 구름 고기만두  /  S1 E3 3253 ...
+    re.compile(r"(?i)\bS(?P<s>\d{1,2})\s*E(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?"),
+    # E01 0005 청산싫어  /  EP1 001256 재의 왕을 ...
+    re.compile(r"(?i)(?<![A-Za-z])EP?\.?\s*(?P<e>\d{1,3})(?:\s+(?P<t>\d{4}|\d{6})\b)?(?![A-Za-z])"),
+    # 리제로 4기 11화 고점  /  4기 8화 레이드  /  3화
+    re.compile(r"(?:(?P<s>\d{1,2})\s*기\s*)?(?P<e>\d{1,3})\s*화(?![가-힣])"),
+    # 第1話  /  第４話
+    re.compile(r"第\s*(?P<e>\d{1,3})\s*話"),
+)
+
+
+def episode_of(name: str) -> Optional[tuple[str, Optional[int]]]:
+    """('S2 E04', seconds into the episode) from the channel's clip names,
+    or None. The time is the 4-digit mmss or 6-digit hhmmss after the
+    episode: where the clip was cut from, to find the moment again."""
+    name = name.translate(_FULLWIDTH)
+    for pat in _EP_PATTERNS:
+        m = pat.search(name)
+        if not m:
+            continue
+        d = m.groupdict()
+        e = int(d["e"])
+        if e == 0:
+            continue
+        label = (f"S{int(d['s'])} " if d.get("s") else "") + f"E{e:02d}"
+        t, seconds = d.get("t"), None
+        if t:
+            parts = [int(t[i:i + 2]) for i in range(0, len(t), 2)]
+            if all(p < 60 for p in parts[1:]):
+                seconds = sum(p * 60 ** (len(parts) - 1 - i) for i, p in enumerate(parts))
+        return label, seconds
+    return None
+
+
 def filename_facts(con, path: Path, root: Path, folder_work: Optional[int]) -> list[dict]:
     rows = []
     m = _YTDLP.match(path.stem)
@@ -339,6 +378,12 @@ def filename_facts(con, path: Path, root: Path, folder_work: Optional[int]) -> l
         ]
     elif not re.fullmatch(r"[A-Za-z0-9_-]{8,}", path.stem):  # a human-written name, not a hash
         rows.append({"kind": "title", "value": path.stem, "status": "accepted", "basis": "file name"})
+    folders = path.relative_to(root).parts[:-1] if path.is_relative_to(root) else ()
+    ep = episode_of(path.stem) or next((e for e in map(episode_of, reversed(folders)) if e), None)
+    if ep:
+        rows.append({"kind": "episode", "value": ep[0], "status": "accepted", "basis": "file name"})
+        if ep[1] is not None:
+            rows.append({"kind": "source_time", "num": ep[1], "status": "accepted", "basis": "file name"})
     if folder_work is not None:
         rows.append({"kind": "work", "ref_id": folder_work, "status": "proposed", "basis": "project folder"})
         # A subfolder named after one of the work's characters (봇치 더 록/키타
