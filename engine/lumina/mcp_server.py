@@ -273,6 +273,8 @@ def build_tools() -> list[types.Tool]:
         tools.append(types.Tool(name=name, description=desc, input_schema=schema))
     for name, (desc, schema) in SOURCE_TOOLS.items():
         tools.append(types.Tool(name=name, description=desc, input_schema=schema))
+    from .frame_strip import TOOL as STRIP
+    tools.append(types.Tool(name="get_frame_strip", description=STRIP[0], input_schema=STRIP[1]))
     return tools
 
 
@@ -311,6 +313,9 @@ def make_server(engine) -> Server:
                 result = await anyio.to_thread.run_sync(
                     lambda: engine.dispatch("execute", {"name": by_tool[params.name], "params": args, "label": f"Agent: {params.name}"})
                 )
+            elif params.name == "get_frame_strip":
+                from .frame_strip import result as strip_result
+                return await anyio.to_thread.run_sync(lambda: strip_result(engine, args))
             elif params.name in SOURCE_TOOLS:
                 return await anyio.to_thread.run_sync(lambda: _source_call(params.name, args))
             elif params.name in EXTRA_TOOLS:
