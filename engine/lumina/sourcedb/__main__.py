@@ -66,7 +66,8 @@ def main(argv=None) -> None:
 
     if a.cmd == "intake":
         intake.intake(Path(a.folder), a.files, source=Path(a.source), db_path=a.db, dry_run=a.dry_run,
-                      describe_cuts=not a.no_describe, max_cost=a.max_cost)
+                      describe_cuts=not a.no_describe, max_cost=a.max_cost,
+                      log=lambda s: print(s, flush=True))  # runs for minutes, often into a log file
         return
     con = db.connect(a.db)
     if a.cmd == "ingest":
