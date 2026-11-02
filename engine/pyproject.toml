@@ -11,6 +11,10 @@ dependencies = [
     "numpy>=2.5.4",
 ]
 
+[project.optional-dependencies]
+auto = ["anthropic>=2.0"]          # lumina auto: shot descriptions and edit planning with Claude
+transcribe = ["faster-whisper>=1.0"]  # local speech-to-text for library transcripts
+
 [project.scripts]
 lumina = "lumina.cli:main"
 

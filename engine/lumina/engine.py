@@ -83,6 +83,13 @@ class Engine:
             "analysis.detect": self._analysis_detect,
             "analysis.plan_cuts": self._analysis_plan_cuts,
             "analysis.plan_scene_cuts": self._analysis_plan_scene,
+            "library.index": self._library_index,
+            "library.search": self._library_search,
+            "library.overview": self._library_overview,
+            "library.annotate": lambda p: self._lib().annotate(p["root"], p.get("notes") or []),
+            "library.contact_sheet": lambda p: self._lib().contact_sheet(p["root"], p.get("file"), p.get("shot_ids"),
+                                                                          int(p.get("columns", 6)), p.get("path")),
+            "edit.build": self._edit_build,
         }
 
     # ------------------------------------------------------------ dispatch
@@ -226,6 +233,34 @@ class Engine:
             plan["applied"] = self.session.execute("sequence.remove_ranges", {"sequence_id": p.get("sequence_id"), "ranges": plan["ranges"],
                                                                                "ripple": p.get("ripple", True)}, label)["result"]
         return plan
+
+    # ------------------------------------------------------------ source library / automatic edits
+
+    @staticmethod
+    def _lib():
+        from . import library
+
+        return library
+
+    def _library_index(self, p: dict) -> dict:
+        keys = ("force", "whisper_model", "language", "scene_threshold", "min_shot", "silence_db")
+        opts = {k: p[k] for k in keys if p.get(k) is not None}
+        return self._lib().index(p["root"], transcribe_mode=p.get("transcribe", "auto"), **opts)
+
+    def _library_search(self, p: dict) -> dict:
+        return self._lib().search(p["root"], p.get("query", ""), kind=p.get("kind"), min_duration=float(p.get("min_duration", 0)),
+                                  limit=int(p.get("limit", 20)), include_flagged=p.get("include_flagged", True) is not False)
+
+    def _library_overview(self, p: dict) -> dict:
+        if p.get("format", "text") == "text":
+            return {"root": p["root"], "log": self._lib().overview_text(p["root"])}
+        return self._lib().overview(p["root"], p.get("transcript", True) is not False)
+
+    def _edit_build(self, p: dict) -> dict:
+        from .autoedit import build
+
+        plan = p.get("plan") if isinstance(p.get("plan"), dict) else p
+        return build(self, plan)
 
     def _analysis_plan_scene(self, p: dict) -> dict:
         """Plan razor points at shot changes; apply: true razors there (one undo step)."""
