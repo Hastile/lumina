@@ -21,6 +21,7 @@ import hashlib
 import json
 import queue
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -300,6 +301,48 @@ def _wait_closed(path: Path, timeout: float = 60) -> None:
         time.sleep(0.5)
 
 
+def move(src: Path, dest: Path) -> None:
+    """OBS writes to C: and the project folders are on D:, where a rename
+    cannot go; shutil copies and then deletes the original."""
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(src), str(dest))
+
+
+def work_root(path: Path) -> Optional[Path]:
+    """The work's folder: the first folder under Project, as ingest uses."""
+    projects = ingest.CHANNEL_ROOT / "Project"
+    try:
+        rel = path.relative_to(projects)
+    except ValueError:
+        return None
+    return projects / rel.parts[0] if len(rel.parts) > 1 else None
+
+
+def register(con, path: Path, kind: str) -> int:
+    """One file into the DB with every token-free fact: probe, cuts,
+    keyframe measures and what its name and folder say. Content the DB
+    already cut (a file moved from elsewhere) is not analysed again."""
+    sha = db.sha256_file(path)
+    known = con.execute("SELECT media_id FROM media WHERE sha256 = ?", (sha,)).fetchone()
+    if known and db.job_version(con, known["media_id"], "cuts") == ingest.CUTS_V:
+        media_id, _ = db.register_file(con, path, kind, sha256=sha)
+    else:
+        r = ingest.analyze_file(path, kind, sha)
+        media_id, _ = db.register_file(con, path, kind, probe=r["probe"], sha256=sha)
+        db.set_cuts(con, media_id, r["cuts"])
+        db.put_facts(con, media_id, ingest.CUTS_V, r["measures"])
+        db.job_done(con, media_id, "probe", ingest.PROBE_V)
+        db.job_done(con, media_id, "cuts", ingest.CUTS_V)
+        ingest.invalidate_keyframe_stages(con, media_id)
+    root = work_root(path)
+    folder_work = catalog.find_entity(con, "work", [root.name]) if root else None
+    db.put_facts(con, media_id, ingest.FILENAME_V, ingest.filename_facts(con, path, root or path.parent, folder_work))
+    db.job_done(con, media_id, "filename", ingest.FILENAME_V)
+    db.set_status(con, media_id, "live")
+    ingest.verify(con, media_id)
+    return media_id
+
+
 @dataclass
 class Take:
     started: float                    # wall clock (monotonic) at record start
@@ -352,23 +395,11 @@ class Recorder:
             episode = ep[0] if ep else None
             seconds = take.player_at_start
         dest = _unique(folder / (clip_name(episode, seconds, None, path.stem) + path.suffix))
-        folder.mkdir(parents=True, exist_ok=True)
-        path.replace(dest)
+        move(path, dest)
         con = db.connect(self.db_path)
         try:
-            root = self._work_root(dest)
-            folder_work = catalog.find_entity(con, "work", [root.name]) if root else None
-            r = ingest.analyze_file(dest, "video")
-            media_id, _ = db.register_file(con, dest, "video", probe=r["probe"], sha256=r["sha256"])
-            db.set_cuts(con, media_id, r["cuts"])
-            db.put_facts(con, media_id, ingest.CUTS_V, r["measures"])
-            db.job_done(con, media_id, "probe", ingest.PROBE_V)
-            db.job_done(con, media_id, "cuts", ingest.CUTS_V)
-            db.put_facts(con, media_id, ingest.FILENAME_V,
-                         ingest.filename_facts(con, dest, root or dest.parent, folder_work))
-            db.job_done(con, media_id, "filename", ingest.FILENAME_V)
+            media_id = register(con, dest, "video")
             db.put_facts(con, media_id, VERSION, self._take_facts(con, take))
-            db.set_status(con, media_id, "live")
             ingest.verify(con, media_id)
             con.commit()
         finally:
@@ -380,13 +411,7 @@ class Recorder:
 
     @staticmethod
     def _work_root(path: Path) -> Optional[Path]:
-        """The work's folder: the first folder under Project, as ingest uses."""
-        projects = ingest.CHANNEL_ROOT / "Project"
-        try:
-            rel = path.relative_to(projects)
-        except ValueError:
-            return None
-        return projects / rel.parts[0] if len(rel.parts) > 1 else None
+        return work_root(path)
 
     @staticmethod
     def _take_facts(con, take: Take) -> list[dict]:
@@ -411,27 +436,47 @@ class Recorder:
         """Tagger, speech, embeddings for the new clip (each stage in its own
         process, as run.py requires), then the first spoken line joins the
         file name."""
-        py = ANALYZERS / ".venv" / "Scripts" / "python.exe"
-        for stage in ("tagger", "speech", "embed"):
-            subprocess.run([str(py), str(ANALYZERS / "run.py"), str(self.db_path), stage],
-                           capture_output=True, cwd=ANALYZERS)
+        run_analyzers(self.db_path, self.log)
         con = db.connect(self.db_path)
         try:
             ingest.verify(con, media_id)
-            row = con.execute("SELECT value FROM fact WHERE media_id = ? AND kind = 'speech' AND status != 'rejected' "
-                              "ORDER BY t0_ticks LIMIT 1", (media_id,)).fetchone()
-            if row:
-                named = _unique(dest.with_name(f"{dest.stem} {clip_name(None, None, first_line(row[0]), '')}{dest.suffix}"))
-                dest.replace(named)
-                db.move_path(con, dest, named)
-                ingest_refresh_title(con, media_id, named)
-                con.commit()
-                self.log(f"  -> {named.name}")
-                return named
+            named = name_by_speech(con, media_id, dest, dest.stem)
             con.commit()
         finally:
             con.close()
-        return dest
+        if named != dest:
+            self.log(f"  -> {named.name}")
+        return named
+
+
+def run_analyzers(db_path, log=print, stages=("tagger", "speech", "embed")) -> list[str]:
+    """The GPU stages, each in its own process as run.py requires. They
+    work through every media still missing the stage. Returns the stages
+    that failed."""
+    py = ANALYZERS / ".venv" / "Scripts" / "python.exe"
+    failed = []
+    for stage in stages:
+        r = subprocess.run([str(py), str(ANALYZERS / "run.py"), str(db_path), stage],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace", cwd=ANALYZERS)
+        if r.returncode:
+            failed.append(stage)
+            log(f"  {stage} FAILED: {(r.stderr or r.stdout).strip().splitlines()[-1:] or ['exit ' + str(r.returncode)]}")
+    return failed
+
+
+def name_by_speech(con, media_id: int, path: Path, prefix: str) -> Path:
+    """'<prefix> <first spoken line>': the channel names clips by what is
+    said in them. Without speech the file keeps its name."""
+    row = con.execute("SELECT value FROM fact WHERE media_id = ? AND kind = 'speech' AND status != 'rejected' "
+                      "ORDER BY t0_ticks LIMIT 1", (media_id,)).fetchone()
+    line = clip_name(None, None, first_line(row[0]), "") if row else ""
+    if not line:
+        return path
+    named = _unique(path.with_name(f"{prefix} {line}".strip() + path.suffix))
+    path.replace(named)
+    db.move_path(con, path, named)
+    ingest_refresh_title(con, media_id, named)
+    return named
 
 
 def ingest_refresh_title(con, media_id: int, path: Path) -> None:

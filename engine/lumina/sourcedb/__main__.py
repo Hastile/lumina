@@ -1,5 +1,8 @@
 """python -m lumina.sourcedb <command>
 
+  intake <folder> [file ...] [--from DIR] [--dry-run] [--no-describe] [--max-cost USD]
+                                      move new recordings (default: the OBS folder) into a Short's folder,
+                                      cut, analyse and describe what the DB lacks there, list the new cuts
   ingest <folder>... [--each] [--workers N]
                                       token-free stages (--each: every subfolder is a work), then verify
   usage-all <folder> [--outputs DIR]  usage from every .lumina/.prproj under folder
@@ -20,7 +23,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import db, describe, ingest
+from . import db, describe, ingest, intake
 
 
 def _verify_all(con) -> int:
@@ -33,6 +36,13 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser(prog="python -m lumina.sourcedb")
     ap.add_argument("--db", default=str(db.DEFAULT_DB_PATH))
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("intake")
+    p.add_argument("folder")
+    p.add_argument("files", nargs="*")
+    p.add_argument("--from", dest="source", default=str(intake.OBS_FOLDER), help="where OBS writes recordings")
+    p.add_argument("--dry-run", action="store_true", help="only say what would move and what is new")
+    p.add_argument("--no-describe", action="store_true", help="skip Claude descriptions (no tokens)")
+    p.add_argument("--max-cost", type=float, default=2.0, help="skip descriptions above this many USD")
     p = sub.add_parser("ingest")
     p.add_argument("folders", nargs="+")
     p.add_argument("--each", action="store_true", help="each subfolder of the given folders is one work's folder")
@@ -54,6 +64,10 @@ def main(argv=None) -> None:
     sub.add_parser("status")
     a = ap.parse_args(argv)
 
+    if a.cmd == "intake":
+        intake.intake(Path(a.folder), a.files, source=Path(a.source), db_path=a.db, dry_run=a.dry_run,
+                      describe_cuts=not a.no_describe, max_cost=a.max_cost)
+        return
     con = db.connect(a.db)
     if a.cmd == "ingest":
         roots = [Path(f) for f in a.folders]

@@ -110,7 +110,7 @@ def test_the_first_spoken_line_joins_the_name(channel, monkeypatch):
     db.put_facts(con, mid, "whisper@1", [{"kind": "speech", "value": "영역전개. 무량공처", "t0_ticks": 0, "t1_ticks": 1}])
     con.commit()
     con.close()
-    monkeypatch.setattr(recorder.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(recorder, "run_analyzers", lambda *a, **k: [])
     named = rec._analyze_and_name(mid, folder / "S2 E16 0931.mp4")
     assert named.name == "S2 E16 0931 영역전개.mp4"
     con = db.connect(tmp / "s.db")
