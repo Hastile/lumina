@@ -145,6 +145,7 @@ _FILTERS = {
     "max_text_overlay": {"type": "number", "description": "0..1; 0.2 drops shots covered in lyric/title typography"},
     "unused_only": {"type": "boolean"}, "used_only": {"type": "boolean"},
 }
+from .sourcedb.plan import SHOT_SCHEMA as _plan_shot, TOOL_DESCRIPTION as _plan_desc  # noqa: E402
 SOURCE_TOOLS: dict[str, tuple[str, dict]] = {
     "source_search": (
         "Find shots for a narration line in the source DB. One line per hit: #cut_id, work, span, source type, shot, "
@@ -161,6 +162,15 @@ SOURCE_TOOLS: dict[str, tuple[str, dict]] = {
         "and where each was used.",
         {"type": "object", "properties": {"cut_ids": {"type": "array", "items": {"type": "integer"}}},
          "required": ["cut_ids"]}),
+    "source_plan": (
+        _plan_desc,
+        {"type": "object", "properties": {
+            "shots": {"type": "array", "minItems": 1, "items": _plan_shot},
+            **{k: v for k, v in _FILTERS.items() if k not in ("min_seconds", "used_only")},
+            "per_shot": {"type": "integer", "default": 5, "maximum": 12},
+            "exclude_cuts": {"type": "array", "items": {"type": "integer"}, "description": "cuts already placed"},
+            "sheet_top": {"type": "integer", "default": 0, "maximum": 3}},
+         "required": ["shots"]}),
     "source_sheet": (
         "Look at candidate cuts: their keyframes on one numbered contact sheet (about 1.5k tokens for 12).",
         {"type": "object", "properties": {"cut_ids": {"type": "array", "items": {"type": "integer"}, "maxItems": 12}},
@@ -213,6 +223,25 @@ def _source_call(name: str, args: dict) -> types.CallToolResult:
                              if db._overlaps(u["src_in_ticks"], u["src_out_ticks"], c["start_ticks"], c["end_ticks"])],
                 })
             text = json.dumps(out, ensure_ascii=False)
+        elif name == "source_plan":
+            from .sourcedb import plan
+            shots = [plan.Shot(**{k: s[k] for k in ("text", "look", "seconds", "character", "media_kind") if k in s})
+                     for s in args["shots"]]
+            f = query.Filters(**{k: v for k, v in args.items() if k in _FILTERS})
+            notes: list[str] = []
+            results = plan.plan(con, shots, f, per_shot=int(args.get("per_shot", 5)),
+                                exclude_cuts=tuple(args.get("exclude_cuts") or ()), notes=notes)
+            content = [types.TextContent(type="text", text=plan.render(shots, results, tuple(notes)))]
+            tiles = plan.sheet_tiles(con, results, int(args.get("sheet_top", 0)))
+            for i in range(0, len(tiles), 12):
+                part = tiles[i:i + 12]
+                with tempfile.TemporaryDirectory() as tmp:
+                    sheet = Path(tmp) / "sheet.jpg"
+                    contact_sheet([p for _, p in part], sheet)
+                    data = base64.b64encode(sheet.read_bytes()).decode("ascii")
+                content += [types.ImageContent(type="image", data=data, mime_type="image/jpeg"),
+                            types.TextContent(type="text", text=" ".join(f"{j + 1}={lab}" for j, (lab, _) in enumerate(part)))]
+            return types.CallToolResult(content=content)
         else:  # source_sheet
             rows = [con.execute("SELECT c.keyframe_ticks, m.sha256 FROM cut c JOIN media m USING (media_id) WHERE cut_id = ?",
                                 (cid,)).fetchone() for cid in args["cut_ids"][:12]]

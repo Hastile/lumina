@@ -148,6 +148,11 @@ def _candidates(con, text, f: Filters, limit: int) -> dict[int, float]:
             ids = _entity_ids(con, type_, name)
             if not ids:
                 return {}
+            # The media first, through the ref_id index: checking every cut's
+            # facts one by one took seconds over a million facts.
+            where.append(f"c.media_id IN (SELECT y.media_id FROM fact y WHERE y.ref_id IN ({','.join('?' * len(ids))}) "
+                         f"AND y.kind = '{type_}' AND y.status != 'rejected')")
+            args += ids
             where.append(
                 f"EXISTS (SELECT 1 FROM fact x WHERE x.media_id = c.media_id AND x.kind = '{type_}' "
                 f"AND x.status != 'rejected' AND x.ref_id IN ({','.join('?' * len(ids))}) "
@@ -261,16 +266,7 @@ def search(
     hits = _hydrate(con, list(rel))
     out = []
     for cid, h in hits.items():
-        usable = h.seconds - 2 * f.edge_margin if h.kind == "video" else float("inf")
-        if f.min_seconds is not None and usable < f.min_seconds:
-            continue
-        if f.min_luma is not None and h.luma is not None and h.luma < f.min_luma:
-            continue
-        if f.max_text_overlay is not None and h.text_overlay is not None and h.text_overlay > f.max_text_overlay:
-            continue
-        if f.unused_only and h.used:
-            continue
-        if f.used_only and not h.used:
+        if not passes(h, f):
             continue
         # Text relevance first; a shot the person already chose for similar
         # words is the next best evidence; a clearly visible subject next.
@@ -278,6 +274,22 @@ def search(
         out.append(h)
     out.sort(key=lambda h: (-h.score, h.cut_id))
     return out[:limit]
+
+
+def passes(h: Hit, f: Filters) -> bool:
+    """The measured filters, which need a hydrated hit."""
+    usable = h.seconds - 2 * f.edge_margin if h.kind == "video" else float("inf")
+    if f.min_seconds is not None and usable < f.min_seconds:
+        return False
+    if f.min_luma is not None and h.luma is not None and h.luma < f.min_luma:
+        return False
+    if f.max_text_overlay is not None and h.text_overlay is not None and h.text_overlay > f.max_text_overlay:
+        return False
+    if f.unused_only and h.used:
+        return False
+    if f.used_only and not h.used:
+        return False
+    return True
 
 
 def similar(con: sqlite3.Connection, cut_id: int, model: str, *, limit: int = 8,
