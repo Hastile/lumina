@@ -474,7 +474,7 @@ class Engine:
         if not cues:
             raise CommandError("NO_CAPTIONS", "no caption cues on the sequence's caption tracks (or give srt)")
         reveal = tuple(int(i) for i in p.get("reveal") or ())
-        plan = sp.make_plan(cues, reveal=reveal, min_shot=float(p.get("min_shot", 1.1)),
+        plan = sp.make_plan(cues, reveal=reveal, min_shot=float(p["min_shot"]) if p.get("min_shot") is not None else None,
                             auto_reveal=p.get("auto_reveal", True) is not False, names=tuple(self._known_names(p)))
         if p.get("format", "text") == "json":
             return sp.to_dict(plan, st["fps_num"], st["fps_den"])

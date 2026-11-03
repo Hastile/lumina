@@ -124,11 +124,11 @@ def user_sounds(row: dict, cues: list, tol: float) -> dict[int, str]:
     return out
 
 
-def compare(row: dict) -> dict:
+def compare(row: dict, rules=None) -> dict:
     fps = row.get("fps") or 30
     tol = 2.5 / fps
     cues = [sp.Cue(n, round(c["start"] * TPS), round(c["end"] * TPS), c["text"], c.get("effect")) for n, c in enumerate(row["captions"])]
-    plan = sp.make_plan(cues)
+    plan = sp.make_plan(cues, rules=rules)
     starts = user_cut_starts(row)
     plan_cut = {s.cues[0].i for s in plan.shots}
     sent_end = {s[-1].i for s in plan.sentences}
@@ -164,8 +164,8 @@ def _f1(tp: int, fp: int, fn: int) -> float:
     return 2 * p * r / (p + r) if p + r else 0.0
 
 
-def calibrate(rows: list[dict]) -> dict:
-    per = [compare(r) for r in rows if len(r.get("captions", [])) >= 2]
+def calibrate(rows: list[dict], rules=None) -> dict:
+    per = [compare(r, rules) for r in rows if len(r.get("captions", [])) >= 2]
     bounds = [b for x in per for b in x["bounds"]]
     tp = sum(b["user"] and b["plan"] for b in bounds)
     fp = sum(b["plan"] and not b["user"] for b in bounds)

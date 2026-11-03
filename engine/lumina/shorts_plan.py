@@ -102,6 +102,53 @@ class Plan:
     hints: dict[int, str] = field(default_factory=dict)      # cue index -> a name first mentioned there (reveal?)
 
 
+@dataclass
+class Rules:
+    """Every tunable choice of the draft. Defaults are the grammar docs' reading; shorts_rules.json (written by
+    docs/shorts-editing/tune_plan.py from the user's archive) overrides them."""
+    # cuts
+    min_shot: float = 1.1           # no shot shorter (user rule)
+    lead_in: float = 0.5            # a caption shorter than this rides with the next one
+    sentence_hold: float = 0.7      # a sentence ending before the shot is this old holds into the next sentence
+    clause_age: float = 1.0         # cut at a clause end once the shot is this old (inf: never)
+    list_age: float = 1.1           # cut after a list item once the shot is this old (inf: never)
+    long_age: float = float("inf")  # cut at any caption start inside a sentence once the shot is this old
+    long_after_bound: bool = False  # ...also after a modifier/object (otherwise those always hold)
+    tail_protect: bool = True       # never cut onto a sentence's last caption
+    # effects
+    fade_mid: str = "coordinate_comma"   # mid-sentence fade on: coordinate_comma | coordinate | clause | none
+    slam_pick: str = "marked_last"       # marked_last | last | marked_first | first
+    slam_min_caps: int = 2               # sentences shorter than this get no slam
+    slam_questions: str = "hook"         # slam in a question sentence: hook | always | never
+    punch_len: int = 5                   # a final predicate this short (Hangul) is a reveal slam (0: never)
+    # sounds
+    hit_policy: str = "all_slams"        # hits on: all_slams | hook_only | none
+    whoosh: str = "rotate"               # rotate (W4 at structure, W1/W5/W6 between) | w4 (W4 everywhere) | none
+    whoosh_on: str = "sentence_shot"     # sentence_shot (a sentence starting a shot) | every_sentence
+    teeding: str = "last"                # 티딩 on: last (the last caption) | cta (only a call to action) | none
+    bells_question: bool = True
+    letdown: bool = True                 # 난감한 물방울 on negative fades
+
+
+def load_rules(path=None) -> Rules:
+    import json
+    from dataclasses import fields
+    from pathlib import Path
+
+    p = Path(path) if path else Path(__file__).with_name("shorts_rules.json")
+    r = Rules()
+    if p.exists():
+        data = json.loads(p.read_text(encoding="utf-8"))
+        names = {f.name for f in fields(Rules)}
+        for k, v in (data.get("rules") or data).items():
+            if k in names:
+                setattr(r, k, float("inf") if v in ("inf", None) and isinstance(getattr(r, k), float) else v)
+    return r
+
+
+RULES = load_rules()
+
+
 # ---------------------------------------------------------------- reading Korean endings
 
 def _core(text: str) -> str:
@@ -142,17 +189,20 @@ def is_clause_end(text: str) -> bool:
     return t.endswith(",") or _ends(t, CLAUSE_END)
 
 
+ADNOMINAL_LAST = set("한된난온운른쓴던준낸친빈긴할될갈올줄볼칠힐릴쓸")   # -ㄴ/-ㄹ verb forms: 몰살한, 될 (not 간/진: 시간, 사진)
+ADNOMINAL_ENDS = ("어진", "아진", "해진", "워진", "려진", "나간", "들어간", "하는", "되는", "있는", "없는", "같은", "많은", "다는", "라는", "었던", "았던", "했던", "하던", "이라는",
+                  "적인", "스러운", "로운", "다운")
+
+
 def is_bound(text: str) -> bool:
-    """Ends on an object/genitive particle or an adnominal (-ㄴ/-ㄹ verb form): the next caption completes it."""
+    """Ends on an object/genitive particle or an adnominal verb form: the next caption completes it.
+    Nouns that happen to end in ㄴ/ㄹ (장면, 시간, 얼굴) are not bound."""
     core = _core(text)
     if not core or text.strip().endswith(","):
         return False
-    if core.endswith(BOUND):
+    if core.endswith(BOUND) or core.endswith(ADNOMINAL_ENDS):
         return True
-    last = core[-1]
-    j = _jong(last)
-    # adnominal -ㄴ/-ㄹ/-는/-던 on a verb (not the topic particles 은/는 after a noun-like word)
-    return (j in (4, 8) and last not in "은는인을" and len(core) >= 2) or core.endswith(("하는", "되는", "있는", "없는", "던"))
+    return len(core) >= 2 and core[-1] in ADNOMINAL_LAST
 
 
 def is_list_item(text: str) -> bool:
@@ -178,21 +228,24 @@ def sentences_of(cues: list[Cue]) -> list[list[Cue]]:
     return out
 
 
-def _group_sentence(sent: list[Cue], reveal: set[int], min_shot: float, lead_in: float) -> list[Shot]:
+def _group_sentence(sent: list[Cue], reveal: set[int], rules: Rules) -> list[Shot]:
     shots = [Shot([sent[0]], "sentence start")]
     for k in range(1, len(sent)):
         prev, cue = sent[k - 1], sent[k]
         age = (prev.end - shots[-1].start) / TPS
         tail = k == len(sent) - 1
+        bound = is_bound(prev.text)
         cut, why = False, ""
         if cue.i in reveal:
             cut, why = True, "reveal / subject switch"
-        elif prev.seconds < lead_in or is_bound(prev.text) or (tail and len(sent) > 1):
-            cut = False  # lead-in rides along; never split modifier/object from its head; never cut onto the tail
-        elif is_clause_end(prev.text) and age >= 1.0:
+        elif prev.seconds < rules.lead_in or (tail and len(sent) > 1 and rules.tail_protect):
+            cut = False  # a lead-in rides along; never cut onto the tail
+        elif is_clause_end(prev.text) and not bound and age >= rules.clause_age:
             cut, why = True, "clause end"
-        elif is_list_item(prev.text) and age >= min_shot:
+        elif is_list_item(prev.text) and not bound and age >= rules.list_age:
             cut, why = True, "list item"
+        elif age >= rules.long_age and (not bound or rules.long_after_bound):
+            cut, why = True, "long shot"
         if cut:
             shots.append(Shot([cue], why))
         else:
@@ -218,20 +271,32 @@ def _merge_short(shots: list[Shot], min_shot: float) -> list[Shot]:
     return shots
 
 
-def plan_shots(cues: list[Cue], *, reveal: tuple[int, ...] = (), min_shot: float = 1.1, sentence_hold: float = 0.7,
-               lead_in: float = 0.5) -> tuple[list[list[Cue]], list[Shot]]:
+def plan_shots(cues: list[Cue], *, reveal: tuple[int, ...] = (), rules: Optional[Rules] = None,
+               min_shot: Optional[float] = None) -> tuple[list[list[Cue]], list[Shot]]:
+    rules = rules or RULES
+    ms = rules.min_shot if min_shot is None else min_shot
     sents = sentences_of(cues)
     shots: list[Shot] = []
     for sent in sents:
-        part = _group_sentence(sent, set(reveal), min_shot, lead_in)
-        if shots and shots[-1].seconds < sentence_hold and sent[0].i not in reveal:
-            shots[-1].cues.extend(part[0].cues)  # a sentence end under 0.7 s holds into the next sentence
+        part = _group_sentence(sent, set(reveal), rules)
+        if shots and shots[-1].seconds < rules.sentence_hold and sent[0].i not in reveal:
+            shots[-1].cues.extend(part[0].cues)  # a sentence end on a very young shot holds into the next sentence
             part = part[1:]
         shots.extend(part)
-    return sents, _merge_short(shots, min_shot)
+    return sents, _merge_short(shots, ms)
 
 
-def plan_effects(sents: list[list[Cue]], hook_seconds: float = 3.0) -> dict[int, str]:
+def _mid_fade(text: str, mode: str) -> bool:
+    if mode == "none":
+        return False
+    if mode == "clause":
+        return is_clause_end(text) and not _ends(text, SETUP)
+    coord = _ends(text, COORDINATE) and not _ends(text, SETUP)
+    return coord and (mode == "coordinate" or text.strip().endswith(","))
+
+
+def plan_effects(sents: list[list[Cue]], hook_seconds: float = 3.0, rules: Optional[Rules] = None) -> dict[int, str]:
+    rules = rules or RULES
     eff: dict[int, str] = {}
     last_slam = -2
     t0 = sents[0][0].start if sents else 0
@@ -242,23 +307,25 @@ def plan_effects(sents: list[list[Cue]], hook_seconds: float = 3.0) -> dict[int,
             core = _core(c.text)
             if k == len(sent) - 1:
                 # a short punch predicate is a reveal slam; anything longer closes with a fade
-                punch = hangul_len(core) <= 5 and core.endswith(("입니다", "니다", "이다")) and len(sent) > 1 and not closing
+                punch = (hangul_len(core) <= rules.punch_len and core.endswith(("입니다", "니다", "이다"))
+                         and len(sent) > 1 and not closing)
                 eff[c.i] = "slam" if punch else "fade"
-            elif k > 0 and _ends(c.text, COORDINATE) and not _ends(c.text, SETUP) and c.text.strip().endswith(","):
+            elif k > 0 and _mid_fade(c.text, rules.fade_mid):
                 eff[c.i] = "fade"
-        if closing or len(sent) < 2 or any(_core(c.text).startswith(CTA) for c in sent):
+        if closing or len(sent) < max(2, rules.slam_min_caps) or any(_core(c.text).startswith(CTA) for c in sent):
             continue
         in_hook = (sent[0].start - t0) / TPS < hook_seconds
-        if is_question(sent[-1].text) and not in_hook:
+        if is_question(sent[-1].text) and (rules.slam_questions == "never" or (rules.slam_questions == "hook" and not in_hook)):
             continue
         if any(eff[c.i] == "slam" for c in sent):
             continue
-        # the focus phrase: the last non-tail caption, preferring one that ends on a subject/object particle
+        # the focus phrase: a non-tail caption, by rules.slam_pick
         body = [c for c in sent[:-1] if eff[c.i] == "pop" and (sent.index(c) > 0 or len(sent) == 2)]
         if not body:
             continue
         marked = [c for c in body if _core(c.text).endswith(("을", "를", "이", "가", "은", "는"))]
-        pick = (marked or body)[-1]
+        pick = {"marked_last": (marked or body)[-1], "last": body[-1], "marked_first": (marked or body)[0],
+                "first": body[0]}.get(rules.slam_pick, (marked or body)[-1])
         if pick.i - last_slam <= 1:
             continue
         eff[pick.i] = "slam"
@@ -266,46 +333,55 @@ def plan_effects(sents: list[list[Cue]], hook_seconds: float = 3.0) -> dict[int,
     return eff
 
 
-def plan_sounds(sents: list[list[Cue]], shots: list[Shot], eff: dict[int, str], min_gap: float = 0.5) -> dict[int, str]:
+def plan_sounds(sents: list[list[Cue]], shots: list[Shot], eff: dict[int, str], min_gap: float = 0.5,
+                rules: Optional[Rules] = None) -> dict[int, str]:
+    rules = rules or RULES
     shot_starts = {s.cues[0].i for s in shots}
     sounds: dict[int, str] = {}
     last_whoosh = ""
     rot = 0
+    t0 = sents[0][0].start if sents else 0
     for sn, sent in enumerate(sents):
         closing = sn >= len(sents) - 1
         for k, c in enumerate(sent):
             name = ""
+            starts_shot = c.i in shot_starts or rules.whoosh_on == "every_sentence"
             if c.i == 0:
                 name = "W3"
-            elif k == 0 and c.i in shot_starts and eff.get(c.i) == "pop":
-                if sn == 1 or sn >= len(sents) - 2:
+            elif rules.whoosh != "none" and k == 0 and starts_shot and eff.get(c.i) == "pop":
+                if rules.whoosh == "w4" or sn == 1 or sn >= len(sents) - 2:
                     name = "W4"
                 else:
                     name = WHOOSH_BODY[rot % len(WHOOSH_BODY)]
                     rot += 1
-                if name == last_whoosh:
+                if name == last_whoosh and rules.whoosh == "rotate":
                     name = WHOOSH_BODY[rot % len(WHOOSH_BODY)]
                     rot += 1
                 last_whoosh = name
-            if closing and k == len(sent) - 1:
+            last = k == len(sent) - 1
+            cta = any(_core(x.text).startswith(CTA) or any(w in x.text for w in CTA) for x in sent)
+            if closing and last and (rules.teeding == "last" or (rules.teeding == "cta" and cta)):
                 name = "티딩"
-            elif eff.get(c.i) == "slam":
-                in_hook = (c.start - sents[0][0].start) / TPS < 3.0
-                name = "뚜훅" if in_hook else "hit?"
-            elif k == len(sent) - 1 and is_question(c.text):
+            elif eff.get(c.i) == "slam" and rules.hit_policy != "none":
+                in_hook = (c.start - t0) / TPS < 3.0
+                if in_hook:
+                    name = "뚜훅"
+                elif rules.hit_policy == "all_slams":
+                    name = "hit?"
+            elif last and rules.bells_question and is_question(c.text):
                 name = "Bells 2"
-            elif k == len(sent) - 1 and eff.get(c.i) == "fade" and any(w in c.text for w in NEGATIVE):
+            elif last and rules.letdown and eff.get(c.i) == "fade" and any(w in c.text for w in NEGATIVE):
                 name = "난감한 물방울"
             if name:
                 sounds[c.i] = name
     # at least min_gap apart: keep the earlier sound
-    out, last = {}, None
+    out, last_i = {}, None
     cues = {c.i: c for s in sents for c in s}
     for i in sorted(sounds):
-        if last is not None and (cues[i].start - cues[last].start) / TPS < min_gap:
+        if last_i is not None and (cues[i].start - cues[last_i].start) / TPS < min_gap:
             continue
         out[i] = sounds[i]
-        last = i
+        last_i = i
     return out
 
 
@@ -348,19 +424,21 @@ def name_hints(cues: list[Cue], names: list[str]) -> dict[int, str]:
     return out
 
 
-def make_plan(cues: list[Cue], *, reveal: tuple[int, ...] = (), min_shot: float = 1.1, auto_reveal: bool = True,
-              names: tuple[str, ...] = ()) -> Plan:
+def make_plan(cues: list[Cue], *, reveal: tuple[int, ...] = (), min_shot: Optional[float] = None, auto_reveal: bool = True,
+              names: tuple[str, ...] = (), rules: Optional[Rules] = None) -> Plan:
+    rules = rules or RULES
+    ms = rules.min_shot if min_shot is None else min_shot
     cues = sorted(cues, key=lambda c: c.start)
     for n, c in enumerate(cues):
         c.i = n
     auto = detect_reveals(cues, sentences_of(cues)) if auto_reveal else ()
-    sents, shots = plan_shots(cues, reveal=tuple(sorted(set(reveal) | set(auto))), min_shot=min_shot)
+    sents, shots = plan_shots(cues, reveal=tuple(sorted(set(reveal) | set(auto))), rules=rules, min_shot=ms)
     for s in shots:
         if s.cues[0].i in auto and s.cues[0].i not in reveal:
             s.reason = "reveal (바로…)"
-    eff = plan_effects(sents)
-    plan = Plan(cues=cues, sentences=sents, shots=shots, effects=eff, sounds=plan_sounds(sents, shots, eff))
-    plan.problems = check(sents, shots, min_shot)
+    eff = plan_effects(sents, rules=rules)
+    plan = Plan(cues=cues, sentences=sents, shots=shots, effects=eff, sounds=plan_sounds(sents, shots, eff, rules=rules))
+    plan.problems = check(sents, shots, ms)
     starts = {s[0].i for s in sents}
     plan.hints = {i: n for i, n in name_hints(cues, list(names)).items() if i not in starts}
     return plan

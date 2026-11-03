@@ -38,6 +38,7 @@ by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 | User rule (2026-11-03): do not raise the footage's y; it opens a gap above the lower band. Face behind the caption → another range or source. README and card updated. | docs |
 | `docs/shorts-editing/CARD.md`: one page (6 KB) replacing ~143 KB of grammar reading per session; AGENTS.md/CLAUDE.md point at it first. | docs |
 | `docs/shorts-editing/session_cost.py`: Lumina calls by tool, frames looked at, tokens and minutes per Claude Code session, to measure the gain. | docs |
+| Rules of the draft in `shorts_plan.Rules` (loaded from `lumina/shorts_rules.json`), tuned on the archive by `docs/shorts-editing/tune_plan.py` (coordinate descent, chosen on 2/3, checked on 1/3). First archive calibration (2026-11-03, defaults): cut F1 0.673 (captions/shot user 2.64, draft 3.48), effects 0.689, sound presence P 0.59 / R 0.56, same sound 0.39. | `engine/lumina/shorts_tune.py` |
 | Source DB upkeep: `health` (read-only report with fixing commands), `backup`, `recut --stale`, `describe --misaligned`, `merge`. See `docs/shorts-editing/source-db-frozen-schema.md` "Upkeep". | `engine/lumina/sourcedb/health.py` |
 | The SigLIP text encoder starts in the background when the MCP server starts (`LUMINA_WARM_ENCODER=0` turns it off). Next step 5. | `engine/lumina/mcp_server.py` |
 

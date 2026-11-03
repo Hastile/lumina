@@ -95,6 +95,7 @@
 - 하나라도 거부되면(짧은 소스, 없는 효과음 이름 등) 아무것도 바뀌지 않는다.
 - **눈으로 컷마다 보지 않는다.** `shorts_check`가 글로 문제만 돌려준다: 1.1초 미만 샷, 검은 틈, 자막 시작이 아닌 컷, 87–105% 밖 속도, 장면 경계 3프레임 안쪽(이웃 샷이 비침, 소스 DB), 샷 안의 장면 전환, 어두운 샷, 끝 처리, 겹친 자막, 810px를 넘는 120 자막, SFX 태그 누락, 0.5초 안쪽 효과음. 그다음 `get_frame_strip` 한 장으로 그림만 확인한다.
 - 초안 규칙을 바꾸면 PC에서 아카이브와 비교해 F1이 오를 때만 유지한다(토큰 0): `uv run --project engine python docs/shorts-editing/calibrate_plan.py cuts.jsonl` (`cuts.jsonl`은 `cut_grammar_extract.py`로 만든다).
+- 초안의 기준값(컷 나이, 꼬리 보호, slam 위치, 효과음 정책 등)은 `engine/lumina/shorts_rules.json`에 있다. `tune_plan.py cuts.jsonl --write`가 아카이브 2/3로 고르고 나머지 1/3로 검증해 다시 쓴다. 새 쇼츠가 쌓이면 다시 돌린다.
 
 ### 4. 배치 (V1)
 - **계획 초안은 `shorts_plan` 한 번으로 받는다.** V7 자막(또는 `srt`)을 읽어 아래 규칙대로 샷 묶음, 자막마다 효과(pop/slam/fade)와 효과음 제안, 규칙 위반 목록을 한 표로 돌려준다. 머릿속으로 자막을 하나씩 묶지 않는다.

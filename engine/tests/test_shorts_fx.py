@@ -39,6 +39,8 @@ def test_sentences_and_endings():
     assert [len(s) for s in sents] == [3, 3, 6, 4, 2, 1]
     assert sp.is_clause_end("범인을 찾아서") and sp.is_clause_end("싸우는 것까지,")
     assert sp.is_bound("자신의 일족을 몰살한") and sp.is_bound("이 캐릭터를") and not sp.is_bound("그의 이름은")
+    assert sp.is_bound("사이버 사스케라는") and sp.is_bound("헝클어진")
+    assert not any(sp.is_bound(t) for t in ("첫 장면", "그 시간", "얼굴", "하늘")), "nouns ending in ㄴ/ㄹ are not bound"
     assert sp.is_question("아시나요?") and sp.is_sentence_end("닮았죠") and not sp.is_sentence_end("합류해")
 
 
@@ -499,3 +501,28 @@ def test_levels_come_from_auto_match_only():
         r = sound_rule(name)
         assert r["match"] and "volume_db" not in r and "gain_db" not in r, name
     assert not sound_rule("Bells 2")["match"] and sound_rule("Bells 2")["track"] == 4
+
+
+def test_tuner_finds_rules_that_fit_the_archive(tmp_path):
+    """Archive Shorts where the user cuts every second caption: the tuner moves the cut rules toward that and the
+    written rules file is what shorts_plan loads."""
+    from lumina import shorts_tune as st
+
+    rows = []
+    texts = ["오미", "카프리", "사스케", "우류", "루시", "데이비드", "레베카", "메인"]
+    for n in range(12):
+        caps, pics, t = [], [], 0.0
+        for k, text in enumerate(texts * 2):
+            caps.append({"start": t, "end": t + 1.0, "text": text, "effect": "pop"})
+            if k % 2 == 0:
+                pics.append({"track": 0, "start": t, "end": t + 2.0, "name": f"s{k}"})
+            t += 1.0
+        rows.append({"project": f"p{n}", "sequence": "s", "fps": 30, "captions": caps, "pictures": pics})
+    rep = st.tune(rows, log=lambda *_: None)
+    assert rep["after"]["all"]["cut_f1"] > rep["before"]["all"]["cut_f1"] and rep["after"]["test"]["cut_f1"] >= 0.9
+    assert rep["changed"], "some cut rule moved"
+    path = st.write(rep, tmp_path / "rules.json")
+    loaded = sp.load_rules(path)
+    for k, v in rep["changed"].items():
+        assert getattr(loaded, k) == (float("inf") if v == "inf" else v)
+    assert "changed rules" in st.render(rep)
