@@ -108,6 +108,7 @@ class Engine:
             "analysis.detect": self._analysis_detect,
             "analysis.plan_cuts": self._analysis_plan_cuts,
             "analysis.plan_scene_cuts": self._analysis_plan_scene,
+            "shorts.plan": self._shorts_plan,
         }
 
     # ------------------------------------------------------------ dispatch
@@ -427,6 +428,28 @@ class Engine:
             plan["applied"] = self.session.execute("sequence.remove_ranges", {"sequence_id": p.get("sequence_id"), "ranges": plan["ranges"],
                                                                                "ripple": p.get("ripple", True)}, label)["result"]
         return plan
+
+    def _shorts_plan(self, p: dict) -> dict:
+        """Draft a Short's shots, caption effects and sounds from its captions (read-only)."""
+        from pathlib import Path
+
+        from . import shorts_plan as sp
+        from .commands.project import seq_of
+
+        seq = seq_of(self.session.doc, p.get("sequence_id"))
+        st = seq["settings"]
+        if p.get("srt"):
+            cues = sp.parse_srt(Path(p["srt"]).read_text(encoding="utf-8-sig"))
+        else:
+            cues = sp.cues_from_sequence(seq)
+        if not cues:
+            raise CommandError("NO_CAPTIONS", "no caption cues on the sequence's caption tracks (or give srt)")
+        reveal = tuple(int(i) for i in p.get("reveal") or ())
+        plan = sp.make_plan(cues, reveal=reveal, min_shot=float(p.get("min_shot", 1.1)))
+        if p.get("format", "text") == "json":
+            return sp.to_dict(plan, st["fps_num"], st["fps_den"])
+        return {"plan": sp.render(plan, st["fps_num"], st["fps_den"]),
+                "shots": sp.to_dict(plan, st["fps_num"], st["fps_den"])["shots"]}
 
     def _analysis_plan_scene(self, p: dict) -> dict:
         """Plan razor points at shot changes; apply: true razors there (one undo step)."""

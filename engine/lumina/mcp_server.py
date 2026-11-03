@@ -21,7 +21,9 @@ INSTRUCTIONS = """Lumina is a Premiere-style video editor. Every edit is an undo
 Times accept ticks (int) or strings: "12.5s", "45f", "00:01:02:15". Omitted sequence_id = active sequence.
 Typical flow: open_project/new_project -> media_import -> sequence_create_from_media -> edits -> get_timeline_state -> save_project.
 Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure).
-Use get_frame_image to look at the result, and export_media to render a verified file."""
+Use get_frame_image to look at the result, and export_media to render a verified file.
+Shorts, few calls: shorts_plan drafts shots/effects/sounds from the captions -> fix the draft -> source_plan (one call,
+add `look` per shot) -> clip_place_shots -> get_frame_strip -> shorts_caption_effects -> shorts_place_sfx."""
 
 _OBJ = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -121,6 +123,20 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                       "protect_markers": {"type": "boolean", "default": True}, "apply": {"type": "boolean", "default": False},
                       "ripple": {"type": "boolean", "default": True}},
                    "required": ["kind"]}, None),
+    "shorts_plan": ("shorts.plan",
+                    "Draft a Short's edit from its captions in one read-only call, by docs/shorts-editing grammar: shots "
+                    "(captions grouped by sentence; cuts on clause ends ≥1 s, list items or `reveal` captions; lead-ins "
+                    "ride along; none under 1.1 s), each caption's effect (pop/slam/fade) and sound (W3/W4/W1-6 "
+                    "rotation, hits as 'choose', Bells 2, 물방울, 티딩), plus grammar problems. Reads the sequence's "
+                    "caption tracks (or an srt file). Review it, then: shots -> source_plan (add look) -> "
+                    "clip_place_shots; effects -> shorts_caption_effects; sounds -> shorts_place_sfx.",
+                    {"type": "object", "properties": {
+                        "sequence_id": {"type": "string"},
+                        "srt": {"type": "string", "description": "read captions from this .srt instead of the sequence"},
+                        "reveal": {"type": "array", "items": {"type": "integer"},
+                                   "description": "caption numbers that must start a new shot (a name reveal, a new subject)"},
+                        "min_shot": {"type": "number", "default": 1.1},
+                        "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}}, None),
     "plan_scene_cuts": ("analysis.plan_scene_cuts",
                         "Scene Edit Detection: razor points where a clip's picture cuts to a new shot. apply=true razors there "
                         "(one undo step).",
@@ -335,8 +351,27 @@ def make_server(engine) -> Server:
     return Server("lumina", version="0.1.0", instructions=INSTRUCTIONS, on_list_tools=list_tools, on_call_tool=call_tool)
 
 
+def _warm_text_encoder() -> None:
+    """Start the SigLIP text encoder in the background, so the first source_plan does not wait ~15 s for it."""
+    import threading
+
+    def warm():
+        try:
+            from .sourcedb import textvec
+
+            textvec.shared().encode(["warm up"])
+        except Exception:  # noqa: BLE001 - no GPU env / no DB on this machine: source_plan reports it when called
+            pass
+
+    threading.Thread(target=warm, name="text-encoder-warmup", daemon=True).start()
+
+
 def main() -> None:
+    import os
+
     engine = FollowingEngine()
+    if os.environ.get("LUMINA_WARM_ENCODER", "1") != "0":
+        _warm_text_encoder()
 
     async def run():
         server = make_server(engine)

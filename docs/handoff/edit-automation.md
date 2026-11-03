@@ -20,6 +20,17 @@ Evidence for `look`: SigLIP recall@8 with past narration captions 7% (random 2%)
 with picture descriptions 77% (pool 536) / 58% (pool 4816). Verified live: 오미 shots found
 by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 
+## Done in the cloud session (2026-11-03)
+
+| What | Where |
+|---|---|
+| `shorts_plan` (MCP, read-only): captions → shots (sentence grammar), pop/slam/fade per caption, sounds (W3/W4/rotation, hit?, Bells 2, 물방울, 티딩), grammar problems. The planning half of next steps 1–3. | `engine/lumina/shorts_plan.py` |
+| `shorts.caption_effects`: all effects in one all-or-nothing edit; slams 120 only when they fit 810 px. Next step 2. | `engine/lumina/commands/shorts_fx.py` |
+| `shorts.place_sfx`: sounds by name, grammar tracks, Epic Hit pre-roll, tails cut, sfx tag, A2/A3 Auto-Match, -3/-7 rules. Next step 3. | same |
+| The SigLIP text encoder starts in the background when the MCP server starts (`LUMINA_WARM_ENCODER=0` turns it off). Next step 5. | `engine/lumina/mcp_server.py` |
+
+Tested headless only (`tests/test_shorts_fx.py`). Still to verify on the PC: `shorts_plan` on a real Short against the user's own cut (e.g. 사스케 닮은꼴), sound names against the real SFX folders, and the 120-px fit with Pretendard installed.
+
 ## What a cloud session can and cannot do
 
 Not available in the cloud: `~/.lumina/source.db` (55k cuts, 1.45M facts), footage on `D:\`,

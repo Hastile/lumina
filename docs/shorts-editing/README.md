@@ -90,6 +90,9 @@
 - 끝내 없으면 "구하지 못한 소스"로 사용자에게 알린다.
 
 ### 4. 배치 (V1)
+- **계획 초안은 `shorts_plan` 한 번으로 받는다.** V7 자막(또는 `srt`)을 읽어 아래 규칙대로 샷 묶음, 자막마다 효과(pop/slam/fade)와 효과음 제안, 규칙 위반 목록을 한 표로 돌려준다. 머릿속으로 자막을 하나씩 묶지 않는다.
+  - 초안은 자막 어미만 보고 만든 것이다. 의미로 판단할 곳(이름 공개·주어 전환은 `reveal`에 자막 번호, 타격음 `hit?`은 뜻으로 고르기)만 고친다.
+  - 고친 샷 목록을 그대로 `source_plan`(샷마다 `look` 추가)과 `clip_place_shots`에 넘긴다.
 - **놓기 전에 컷 계획표부터 쓴다** (`shorts-cut-grammar.md`의 'Plan the cuts before placing anything'). 오미·사스케 닮은꼴 두 편 연속 "컷 배분 더럽게"로 고쳐졌다.
   1. 자막을 시작 프레임과 함께 나열하고 **문장 단위로** 샷을 묶는다(아카이브 180편, 자막 경계 5,590개 측정).
      - 문장 끝(마지막 자막 fade)에서는 바꾼다(83~96%). 샷이 0.7초도 안 됐으면 유지한다.
@@ -139,12 +142,14 @@
 - 확인: `get_frame_image`로 컷마다 한 장씩 본다. 어둡거나 인물이 안 보이거나 엉뚱한 장면이면 바꾼다.
 
 ### 5. 자막 효과
+- **`shorts_caption_effects` 한 번으로 전부 적용한다.** `items: [{clip_id, effect}]`(shorts_plan 표의 effect 열). 효과 트랙으로 옮기고, slam은 810 px 한 줄에 들어갈 때만 120으로 키운다(안 들어가면 100과 이유를 돌려준다). 문제가 하나라도 있으면 아무것도 바뀌지 않고, 되돌리기는 한 번이다.
 - 효과는 트랙으로 정한다.
   - slam: V8 `꽝 박히기`로 이동(`clip_move track_delta=1`), 그리고 `caption_set style {"font_size":120}`
   - fade: V9 `밑에서 스무쓰하게 올라오기`로 이동(`track_delta=2`)
 - 120으로 키운 자막이 한 줄에 들어가는지 프레임으로 확인한다.
 
 ### 6. 효과음
+- **`shorts_place_sfx` 한 번으로 놓는다.** `sounds: [{at: "<자막 첫 프레임>f", sound: "W4"}]`, `end_at`(영상 끝)을 준다. 이름(W1–W7, Kick 2, Epic Hit 3, Bells 2, 뚜훅, 티딩, 난감한 물방울, H:Cash…)은 프로젝트 미디어에서, 없으면 `LUMINA_SFX_DIRS`(기본 `D:/유튜브 채널/SFX`, `D:/Motion Bro`)에서 찾는다. 아래 트랙·프리롤·꼬리 자르기·sfx 태그·A2/A3 Auto-Match·볼륨 규칙은 명령이 적용한다.
 - 트랙:
   - A2: Whoosh (KF - Whoosh Dramatic 1/3/4/5/6)
   - A3: Hit, Kick, 뚜훅, 티딩
