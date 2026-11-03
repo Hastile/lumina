@@ -8,10 +8,18 @@
   usage-all <folder> [--outputs DIR]  usage from every .lumina/.prproj under folder
   usage <project.lumina> [--approved SEQ ...] [--sequences SEQ ...]
   describe [media_id ...] [--redo]    Claude scene descriptions of media never described, then verify
+  describe --misaligned [--max-cost USD]
+                                      re-describe media whose descriptions no longer match their cuts
   verify                              re-check agreement on every media
   reprobe                             re-measure media probed by an older version
-  recut <media_id>...                 cut again at the current cuts version (tagger and embeddings redo)
+  recut <media_id>... | --stale [--limit N]
+                                      cut again at the current cuts version (tagger and embeddings redo)
   status                              what has run on how much
+  health [--files] [--json] [--fix-docs]
+                                      read-only upkeep report (cut versions, stale descriptions, fact shapes,
+                                      duplicate entities, search index, embeddings, files, backups)
+  backup [dest] [--keep N]            consistent copy into ~/.lumina/backups (keeps the newest N)
+  merge --keep ID DUP...              merge duplicate entities into ID (their names become aliases)
 
 GPU stages (tagger, embed, speech) run in engine/analyzers:
   uv run --project engine/analyzers python engine/analyzers/run.py [db] [stage ...]
@@ -20,10 +28,13 @@ GPU stages (tagger, embed, speech) run in engine/analyzers:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
-from . import db, describe, ingest, intake
+from . import db, describe, health, ingest, intake
+
+COST_PER_CUT = 0.004  # USD per described cut (docs/shorts-editing/README.md)
 
 
 def _verify_all(con) -> int:
@@ -57,11 +68,25 @@ def main(argv=None) -> None:
     p = sub.add_parser("describe")
     p.add_argument("media", nargs="*", type=int)
     p.add_argument("--redo", action="store_true", help="describe again media an older version already did (costs tokens)")
+    p.add_argument("--misaligned", action="store_true", help="the media whose descriptions no longer match their cuts")
+    p.add_argument("--max-cost", type=float, default=2.0, help="refuse above this many USD (estimated)")
     sub.add_parser("verify")
     sub.add_parser("reprobe")
     p = sub.add_parser("recut")
-    p.add_argument("media", nargs="+", type=int)
+    p.add_argument("media", nargs="*", type=int)
+    p.add_argument("--stale", action="store_true", help="every video media cut by an older version")
+    p.add_argument("--limit", type=int, help="at most this many media")
     sub.add_parser("status")
+    p = sub.add_parser("health")
+    p.add_argument("--files", action="store_true", help="also check every path on disk (slower)")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--fix-docs", action="store_true", help="rebuild missing search documents (free)")
+    p = sub.add_parser("backup")
+    p.add_argument("dest", nargs="?")
+    p.add_argument("--keep", type=int, default=health.KEEP_BACKUPS)
+    p = sub.add_parser("merge")
+    p.add_argument("--keep", type=int, required=True)
+    p.add_argument("duplicates", nargs="+", type=int)
     a = ap.parse_args(argv)
 
     if a.cmd == "intake":
@@ -97,10 +122,29 @@ def main(argv=None) -> None:
         con.commit()
         print(f"{n} usage rows; accepted by agreement: {_verify_all(con)}")
     elif a.cmd == "describe":
-        describe.run(con, a.media or None, redo=a.redo)
+        media, redo = a.media or None, a.redo
+        if a.misaligned:
+            media, redo = health.misaligned_descriptions(con)["media"], True
+            if not media:
+                print("no misaligned descriptions")
+                con.close()
+                return
+        if redo and media:
+            cuts = con.execute(f"SELECT count(*) FROM cut WHERE media_id IN ({','.join('?' * len(media))})", media).fetchone()[0]
+            cost = cuts * COST_PER_CUT
+            print(f"{len(media)} media, {cuts} cuts, about ${cost:.2f}")
+            if cost > a.max_cost:
+                raise SystemExit(f"above --max-cost {a.max_cost}; raise it or pass fewer media")
+        describe.run(con, media, redo=redo)
         print("accepted by agreement:", _verify_all(con))
     elif a.cmd == "recut":
-        for m in a.media:
+        media = list(a.media)
+        if a.stale:
+            media += health.cut_versions(con, ingest.CUTS_V)["stale_media"]
+        media = list(dict.fromkeys(media))[:a.limit] if a.limit else list(dict.fromkeys(media))
+        if not media:
+            raise SystemExit("give media ids or --stale")
+        for m in media:
             ingest.run_cuts(con, m, Path(db.media_path(con, m)))
             db.job_done(con, m, "cuts", ingest.CUTS_V)
             con.commit()
@@ -109,6 +153,21 @@ def main(argv=None) -> None:
         print("last cuts clipped to the picture's length:", ingest.reprobe(con))
     elif a.cmd == "verify":
         print("accepted by agreement:", _verify_all(con))
+    elif a.cmd == "health":
+        if a.fix_docs:
+            print("search documents rebuilt for", health.fix_docs(con), "media")
+        rep = health.check(con, current_cuts=ingest.CUTS_V, stat_files=a.files, db_path=Path(a.db),
+                           backup_dir=Path(a.db).parent / "backups")
+        print(json.dumps(rep, ensure_ascii=False, indent=1) if a.json else health.render(rep))
+    elif a.cmd == "backup":
+        dest = Path(a.dest) if a.dest else None
+        print(health.backup(con, dest, folder=Path(a.db).parent / "backups", keep=a.keep))
+    elif a.cmd == "merge":
+        for d in a.duplicates:
+            db.merge_entity(con, d, a.keep)
+        con.commit()
+        r = con.execute("SELECT name, aliases FROM entity WHERE entity_id = ?", (a.keep,)).fetchone()
+        print(f"merged {a.duplicates} into #{a.keep} {r['name']} (aliases: {r['aliases'].replace(chr(10), ', ')})")
     elif a.cmd == "status":
         for t in ("media", "cut", "fact", "usage", "entity", "embedding"):
             print(f"{t:10s} {con.execute(f'SELECT count(*) FROM {t}').fetchone()[0]}")

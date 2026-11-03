@@ -18,3 +18,8 @@ The user does not want to pay maintenance for schema changes (2026-10-22: "나�
 **Why:** a schema change means migrations and code in many places, and the old adb-mcp DB had piled up 12 migrations.
 
 **How to apply:** if a need seems to require a schema change, first express it as a fact kind, an entity, or JSON in `usage.props`, and ask the user before touching schema.sql. Related: [[shorts-automation-pipeline]], [[elevenlabs-tts]].
+
+**Upkeep (2026-11-03).** The schema stays frozen; what wears is the data, so it is checked, not migrated.
+- `python -m lumina.sourcedb health` (read-only, ~2 s on 1.4M facts) reports, each with its fixing command: media cut by an older cuts version (`recut --stale`), descriptions whose span no longer matches a cut (`describe --misaligned`, cost-capped by `--max-cost`), fact rows whose value/num/ref does not fit their kind, duplicate entity names (`merge --keep ID DUP…`), search documents out of step (`health --fix-docs`), cuts without embeddings, missing files (`--files`), and the backup age.
+- `python -m lumina.sourcedb backup` writes a consistent copy (`VACUUM INTO`, safe while the DB is in use) to `~/.lumina/backups`, checks its integrity and keeps the newest 10. Run it before a re-cut, a merge or a bulk describe.
+- **cut_id is a search handle, not an identity.** A re-cut replaces a media's cuts and their ids. Plans, notes and handoffs that outlive the session name the file and the source span (`clip_place_shots` returns `path` and `source_seconds`), as `usage` and `fact` already do.

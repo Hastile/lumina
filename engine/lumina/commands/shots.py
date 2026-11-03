@@ -217,7 +217,9 @@ def clip_place_shots(ctx: Context, p: PlaceShots):
             raise CommandError("PLAN_REFUSED", f"{x['n']}: {problem}")
         write_clip(ctx, seq, tid, new)
         ours.add(cid)
+        # cut ids change when a media is cut again; the file and source span are what stays true
         placed.append({"shot": x["n"], "clip_id": cid, "cut_id": x["cut_id"], "name": clip["name"],
+                       "path": doc["media"][x["media_id"]].get("path"),
                        "start": x["at"], "end": x["end"],
                        "source_seconds": [round(timebase.ticks_to_seconds(x["src_in"]), 3),
                                           round(timebase.ticks_to_seconds(x["src_in"] + round(span * x["speed"])), 3)]
