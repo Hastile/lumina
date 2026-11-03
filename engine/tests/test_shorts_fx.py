@@ -179,7 +179,8 @@ def test_place_sfx_by_name_on_grammar_tracks():
     seq = s.doc["sequences"][sid]
     clips = {c["id"]: c for t in seq["audio_tracks"] for c in seq["tracks"][t]["clips"].values()}
     tid = clips[rows["티딩"]["clip_id"]]
-    assert (tid["volume_db"], tid["gain_db"], tid["audio_tag"]) == (-3.0, -7.0, "sfx")
+    assert (tid["volume_db"], tid["gain_db"], tid["audio_tag"]) == (0.0, 0.0, "sfx"), "no clip volume cut, no fixed gain"
+    assert all(clips[x["clip_id"]]["volume_db"] == 0.0 for x in r["sounds"])
     assert all(clips[x["clip_id"]]["audio_tag"] == "sfx" for x in r["sounds"])
     s.undo()
     assert not any(seq["tracks"][t]["clips"] for t in s.doc["sequences"][sid]["audio_tracks"]), "one undo removes all"
@@ -489,3 +490,14 @@ def test_reveal_detection_and_name_hints():
     assert plan.hints == {by["바로 사스케입니다"]: "사스케"}, "only a name's first mention, mid-sentence"
     assert "reveal?" in sp.render(plan, 30, 1)
     assert "사이버펑크" not in plan.hints.values(), "a name at a sentence start is already a cut"
+
+
+def test_levels_come_from_auto_match_only():
+    """User, 2026-11-03: the level is Auto-Match's, never a lowered clip volume. A2/A3 sounds (티딩, Kick 5 and
+    Epic Hit 2 included) go to Auto-Match; A4 (Bells 2, 물방울) stays out of it."""
+    from lumina.commands.shorts_fx import sound_rule
+
+    for name in ("티딩", "Kick 5", "Epic Hit 2", "W4", "뚜훅"):
+        r = sound_rule(name)
+        assert r["match"] and "volume_db" not in r and "gain_db" not in r, name
+    assert not sound_rule("Bells 2")["match"] and sound_rule("Bells 2")["track"] == 4

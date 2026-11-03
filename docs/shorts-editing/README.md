@@ -156,7 +156,7 @@
 - 120으로 키운 자막이 한 줄에 들어가는지 프레임으로 확인한다.
 
 ### 6. 효과음
-- **`shorts_place_sfx` 한 번으로 놓는다.** `sounds: [{at: "<자막 첫 프레임>f", sound: "W4"}]`, `end_at`(영상 끝)을 준다. 이름(W1–W7, Kick 2, Epic Hit 3, Bells 2, 뚜훅, 티딩, 난감한 물방울, H:Cash…)은 프로젝트 미디어에서, 없으면 `LUMINA_SFX_DIRS`(기본 `D:/유튜브 채널/SFX`, `D:/Motion Bro`)에서 찾는다. 아래 트랙·프리롤·꼬리 자르기·sfx 태그·A2/A3 Auto-Match·볼륨 규칙은 명령이 적용한다.
+- **`shorts_place_sfx` 한 번으로 놓는다.** `sounds: [{at: "<자막 첫 프레임>f", sound: "W4"}]`, `end_at`(영상 끝)을 준다. 이름(W1–W7, Kick 2, Epic Hit 3, Bells 2, 뚜훅, 티딩, 난감한 물방울, H:Cash…)은 프로젝트 미디어에서, 없으면 `LUMINA_SFX_DIRS`(기본 `D:/유튜브 채널/SFX`, `D:/Motion Bro`)에서 찾는다. 아래 트랙·프리롤·꼬리 자르기·sfx 태그·A2/A3 Auto-Match는 명령이 적용한다. 클립 볼륨은 건드리지 않는다.
 - 트랙:
   - A2: Whoosh (KF - Whoosh Dramatic 1/3/4/5/6)
   - A3: Hit, Kick, 뚜훅, 티딩
@@ -165,8 +165,8 @@
 - 겹침: 같은 트랙에서 꼬리가 다음 소리를 덮지 않게 한다(`covered` 확인).
 - 음량:
   - 모두 `clip_set_audio_tag sfx`로 태그를 단다.
-  - A2와 A3만 `audio_auto_match`를 적용한다.
-  - 티딩은 gain -7, volume -3으로 따로 맞춘다.
+  - A2와 A3만 `audio_auto_match`를 적용한다(티딩 포함).
+  - 클립 볼륨은 내리지 않는다. 레벨은 오토매치로만 맞춘다(사용자, 2026-11-03).
 
 ### 7. 저장과 보고
 - 단계마다 `begin_transaction` / `commit_transaction`으로 묶는다. 실수하면 `rollback_transaction`으로 되돌린다.

@@ -51,7 +51,9 @@ Learned 2026-10-21, read-only, from every Shorts sequence (has a "쇼츠 타이�
   - Real voice or OST clips from the source go on A1.
 - Opening pattern: W3 (frame 0) → 뚜훅 (slammed hook word) → B2 (question end) → W4 (body).
 
-**Volume (user, 2026-10-21)**
+**Volume (user correction, 2026-11-03): levels come from Auto-Match, never from lowering clip Volume.** "클립볼륨을 떨구는게 아니라 오토매치 하라니까?" Do not set clip Volume -3 dB on 티딩, Kick 5 or Epic Hit 2, and do not hand-set 티딩's gain: tag every sound SFX and Auto-Match A2 and A3 (티딩 included). A4 (Bells 2, 물방울) stays out of the match. This replaces the clip-Volume rule of 2026-10-21 below, kept as history.
+
+**Volume (user, 2026-10-21; clip Volume part replaced 2026-11-03)**
 - Strong sounds get clip Volume -3 dB; the confirmed list is below.
 - In Premiere only A2 and A3 are selected for Loudness Auto-Match.
 - Bells 2 and 난감한 물방울 sit on A4 so they stay out of the match: Premiere measures their short sound on integrated loudness and boosts them about +6 dB (measured: B2 +5.9, 물방울 +6.2 at the -21 LUFS SFX target).

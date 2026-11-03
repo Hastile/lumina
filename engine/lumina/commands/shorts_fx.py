@@ -17,8 +17,8 @@ shorts.place_sfx        sounds by name (W1-W7, Kick 1/2/5, Epic Hit 3, Bells 2,
                         tracks: whooshes A2, hits A3, bells/물방울 A4; Epic Hit
                         pre-rolled 21 frames; tails trimmed so they never run
                         into the next sound on the track; tagged SFX; Auto-Match
-                        on A2/A3; 티딩/Kick 5/Epic Hit 2 at volume -3, 티딩 at
-                        gain -7.
+                        on A2/A3 (티딩 included). Clip volume is never lowered:
+                        the level comes from Auto-Match (user, 2026-11-03).
 """
 
 from __future__ import annotations
@@ -145,19 +145,16 @@ FPS30_PREROLL_FRAMES = 21  # Epic Hit lands 0.7 s after its start
 
 
 def sound_rule(name: str) -> dict:
-    """Track (A#), pre-roll frames, volume and fixed gain for a sound name from the SFX grammar."""
+    """Track (A#), pre-roll frames and whether Auto-Match sets its level, for a sound name from the SFX grammar.
+    Levels come from Auto-Match only: no clip volume cuts, no fixed gains (user, 2026-11-03)."""
     n = name.strip().lower()
-    rule = {"track": 3, "preroll": 0, "volume_db": None, "gain_db": None, "match": True}
+    rule = {"track": 3, "preroll": 0, "match": True}
     if re.fullmatch(r"w\d", n) or "whoosh" in n:
         rule["track"] = 2
     elif "bells" in n or "물방울" in n:
         rule.update(track=4, match=False)
     if "epic hit" in n:
         rule["preroll"] = FPS30_PREROLL_FRAMES
-    if n in ("티딩", "티딩!") or "티딩" in n:
-        rule.update(volume_db=-3.0, gain_db=-7.0, match=False)
-    if re.fullmatch(r"(kick|k) ?5", n) or re.fullmatch(r"epic hit ?2", n):
-        rule["volume_db"] = -3.0
     return rule
 
 
@@ -241,7 +238,7 @@ class PlaceSfx(Params):
 def shorts_place_sfx(ctx: Context, p: PlaceSfx):
     """Place a Short's sound effects by name in one edit: each on its grammar track (whoosh A2, hits A3, bells A4),
     Epic Hit pre-rolled 21 f, tails cut before the next sound on the track and at end_at, tagged SFX, A2/A3
-    Auto-Matched, 티딩/Kick 5/Epic Hit 2 at volume -3 and 티딩 at gain -7. Any problem refuses the whole list."""
+    Auto-Matched (clip volume is never lowered). Any problem refuses the whole list."""
     doc = ctx.doc
     seq = seq_of(doc, p.sequence_id)
     st = seq["settings"]
@@ -304,9 +301,7 @@ def shorts_place_sfx(ctx: Context, p: PlaceSfx):
             warnings.append(f"sounds at frames {a // tpf} and {b // tpf} are under 0.5 s apart")
 
     place = REGISTRY.get("clip.place")
-    clip_set = REGISTRY.get("clip.set")
     tag = REGISTRY.get("clip.set_audio_tag")
-    gain = REGISTRY.get("clip.audio_gain")
     placed, match_ids = [], []
     for x in todo:
         r = place.handler(ctx, place.params.model_validate({
@@ -314,13 +309,7 @@ def shorts_place_sfx(ctx: Context, p: PlaceSfx):
             "source_out": x["end"] - x["at"], "take_video": False, "audio_track_id": x["track"]}))
         cid = r["audio_clip_id"]
         tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": [cid], "tag": "sfx"}))
-        if x["rule"]["volume_db"] is not None:
-            clip_set.handler(ctx, clip_set.params.model_validate({"sequence_id": seq["id"], "clip_ids": [cid],
-                                                                  "volume_db": x["rule"]["volume_db"]}))
-        if x["rule"]["gain_db"] is not None:
-            gain.handler(ctx, gain.params.model_validate({"sequence_id": seq["id"], "clip_ids": [cid], "mode": "set",
-                                                          "db": x["rule"]["gain_db"]}))
-        elif x["rule"]["match"] and x["track"] in seq["audio_tracks"][1:3]:
+        if x["rule"]["match"] and x["track"] in seq["audio_tracks"][1:3]:
             match_ids.append(cid)
         row = {"clip_id": cid, "sound": x["sound"], "file": doc["media"][x["media_id"]]["name"],
                "track": f"A{seq['audio_tracks'].index(x['track']) + 1}", "at_frame": x["at"] // tpf,
