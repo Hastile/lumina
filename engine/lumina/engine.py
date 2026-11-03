@@ -436,7 +436,7 @@ class Engine:
         from .commands.project import seq_of
 
         rep = shorts_check.check(self.session.doc, seq_of(self.session.doc, p.get("sequence_id")),
-                                 use_db=p.get("use_db", True) is not False)
+                                 use_db=p.get("use_db", True) is not False, profile=p.get("profile", "shorts"))
         return rep if p.get("format") == "json" else {"ok": rep["ok"], "report": shorts_check.render(rep)}
 
     def _shorts_plan(self, p: dict) -> dict:

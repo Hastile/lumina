@@ -1,5 +1,6 @@
 """shorts_plan (captions -> shots/effects/sounds), shorts.caption_effects and shorts.place_sfx."""
 import json
+from collections import Counter
 
 import pytest
 
@@ -331,3 +332,45 @@ def test_calibration_against_an_archive_short():
     assert rep["by_kind"]["sentence end"]["user_cut"] == 1.0
     assert rep["effect_agreement"] is not None and "pop->pop" in rep["effects"]
     assert "worst Shorts" in sc.render(rep)
+
+
+def longform_session(rows):
+    s = Session(services=BuildServices())
+    sid = s.execute("sequence.create", {"name": "Long", "video_tracks": 3, "audio_tracks": 2})["result"]["sequence_id"]
+    tid = s.execute("caption.add_track", {"name": "자막"})["result"]["track_id"]
+    t = 0
+    for start, d, text in rows:
+        s.execute("caption.add", {"track_id": tid, "text": text, "at": round(start * SEC), "duration": round(d * SEC)})
+    mids = s.execute("media.import", {"paths": ["a.mp4", "b.mp4"]})["result"]["media_ids"]
+    return s, sid, mids
+
+
+def test_edit_check_longform_rules():
+    s, sid, mids = longform_session([
+        (0.5, 2.0, "그 문제를 해결하지"), (2.5, 2.0, "못했던 이유는"), (4.5, 6.0, "길게 이어지는 설명입니다. 그리고 다음 문장도"),
+        (11.0, 1.0, "끝입니다."), (12.5, 1.5, "핵심 증거를")])
+    v1 = s.doc["sequences"][sid]["video_tracks"][0]
+    s.execute("clip.place", {"media_id": mids[0], "at": 0, "source_in": "2s", "source_out": "4s", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": mids[1], "at": "2s", "source_out": "0.7s", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": mids[0], "at": "2.7s", "source_in": "2.5s", "source_out": "12.5s", "video_track_id": v1, "take_audio": False})
+    rep = shorts_check.check(s.doc, s.doc["sequences"][sid], use_db=False, profile="longform")
+    kinds = Counter(p["kind"] for p in rep["problems"])
+    assert kinds["reuse"] == 1, "a.mp4 2.5-4 s comes back after its first use at 2-4 s"
+    assert kinds["caption start"] == 1 and kinds["caption gap"] >= 2 and kinds["caption punctuation"] == 1
+    assert kinds["caption split"] == 1, "해결하지 / 못했던"
+    assert kinds["caption long"] == 1, "6 s holding two sentences"
+    assert "short shot" not in kinds and "ending" not in kinds, "Shorts-only rules are off in long-form"
+    assert rep["summary"]["profile"] == "longform"
+
+
+def test_reuse_counts_stills_and_ignores_other_spans():
+    s, sid, mids = longform_session([(0, 10, "설명")])
+    img = s.execute("media.import", {"paths": ["d.png"]})["result"]["media_ids"][0]
+    v1 = s.doc["sequences"][sid]["video_tracks"][0]
+    s.execute("clip.place", {"media_id": mids[0], "at": 0, "source_out": "2s", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": mids[0], "at": "2s", "source_in": "10s", "source_out": "12s", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": img, "at": "4s", "source_out": "1s", "video_track_id": v1})
+    s.execute("clip.place", {"media_id": img, "at": "5s", "source_out": "1s", "video_track_id": v1})
+    rep = shorts_check.check(s.doc, s.doc["sequences"][sid], use_db=False, profile="longform")
+    reuse = [p for p in rep["problems"] if p["kind"] == "reuse"]
+    assert len(reuse) == 1 and reuse[0]["frame"] == 150, "only the repeated still; another span of a.mp4 is new"

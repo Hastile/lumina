@@ -1,4 +1,4 @@
-"""shorts_check: a Short's edit checked against the grammar as text, with no frames to look at.
+"""shorts_check / edit_check: an edit checked against the grammar as text, with no frames to look at.
 
 Reviewing by eye was the largest single cost of a Short (get_frame_image
 100-175 times). Most of what the eye checked is measurable on the timeline
@@ -14,10 +14,24 @@ and in the source DB, so this lists only what is wrong, each with a frame:
             than one line (810 px)
   sounds    sounds on A2-A4 not tagged SFX; sounds under 0.5 s apart
 
+both formats (docs/editing-grammar: common-cuts, caption-quality)
+  reuse     the same source span (or a near-duplicate media) used twice: reuse
+            needs a reason in the plan, so every repeat is listed with its first use
+  captions  first caption not at frame 0, gaps and overlaps between captions,
+            trailing , or . on a caption, protected phrases split across two
+            captions (해결하지 / 못했던, 들고 / 온); long-form also: over 3.5 s to
+            review, over 5 s or two sentences in one caption to split
+  cuts      (long-form) a cut that separates a modifier or object from its head
+
+profile="longform" drops the Shorts-only rules (1.1 s shots, the 87-105 % band,
+the V5/V6 ending, the 810 px slam, the A2-A4 sound tracks).
+
 Then one get_frame_strip is enough to see the shots themselves.
 """
 
 from __future__ import annotations
+
+import re
 
 from typing import Optional
 
@@ -30,6 +44,34 @@ EDGE_FRAMES = 3
 END_PAD = (3, 9)
 LINE_WIDTH = 810.0
 DARK = 0.15
+
+
+def sp_bound(text: str) -> bool:
+    from .shorts_plan import is_bound
+
+    return is_bound(text)
+
+
+def _dup_root(path: str, db_path=None):
+    """The DB identity of a file: its media, or the media it is a near-duplicate of (other size, other format)."""
+    try:
+        from pathlib import Path
+
+        from .sourcedb import db
+        p = db_path or db.DEFAULT_DB_PATH
+        if not Path(p).exists():
+            return None
+        con = db.connect(p)
+        try:
+            mid = db.media_id_for_path(con, path)
+            if mid is None:
+                return None
+            row = con.execute("SELECT COALESCE(dup_of, media_id) FROM media WHERE media_id = ?", (mid,)).fetchone()
+            return f"db:{row[0]}"
+        finally:
+            con.close()
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _scene_info(path: str, db_path=None) -> Optional[dict]:
@@ -58,7 +100,79 @@ def _scene_info(path: str, db_path=None) -> Optional[dict]:
         con.close()
 
 
-def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
+TRAILING = re.compile(r"(?<![0-9.])[,.，。．]\s*$")
+AUX_AFTER = {"지": ("못", "않", "말"), "고": ("있", "싶", "온", "간", "왔", "갔", "계", "나서"),
+             "아": ("주", "보", "버", "놓", "두", "있"), "어": ("주", "보", "버", "놓", "두", "있"), "해": ("주", "보", "버", "놓", "두")}
+
+
+def protected_split(prev: str, nxt: str) -> bool:
+    """A verb and its auxiliary/negation split across captions: 해결하지 / 못했던, 들고 / 온, 먹어 / 버린."""
+    a, b = prev.strip().rstrip(",").strip(), nxt.strip()
+    if not a or not b:
+        return False
+    for end, starts in AUX_AFTER.items():
+        if a.endswith(end) and b.startswith(starts):
+            return True
+    return False
+
+
+def _caption_checks(cues: list[dict], tpf: int, add, longform: bool) -> None:
+    from . import shorts_plan as sp
+
+    if not cues:
+        return
+    if cues[0]["start"] >= tpf:
+        add("caption start", cues[0]["start"], f"the first caption starts at frame {cues[0]['start'] // tpf}, not 0 "
+                                               "(unless the intro is meant to have none)", cues[0]["id"])
+    for a, b in zip(cues, cues[1:]):
+        gap = b["start"] - a["end"]
+        if gap >= tpf:
+            add("caption gap", a["end"], f"{gap // tpf} frames without a caption after '{a['caption']['text']}'", b["id"])
+        ta, tb = a["caption"]["text"], b["caption"]["text"]
+        if protected_split(ta, tb):
+            add("caption split", b["start"], f"'{ta} / {tb}' splits a verb from its auxiliary", b["id"])
+    for c in cues:
+        text = c["caption"]["text"]
+        if TRAILING.search(text) and not text.rstrip().endswith(("...", "…")):
+            add("caption punctuation", c["start"], f"'{text}' ends with a comma or full stop", c["id"])
+        if longform:
+            secs = (c["end"] - c["start"]) / TPS
+            inner = re.search(r"(다|요|죠|까)[.?!]\s+\S", text)
+            if secs > 5 or inner:
+                add("caption long", c["start"], f"'{text[:30]}…' {secs:.1f}s" + (" holds two sentences" if inner else "")
+                    + ": split at the speech's clause boundary", c["id"])
+            elif secs > 3.5:
+                add("caption review", c["start"], f"'{text[:30]}…' is on screen {secs:.1f}s (review)", c["id"])
+
+
+def _reuse_checks(doc: dict, seq: dict, tpf: int, add, dup_root) -> None:
+    pics = []
+    for tid in seq["video_tracks"][:3]:
+        for c in seq["tracks"][tid]["clips"].values():
+            item = doc["media"].get(c.get("media_id") or "")
+            if not item or item["kind"] not in ("video", "image"):
+                continue
+            s0 = c["source_in"]
+            s1 = s0 + round((c["end"] - c["start"]) * abs(c["speed"])) if item["kind"] == "video" else s0
+            pics.append((c["start"], dup_root(item), s0, s1, c, item["kind"]))
+    pics.sort(key=lambda x: x[0])
+    for j, (t, root, s0, s1, c, kind) in enumerate(pics):
+        for t_prev, root_prev, p0, p1, cp, _k in pics[:j]:
+            if root != root_prev:
+                continue
+            if kind == "image":
+                same = True
+            else:
+                ov = min(s1, p1) - max(s0, p0)
+                same = ov > 0 and (ov >= 0.5 * TPS or ov >= 0.5 * min(s1 - s0, p1 - p0))
+            if same:
+                add("reuse", t, f"'{c['name']}' repeats the source used at frame {t_prev // tpf}: give the reuse a reason "
+                                "(new evidence, recall, comparison) or replace it", c["id"])
+                break
+
+
+def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True, profile: str = "shorts") -> dict:
+    longform = profile == "longform"
     st = seq["settings"]
     tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
     problems: list[dict] = []
@@ -81,14 +195,19 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
             add("gap", prev_end, f"black gap of {(c['start'] - prev_end) // tpf} frames before '{c['name']}'", c["id"])
         prev_end = max(prev_end, c["end"])
         length = (c["end"] - c["start"]) / TPS
-        if length < MIN_SHOT:
+        if length < MIN_SHOT and not longform:
             add("short shot", c["start"], f"'{c['name']}' is {length:.2f}s (< {MIN_SHOT}s)", c["id"])
-        if c["start"] > 0 and cue_starts and min(abs(c["start"] - s) for s in cue_starts) > 2 * tpf:
+        if c["start"] > 0 and cue_starts and not longform and min(abs(c["start"] - s) for s in cue_starts) > 2 * tpf:
             add("off caption", c["start"], f"cut to '{c['name']}' is not on a caption start", c["id"])
+        if longform and c["start"] > 0:
+            k = next((n for n, cue in enumerate(cues) if abs(cue["start"] - c["start"]) <= 2 * tpf), None)
+            if k and sp_bound(cues[k - 1]["caption"]["text"]):
+                add("cut splits phrase", c["start"], f"the cut to '{c['name']}' separates '{cues[k - 1]['caption']['text']}' "
+                                                     "from what it modifies", c["id"])
         item = doc["media"].get(c.get("media_id") or "")
         if not item or item["kind"] != "video":
             continue
-        if abs(c["speed"] - 1.0) > 1e-6 and not 0.87 <= abs(c["speed"]) <= 1.05:
+        if not longform and abs(c["speed"] - 1.0) > 1e-6 and not 0.87 <= abs(c["speed"]) <= 1.05:
             add("speed", c["start"], f"'{c['name']}' plays at {c['speed']:.0%} (keep 87-105%)", c["id"])
         if not use_db or not item.get("path"):
             continue
@@ -115,8 +234,19 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
                 add("dark", c["start"], f"'{c['name']}' is dark for most of the shot", c["id"])
                 break
 
+    # ---- reuse (both formats)
+    roots: dict[str, object] = {}
+
+    def dup_root(item: dict):
+        path = item.get("path")
+        if path not in roots:
+            roots[path] = _dup_root(path, db_path) if use_db and path else None
+        return roots[path] or path or item["id"]
+
+    _reuse_checks(doc, seq, tpf, add, dup_root)
+
     # ---- ending
-    narration = max((c["end"] for c in tracks[at[0]]["clips"].values()), default=None) if at else None
+    narration = None if longform else max((c["end"] for c in tracks[at[0]]["clips"].values()), default=None) if at else None
     video_end = max((c["end"] for c in v1), default=None)
     if narration is not None and video_end is not None:
         pad = (video_end - narration) // tpf
@@ -138,6 +268,7 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
                     add("ending", video_end, f"'{c['name']}' on A{at.index(tid) + 1} runs past the end", c["id"])
 
     # ---- captions
+    _caption_checks(cues, tpf, add, longform)
     for a, b in zip(cues, cues[1:]):
         if b["start"] < a["end"] - tpf // 2:
             add("caption overlap", b["start"], f"'{a['caption']['text']}' and '{b['caption']['text']}' are on screen together",
@@ -146,7 +277,7 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
         from .commands.shorts_fx import line_width
     except Exception:  # noqa: BLE001
         line_width = None
-    if line_width is not None:
+    if line_width is not None and not longform:
         for t in caption_tids:
             style = tracks[t]["caption_style"]
             for c in tracks[t]["clips"].values():
@@ -158,7 +289,7 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
                             c["id"])
 
     # ---- sounds
-    sounds = sorted((c for tid in at[1:4] for c in tracks[tid]["clips"].values()), key=lambda c: c["start"])
+    sounds = [] if longform else sorted((c for tid in at[1:4] for c in tracks[tid]["clips"].values()), key=lambda c: c["start"])
     for c in sounds:
         if c.get("audio_tag") != "sfx":
             add("sfx tag", c["start"], f"'{c['name']}' is not tagged SFX (Auto-Match skips it)", c["id"])
@@ -174,7 +305,7 @@ def check(doc: dict, seq: dict, *, db_path=None, use_db: bool = True) -> dict:
         "summary": {"shots": len(v1), "captions": len(cues), "sounds": len(sounds),
                     "seconds": round((video_end or 0) / TPS, 2),
                     "shot_seconds": [round(min(shots), 2), round(sum(shots) / len(shots), 2), round(max(shots), 2)] if shots else None,
-                    "source_db": any(v is not None for v in scenes.values())},
+                    "source_db": any(v is not None for v in scenes.values()), "profile": profile},
     }
 
 

@@ -8,4 +8,4 @@ Before planning or editing Caddynote Shorts or long-form videos, read `docs/edit
 
 ## Shorts-specific instructions
 
-Before editing a Short in a Lumina project, read `docs/shorts-editing/README.md` and the grammar files it lists. Edit through the Lumina MCP tools so the user can watch the work in the app; do not change `.lumina` files with side scripts.
+Before editing a Short in a Lumina project, read `docs/shorts-editing/CARD.md` (one page: the tool flow and the judgments the tools cannot make). Open `docs/shorts-editing/README.md` and the grammar files only for what the card does not cover or the user newly corrects. Edit through the Lumina MCP tools so the user can watch the work in the app; do not change `.lumina` files with side scripts.

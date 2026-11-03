@@ -146,6 +146,16 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                                                        "use_db": {"type": "boolean", "default": True},
                                                        "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}},
                      None),
+    "edit_check": ("shorts.check",
+                   "Check a long-form (profile longform) or Short edit as text, without frames: the same source reused, "
+                   "captions (first at frame 0, gaps, overlaps, trailing , or ., verb/auxiliary split, over 3.5 s / 5 s, two "
+                   "sentences in one), cuts that split a phrase, neighbour-shot flashes, scene changes inside shots and dark "
+                   "shots (source DB), gaps. Lists only problems, each with its frame.",
+                   {"type": "object", "properties": {"sequence_id": {"type": "string"},
+                                                     "profile": {"type": "string", "enum": ["longform", "shorts"], "default": "longform"},
+                                                     "use_db": {"type": "boolean", "default": True},
+                                                     "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}},
+                   lambda a: {"profile": "longform", **a}),
     "plan_scene_cuts": ("analysis.plan_scene_cuts",
                         "Scene Edit Detection: razor points where a clip's picture cuts to a new shot. apply=true razors there "
                         "(one undo step).",

@@ -29,6 +29,9 @@ by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 | `shorts.place_sfx`: sounds by name, grammar tracks, Epic Hit pre-roll, tails cut, sfx tag, A2/A3 Auto-Match, -3/-7 rules. Next step 3. | same |
 | `shorts.build` (one command, one undo: place_shots → end at narration + 6 f → effects → sounds → check) and `shorts_check` (text-only review: shots, gaps, flashes/dark from the DB, ending, captions, sounds). | `engine/lumina/commands/shorts_fx.py`, `engine/lumina/shorts_check.py` |
 | Calibration of the draft against the archive (precision/recall/F1 of cuts per boundary kind, effect confusion, worst Shorts): run `docs/shorts-editing/calibrate_plan.py` on the PC on `cut_grammar_extract.py` output. **First thing to run on the PC**: it says how good `shorts_plan` is. | `engine/lumina/shorts_calibrate.py` |
+| `edit_check` (MCP; the same checker with `profile: longform`): reuse of a source span or near-duplicate media, caption completion rules (frame 0, gaps, trailing punctuation, protected splits, 3.5 s / 5 s / two sentences), cuts that split a phrase. Shorts get reuse and caption checks too. | `engine/lumina/shorts_check.py` |
+| `docs/shorts-editing/CARD.md`: one page (6 KB) replacing ~143 KB of grammar reading per session; AGENTS.md/CLAUDE.md point at it first. | docs |
+| `docs/shorts-editing/session_cost.py`: Lumina calls by tool, frames looked at, tokens and minutes per Claude Code session, to measure the gain. | docs |
 | Source DB upkeep: `health` (read-only report with fixing commands), `backup`, `recut --stale`, `describe --misaligned`, `merge`. See `docs/shorts-editing/source-db-frozen-schema.md` "Upkeep". | `engine/lumina/sourcedb/health.py` |
 | The SigLIP text encoder starts in the background when the MCP server starts (`LUMINA_WARM_ENCODER=0` turns it off). Next step 5. | `engine/lumina/mcp_server.py` |
 
