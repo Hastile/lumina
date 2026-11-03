@@ -9,7 +9,7 @@
 3. `source_plan`을 한 번 부른다. 샷마다 `text`(덮는 내레이션), `look`(화면에 보여야 할 것: 누가, 무엇을, 샷 크기), `seconds`를 준다. 작품은 `work`, 인물은 `character`로 거른다.
 4. `shorts_build`를 한 번 부른다. 샷 배치, 끝 맞춤, 자막 효과, 효과음, 점검이 한 번의 되돌리기로 들어간다. 돌려받은 `hits_to_choose`는 판단 4로 골라 `shorts_place_sfx`로 넣는다.
 5. TMI가 있으면 `shorts_add_tmi` 한 번에 넣는다: `items: [{caption_clip_id, text}]`. 위치, 폰트, 테두리, 효과는 도구가 정하고, 존댓말 어미나 그릴 수 없는 글자는 경고로 알려 준다. 무엇을 쓸지는 판단 5.
-6. BGM이 있으면 A5에 놓고 `shorts_set_bgm`을 한 번 부른다. 효과음처럼 LUFS 오토매치로 -25.5 LUFS(-24~-27 범위)에 맞춘다. 클립 볼륨은 건드리지 않는다.
+6. BGM이 있으면 A5에 놓고 `shorts_set_bgm`을 한 번 부른다. LUFS로 재서 -27~-24 안이면 그대로 두고, 밖이면 가까운 쪽 끝(-24 또는 -27)까지만 오토매치로 맞춘다. 중간값으로 몰지 않는다. 클립 볼륨은 건드리지 않는다.
 7. 결과의 check(= `shorts_check`)에 나온 문제만 고친다.
 8. `get_frame_strip`을 한 장 보고 `save_project`로 저장한 뒤 보고한다.
 

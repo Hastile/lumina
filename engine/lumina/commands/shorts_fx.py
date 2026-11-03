@@ -557,23 +557,27 @@ def shorts_add_tmi(ctx: Context, p: AddTmi):
 
 # ---------------------------------------------------------------- BGM level
 
-BGM_TARGET_LUFS = -25.5          # user, 2026-11-03: BGM between -24 and -27 LUFS
-BGM_BAND = (-27.0, -24.0)
+BGM_BAND = (-27.0, -24.0)        # user, 2026-11-03: BGM anywhere between -27 and -24 LUFS (no fixed midpoint)
 
 
 class SetBgm(Params):
     sequence_id: Optional[str] = None
     track_id: Optional[str] = Field(default=None, description="the BGM track; default A5")
     clip_ids: Optional[list[str]] = Field(default=None, description="default every clip on the BGM track")
-    target_lufs: float = Field(default=BGM_TARGET_LUFS, ge=-60, le=0,
-                               description="BGM loudness (LUFS); the user's band is -24 to -27")
+    low_lufs: float = Field(default=BGM_BAND[0], ge=-60, le=0, description="quietest allowed (LUFS)")
+    high_lufs: float = Field(default=BGM_BAND[1], ge=-60, le=0, description="loudest allowed (LUFS)")
 
 
 @command("shorts.set_bgm", SetBgm)
 def shorts_set_bgm(ctx: Context, p: SetBgm):
-    """Level the BGM by Loudness Auto-Match (LUFS), like the sound effects: tag the BGM clips Music and match them to
-    target_lufs (-25.5, inside the user's -24 to -27 band), whether or not narration plays over them. Only the clips'
-    Audio Gain changes; clip volume and the narration stay as they are. A clip that lands outside the band is noted."""
+    """Keep the BGM inside -27 to -24 LUFS by Loudness Auto-Match, without forcing a midpoint: each BGM clip is
+    tagged Music and measured as it plays with its current gain; inside the band it is left alone, louder than
+    -24 it is matched down to -24, quieter than -27 matched up to -27. Only Audio Gain changes."""
+    from .. import audio_analysis as aa
+    from .audio import _source
+
+    if p.low_lufs > p.high_lufs:
+        raise CommandError("BAD_PARAMS", "low_lufs must not be above high_lufs")
     seq = seq_of(ctx.doc, p.sequence_id)
     at = seq["audio_tracks"]
     tid = p.track_id or (at[4] if len(at) > 4 else None)
@@ -582,16 +586,34 @@ def shorts_set_bgm(ctx: Context, p: SetBgm):
     clips = [c for c in seq["tracks"][tid]["clips"].values() if not p.clip_ids or c["id"] in p.clip_ids]
     if not clips:
         raise CommandError("NO_BGM", "no clips on the BGM track")
+    measure = getattr(ctx.services, "audio_measure", None)
+    if measure is None:
+        raise CommandError("NO_SERVICES", "loudness analysis needs media services")
     tag = REGISTRY.get("clip.set_audio_tag")
     tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips], "tag": "music"}))
     am = REGISTRY.get("audio.auto_match")
-    r = am.handler(ctx, am.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips],
-                                                  "targets": {"music": p.target_lufs}, "music_bed_db": None}))
-    out = {"track_id": tid, "target_lufs": p.target_lufs, "band": list(BGM_BAND), "clips": {}}
-    for cid, x in r["clips"].items():
-        row = {k: x.get(k) for k in ("lufs", "target", "gain_db", "result", "notes")}
-        res = x.get("result")
-        if res is not None and not BGM_BAND[0] <= res <= BGM_BAND[1]:
-            row["note"] = f"lands at {res} LUFS, outside {BGM_BAND[0]} to {BGM_BAND[1]} (peak ceiling or boost limit)"
-        out["clips"][cid] = row
+    out = {"track_id": tid, "band": [p.low_lufs, p.high_lufs], "clips": {}}
+    for c in clips:
+        src = _source(ctx, c)
+        if src is None:
+            raise CommandError("MEDIA_OFFLINE", f"'{c['name']}' has no audio on disk")
+        path, s0, dur, channels, _m = src
+        level, _metric = aa.level_of("music", measure(path, s0, dur, c["speed"], channels, []))
+        if level is None:
+            out["clips"][c["id"]] = {"note": "silent"}
+            continue
+        gain = float(find_clip(seq, c["id"])[1].get("gain_db") or 0.0)
+        now = round(level + gain, 1)
+        if p.low_lufs <= now <= p.high_lufs:
+            out["clips"][c["id"]] = {"lufs": now, "action": "kept", "gain_db": round(gain, 1)}
+            continue
+        target = p.high_lufs if now > p.high_lufs else p.low_lufs
+        r = am.handler(ctx, am.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"]],
+                                                      "targets": {"music": target}, "music_bed_db": None}))
+        x = r["clips"][c["id"]]
+        row = {"lufs_before": now, "action": "lowered" if target == p.high_lufs else "raised", "target": target,
+               "result": x.get("result"), "gain_db": x.get("gain_db"), "notes": x.get("notes")}
+        if x.get("result") is not None and not p.low_lufs - 0.5 <= x["result"] <= p.high_lufs + 0.5:
+            row["note"] = "could not reach the band (peak ceiling or boost limit)"
+        out["clips"][c["id"]] = row
     return out

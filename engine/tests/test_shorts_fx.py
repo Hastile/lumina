@@ -463,16 +463,22 @@ def test_set_bgm_is_auto_match_in_lufs(tmp_path):
     m_bgm, m_narr = e.dispatch("execute", {"name": "media.import", "params": {"paths": [str(bgm), str(narr)]}})["result"]["media_ids"]
     e.dispatch("execute", {"name": "clip.place", "params": {"media_id": m_narr, "at": 0, "audio_track_id": a1, "take_video": False}})
     e.dispatch("execute", {"name": "clip.place", "params": {"media_id": m_bgm, "at": 0, "audio_track_id": a5, "take_video": False}})
+    # lavfi's sine (peak 1/8) measures about -21 LUFS: louder than the band, so it comes down to -24 exactly
     r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]
     (cid, x), = r["clips"].items()
-    assert x["target"] == -25.5 and -27 <= x["result"] <= -24 and "note" not in x, "inside the user's band, narration or not"
+    assert x["action"] == "lowered" and x["target"] == -24.0 and abs(x["result"] + 24) < 0.5
     seq = e.session.doc["sequences"][sid]
     clip = seq["tracks"][a5]["clips"][cid]
     narr_clip = next(iter(seq["tracks"][a1]["clips"].values()))
     assert clip["audio_tag"] == "music" and clip["volume_db"] == 0.0 and clip["gain_db"] == x["gain_db"]
     assert narr_clip["gain_db"] == 0.0 and narr_clip["volume_db"] == 0.0, "the narration is untouched"
-    r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"target_lufs": -27}})["result"]
-    assert abs(next(iter(r["clips"].values()))["result"] + 27) < 0.5
+    # inside the band now: no midpoint is forced, the gain stays
+    again = next(iter(e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]["clips"].values()))
+    assert again["action"] == "kept" and again["gain_db"] == round(x["gain_db"], 1)
+    # pushed below the band, it is raised to -27, not to a middle value
+    e.dispatch("execute", {"name": "clip.audio_gain", "params": {"clip_ids": [cid], "mode": "adjust", "db": -8}})
+    low = next(iter(e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]["clips"].values()))
+    assert low["action"] == "raised" and abs(low["result"] + 27) < 0.5
 
 def test_reveal_detection_and_name_hints():
     plan = sp.make_plan(cues(SHORT), names=("사이버펑크", "닮은꼴", "사스케"))
