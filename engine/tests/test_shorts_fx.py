@@ -374,3 +374,29 @@ def test_reuse_counts_stills_and_ignores_other_spans():
     rep = shorts_check.check(s.doc, s.doc["sequences"][sid], use_db=False, profile="longform")
     reuse = [p for p in rep["problems"] if p["kind"] == "reuse"]
     assert len(reuse) == 1 and reuse[0]["frame"] == 150, "only the repeated still; another span of a.mp4 is new"
+
+
+def test_tmi_hangs_on_its_caption():
+    s, sid, tids, ids = shorts_session()
+    s.execute("shorts.caption_effects", {"items": [{"clip_id": ids[1], "effect": "slam", "size": 120}]})
+    r = s.execute("shorts.add_tmi", {"items": [
+        {"caption_clip_id": ids[0], "text": "CD 프로젝트 레드"},
+        {"caption_clip_id": ids[0], "text": "원작은 TRPG\n사이버펑크 2020"},
+        {"caption_clip_id": ids[1], "text": "정확히는 조연"},
+        {"caption_clip_id": ids[4], "text": "성우는 같습니다"}]})["result"]
+    seq = s.doc["sequences"][sid]
+    v4 = seq["video_tracks"][3]
+    assert r["track_id"] == v4
+    clips = sorted(seq["tracks"][v4]["clips"].values(), key=lambda c: c["start"])
+    cues = {c["id"]: c for t in tids for c in seq["tracks"][t]["clips"].values()}
+    assert len(clips) == 3, "two notes on one caption share one graphic"
+    assert (clips[0]["start"], clips[0]["end"]) == (cues[ids[0]]["start"], cues[ids[0]]["end"])
+    ys = {l["text"]: l["position"][1] for c in clips for l in c["graphic"]["layers"]}
+    assert ys == {"CD 프로젝트 레드": 680.0, "원작은 TRPG\n사이버펑크 2020": 960.0, "정확히는 조연": 670.0, "성우는 같습니다": 680.0}
+    layer = clips[0]["graphic"]["layers"][0]
+    assert (layer["font_family"], layer["font_size"], layer["box"]) == ("Pretendard-Medium", 48.0, [810.0, 576.0])
+    assert any("polite register" in w for w in r["warnings"])
+    with pytest.raises(CommandError, match="already has a clip"):
+        s.execute("shorts.add_tmi", {"items": [{"caption_clip_id": ids[0], "text": "다른 메모"}]})
+    s.execute("shorts.add_tmi", {"replace": True, "items": [{"caption_clip_id": ids[0], "text": "다른 메모"}]})
+    assert len(s.doc["sequences"][sid]["tracks"][v4]["clips"]) == 3

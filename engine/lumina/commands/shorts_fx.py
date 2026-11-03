@@ -458,3 +458,109 @@ def shorts_build(ctx: Context, p: BuildShort):
     out["check"] = shorts_check.render(rep)
     out["ok"] = rep["ok"]
     return out
+
+
+# ---------------------------------------------------------------- TMI
+
+TMI_FONT = "Pretendard-Medium"
+TMI_SIZE = 48.0
+TMI_Y = {"above": 680.0, "above_large": 670.0, "below": 960.0}   # box tops (docs/shorts-editing caption effect grammar)
+TMI_ONE_LINE = 19
+POLITE = ("니다", "요", "죠")
+
+
+class Tmi(Params):
+    caption_clip_id: str = Field(description="the caption cue the note hangs on (same start and end)")
+    text: str = Field(min_length=1, description="the note; '\\n' for a 2-3 line memo")
+    place: Literal["auto", "above", "below"] = Field(default="auto", description="auto: one short line above, longer "
+                                                                                  "or multi-line memos below")
+
+
+class AddTmi(Params):
+    sequence_id: Optional[str] = None
+    items: list[Tmi] = Field(min_length=1)
+    track_id: Optional[str] = Field(default=None, description="default the video track named TMI, else V4")
+    replace: bool = Field(default=False, description="overwrite TMI already on the track at those times")
+
+
+def tmi_track(seq: dict) -> Optional[str]:
+    for tid in seq["video_tracks"]:
+        t = seq["tracks"][tid]
+        if not is_caption_track(t) and (t.get("name") or "").strip().upper() == "TMI":
+            return tid
+    return seq["video_tracks"][3] if len(seq["video_tracks"]) > 3 and not is_caption_track(seq["tracks"][seq["video_tracks"][3]]) else None
+
+
+@command("shorts.add_tmi", AddTmi)
+def shorts_add_tmi(ctx: Context, p: AddTmi):
+    """Put TMI notes on caption cues in one edit: a text graphic on the TMI track (V4) with each cue's start and
+    end, Pretendard-Medium 48 with the caption track's stroke and shadow, above the caption (y 680; 670 over a
+    120 caption) for one short line, below (y 960) for longer memos; several notes on one cue share one graphic;
+    the caption track's effects are copied so the note moves with its caption. Refuses the whole list on a problem;
+    warns on polite-register endings, long one-liners and glyphs the font cannot draw."""
+    from .. import text_fit
+    from ..tracks import active_track_effects
+    from .motion import _text_layer, graphic_clip
+
+    seq = seq_of(ctx.doc, p.sequence_id)
+    tid = p.track_id or tmi_track(seq)
+    if tid is None or tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "video" or is_caption_track(seq["tracks"][tid]):
+        raise CommandError("NO_TMI_TRACK", "no TMI track: name a video track TMI or give track_id")
+    problems, warnings = [], []
+    groups: dict[str, list[tuple[Tmi, str, dict]]] = {}
+    for it in p.items:
+        try:
+            ctid, cue = find_clip(seq, it.caption_clip_id)
+        except CommandError:
+            problems.append(f"{it.caption_clip_id}: no such clip")
+            continue
+        if cue.get("caption") is None:
+            problems.append(f"{it.caption_clip_id}: not a caption cue")
+            continue
+        groups.setdefault(cue["id"], []).append((it, ctid, cue))
+    for cid, notes in groups.items():
+        cue = notes[0][2]
+        if not p.replace and not is_free(seq["tracks"][tid], cue["start"], cue["end"]):
+            problems.append(f"'{cue['caption']['text']}': the TMI track already has a clip there (pass replace)")
+    if problems:
+        raise CommandError("TMI_REFUSED", "; ".join(problems), problems=problems)
+
+    from .timeline import clear_range
+
+    out = []
+    for cid, notes in groups.items():
+        _, ctid, cue = notes[0]
+        cstyle = seq["tracks"][ctid]["caption_style"]
+        size = ((cue["caption"].get("style") or {}).get("font_size") or cstyle.get("font_size") or 100)
+        x = (cstyle.get("position") or [135.0, 0])[0]
+        box = list(cstyle.get("box") or [810.0, 576.0])
+        layers, used = [], set()
+        for it, _c, _q in notes:
+            text = it.text.strip()
+            place = it.place
+            if place == "auto":
+                place = "below" if "\n" in text or len(text) > TMI_ONE_LINE else "above"
+            key = "above_large" if place == "above" and size >= 120 else place
+            if place in used:
+                warnings.append(f"'{cue['caption']['text']}': two notes {place} the caption overlap; put one below")
+            used.add(place)
+            layer = _text_layer(text, [x, TMI_Y[key]], font_family=TMI_FONT, font_size=TMI_SIZE, bold=False,
+                                color=cstyle.get("color", "#ffffff"), stroke_color=cstyle.get("stroke_color"),
+                                stroke_width=cstyle.get("stroke_width", 0.0), shadow=cstyle.get("shadow"),
+                                align="center", box=box, vertical_align="center")
+            layers.append(layer)
+            core = text.rstrip(" .!?…~ㅋ")
+            if core.endswith(POLITE):
+                warnings.append(f"'{text}': TMI is never in the narration's polite register (니다/요/죠)")
+            if "\n" not in text and len(text) > TMI_ONE_LINE and place == "above":
+                warnings.append(f"'{text}': {len(text)} characters on one line above the caption (7-19 reads at tempo)")
+            missing = text_fit.missing_glyphs(layer)
+            if missing:
+                warnings.append(f"'{text}': the font cannot draw {''.join(missing)} (write the Korean reading)")
+        clear_range(ctx, seq, tid, cue["start"], cue["end"])
+        clip = graphic_clip(f"TMI {notes[0][0].text.splitlines()[0][:30]}", cue["start"], cue["end"], layers)
+        clip["effects"] = [dict(e) for e in active_track_effects(seq["tracks"][ctid])]
+        write_clip(ctx, seq, tid, clip)
+        out.append({"clip_id": clip["id"], "caption": cue["caption"]["text"], "notes": [n[0].text for n in notes],
+                    "y": [l["position"][1] for l in layers]})
+    return {"track_id": tid, "tmi": out, "warnings": warnings}
