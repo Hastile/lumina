@@ -465,15 +465,14 @@ def test_set_bgm_is_auto_match_in_lufs(tmp_path):
     e.dispatch("execute", {"name": "clip.place", "params": {"media_id": m_bgm, "at": 0, "audio_track_id": a5, "take_video": False}})
     r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]
     (cid, x), = r["clips"].items()
-    assert r["narration_tagged_dialogue"] == 1
-    assert x["target"] == -23.0 - 12.0 and abs(x["result"] - x["target"]) < 0.5, "a bed 12 LU under the dialogue target"
+    assert x["target"] == -25.5 and -27 <= x["result"] <= -24 and "note" not in x, "inside the user's band, narration or not"
     seq = e.session.doc["sequences"][sid]
     clip = seq["tracks"][a5]["clips"][cid]
     narr_clip = next(iter(seq["tracks"][a1]["clips"].values()))
     assert clip["audio_tag"] == "music" and clip["volume_db"] == 0.0 and clip["gain_db"] == x["gain_db"]
-    assert narr_clip["audio_tag"] == "dialogue" and narr_clip["gain_db"] == 0.0, "the narration is only tagged"
-    r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"target_lufs": -30, "music_bed_db": None}})["result"]
-    assert abs(next(iter(r["clips"].values()))["result"] + 30) < 0.5
+    assert narr_clip["gain_db"] == 0.0 and narr_clip["volume_db"] == 0.0, "the narration is untouched"
+    r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"target_lufs": -27}})["result"]
+    assert abs(next(iter(r["clips"].values()))["result"] + 27) < 0.5
 
 def test_reveal_detection_and_name_hints():
     plan = sp.make_plan(cues(SHORT), names=("사이버펑크", "닮은꼴", "사스케"))

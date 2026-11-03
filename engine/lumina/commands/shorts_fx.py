@@ -557,23 +557,23 @@ def shorts_add_tmi(ctx: Context, p: AddTmi):
 
 # ---------------------------------------------------------------- BGM level
 
+BGM_TARGET_LUFS = -25.5          # user, 2026-11-03: BGM between -24 and -27 LUFS
+BGM_BAND = (-27.0, -24.0)
+
+
 class SetBgm(Params):
     sequence_id: Optional[str] = None
     track_id: Optional[str] = Field(default=None, description="the BGM track; default A5")
     clip_ids: Optional[list[str]] = Field(default=None, description="default every clip on the BGM track")
-    target_lufs: Optional[float] = Field(default=None, ge=-60, le=0, description="music target (LUFS); default "
-                                         "Auto-Match's: -25, or music_bed_db under the dialogue target under narration")
-    music_bed_db: Optional[float] = Field(default=12.0, ge=0, le=40, description="how far under the dialogue target "
-                                          "music playing under narration sits (null: always target_lufs)")
-    tag_narration: bool = Field(default=True, description="tag untagged A1 clips Dialogue (tag only, their gain is "
-                                                          "not touched) so the BGM is matched as a bed under them")
+    target_lufs: float = Field(default=BGM_TARGET_LUFS, ge=-60, le=0,
+                               description="BGM loudness (LUFS); the user's band is -24 to -27")
 
 
 @command("shorts.set_bgm", SetBgm)
 def shorts_set_bgm(ctx: Context, p: SetBgm):
-    """Level the BGM by Loudness Auto-Match (LUFS), like the sound effects: tag the BGM clips Music and match them;
-    under the narration (A1, tagged Dialogue if it is not) the music is a bed music_bed_db under the dialogue target.
-    Only the clips' Audio Gain changes; clip volume and the narration's gain stay as they are."""
+    """Level the BGM by Loudness Auto-Match (LUFS), like the sound effects: tag the BGM clips Music and match them to
+    target_lufs (-25.5, inside the user's -24 to -27 band), whether or not narration plays over them. Only the clips'
+    Audio Gain changes; clip volume and the narration stay as they are. A clip that lands outside the band is noted."""
     seq = seq_of(ctx.doc, p.sequence_id)
     at = seq["audio_tracks"]
     tid = p.track_id or (at[4] if len(at) > 4 else None)
@@ -584,18 +584,14 @@ def shorts_set_bgm(ctx: Context, p: SetBgm):
         raise CommandError("NO_BGM", "no clips on the BGM track")
     tag = REGISTRY.get("clip.set_audio_tag")
     tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips], "tag": "music"}))
-    tagged = []
-    if p.tag_narration and at and at[0] != tid:
-        narr = [c["id"] for c in seq["tracks"][at[0]]["clips"].values() if not c.get("audio_tag")]
-        if narr:
-            tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": narr, "tag": "dialogue"}))
-            tagged = narr
     am = REGISTRY.get("audio.auto_match")
-    params = {"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips], "music_bed_db": p.music_bed_db}
-    if p.target_lufs is not None:
-        params["targets"] = {"music": p.target_lufs}
-    r = am.handler(ctx, am.params.model_validate(params))
-    out = {"track_id": tid, "narration_tagged_dialogue": len(tagged), "clips": {}}
+    r = am.handler(ctx, am.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips],
+                                                  "targets": {"music": p.target_lufs}, "music_bed_db": None}))
+    out = {"track_id": tid, "target_lufs": p.target_lufs, "band": list(BGM_BAND), "clips": {}}
     for cid, x in r["clips"].items():
-        out["clips"][cid] = {k: x.get(k) for k in ("lufs", "target", "gain_db", "result", "notes")}
+        row = {k: x.get(k) for k in ("lufs", "target", "gain_db", "result", "notes")}
+        res = x.get("result")
+        if res is not None and not BGM_BAND[0] <= res <= BGM_BAND[1]:
+            row["note"] = f"lands at {res} LUFS, outside {BGM_BAND[0]} to {BGM_BAND[1]} (peak ceiling or boost limit)"
+        out["clips"][cid] = row
     return out
