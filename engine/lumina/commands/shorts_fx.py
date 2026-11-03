@@ -557,66 +557,45 @@ def shorts_add_tmi(ctx: Context, p: AddTmi):
 
 # ---------------------------------------------------------------- BGM level
 
-BGM_TARGET_DB = -25.5      # median of the track meter, post-fader (user, 2026-10-22: -24 to -27 dB on the meter)
-BGM_BAND = (-27.0, -24.0)
-
-
 class SetBgm(Params):
     sequence_id: Optional[str] = None
     track_id: Optional[str] = Field(default=None, description="the BGM track; default A5")
     clip_ids: Optional[list[str]] = Field(default=None, description="default every clip on the BGM track")
-    target_db: float = Field(default=BGM_TARGET_DB, ge=-60, le=0, description="median meter reading after the fader")
-    dry_run: bool = Field(default=False, description="measure and report only")
+    target_lufs: Optional[float] = Field(default=None, ge=-60, le=0, description="music target (LUFS); default "
+                                         "Auto-Match's: -25, or music_bed_db under the dialogue target under narration")
+    music_bed_db: Optional[float] = Field(default=12.0, ge=0, le=40, description="how far under the dialogue target "
+                                          "music playing under narration sits (null: always target_lufs)")
+    tag_narration: bool = Field(default=True, description="tag untagged A1 clips Dialogue (tag only, their gain is "
+                                                          "not touched) so the BGM is matched as a bed under them")
 
 
 @command("shorts.set_bgm", SetBgm)
 def shorts_set_bgm(ctx: Context, p: SetBgm):
-    """Set the BGM's Audio Gain so its track meter (40 ms peak, 24 dB/s fall, after clip volume and the track
-    fader) has its median at target_db (-25.5; the user's band is -24 to -27 dB on the meter, not LUFS). One gain
-    change for all the BGM clips keeps their balance. Reports the 10th/50th/90th percentile before and after."""
-    import numpy as np
-
-    from .audio import _source
-
+    """Level the BGM by Loudness Auto-Match (LUFS), like the sound effects: tag the BGM clips Music and match them;
+    under the narration (A1, tagged Dialogue if it is not) the music is a bed music_bed_db under the dialogue target.
+    Only the clips' Audio Gain changes; clip volume and the narration's gain stay as they are."""
     seq = seq_of(ctx.doc, p.sequence_id)
-    tid = p.track_id or (seq["audio_tracks"][4] if len(seq["audio_tracks"]) > 4 else None)
+    at = seq["audio_tracks"]
+    tid = p.track_id or (at[4] if len(at) > 4 else None)
     if tid is None or tid not in seq["tracks"] or seq["tracks"][tid]["kind"] != "audio":
         raise CommandError("NO_BGM_TRACK", "no BGM track (A5); give track_id")
-    track = seq["tracks"][tid]
-    clips = [c for c in track["clips"].values() if not p.clip_ids or c["id"] in p.clip_ids]
+    clips = [c for c in seq["tracks"][tid]["clips"].values() if not p.clip_ids or c["id"] in p.clip_ids]
     if not clips:
         raise CommandError("NO_BGM", "no clips on the BGM track")
-    meter = getattr(ctx.services, "audio_meter", None)
-    if meter is None:
-        raise CommandError("NO_SERVICES", "the meter needs media services")
-    fader = float(track.get("volume_db") or 0.0)
-    readings = []
-    for c in clips:
-        src = _source(ctx, c)
-        if src is None:
-            raise CommandError("MEDIA_OFFLINE", f"'{c['name']}' has no audio on disk")
-        path, s0, dur, channels, _m = src
-        raw = np.asarray(meter(path, s0, dur, c["speed"], channels))
-        readings.append(raw + float(c.get("gain_db") or 0.0) + float(c.get("volume_db") or 0.0) + fader)
-    allr = np.concatenate(readings) if readings else np.zeros(0)
-    audible = allr[allr > -90]
-    if audible.size == 0:
-        raise CommandError("SILENT", "the BGM is silent")
-
-    def pct(a):
-        return [round(float(np.percentile(a, q)), 1) for q in (10, 50, 90)]
-
-    before = pct(audible)
-    delta = round(p.target_db - before[1], 1)
-    out = {"track_id": tid, "fader_db": fader, "before": before, "change_db": delta,
-           "after": [round(v + delta, 1) for v in before], "band": list(BGM_BAND)}
-    if not p.dry_run and abs(delta) >= 0.05:
-        gain = REGISTRY.get("clip.audio_gain")
-        gain.handler(ctx, gain.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips],
-                                                      "mode": "adjust", "db": delta}))
-    out["gain_db"] = {c["id"]: round(find_clip(seq, c["id"])[1].get("gain_db", 0.0), 1) for c in clips}
-    lo, hi = out["after"][0], out["after"][2]
-    if lo < BGM_BAND[0] - 1 or hi > BGM_BAND[1] + 1:
-        out["note"] = (f"the level swings {lo} to {hi} dB: pick a stretch of the track with an even level "
-                       "(one gain cannot hold an uneven stretch in the band)")
+    tag = REGISTRY.get("clip.set_audio_tag")
+    tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips], "tag": "music"}))
+    tagged = []
+    if p.tag_narration and at and at[0] != tid:
+        narr = [c["id"] for c in seq["tracks"][at[0]]["clips"].values() if not c.get("audio_tag")]
+        if narr:
+            tag.handler(ctx, tag.params.model_validate({"sequence_id": seq["id"], "clip_ids": narr, "tag": "dialogue"}))
+            tagged = narr
+    am = REGISTRY.get("audio.auto_match")
+    params = {"sequence_id": seq["id"], "clip_ids": [c["id"] for c in clips], "music_bed_db": p.music_bed_db}
+    if p.target_lufs is not None:
+        params["targets"] = {"music": p.target_lufs}
+    r = am.handler(ctx, am.params.model_validate(params))
+    out = {"track_id": tid, "narration_tagged_dialogue": len(tagged), "clips": {}}
+    for cid, x in r["clips"].items():
+        out["clips"][cid] = {k: x.get(k) for k in ("lufs", "target", "gain_db", "result", "notes")}
     return out

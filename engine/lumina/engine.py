@@ -38,13 +38,6 @@ class MediaServices:
         rate = 16000
         return audio_analysis.features(export_mod.decode_audio(path, src_start, src_dur, 1.0, rate, None, channels), rate)
 
-    def audio_meter(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2):
-        """Meter readings (dBFS every 10 ms, 40 ms peak, 24 dB/s fall) of a source range as it plays, before gain."""
-        from . import audio_analysis
-
-        rate = 24000
-        return audio_analysis.meter_db(export_mod.decode_audio(path, src_start, src_dur, speed, rate, None, channels), rate)
-
     def audio_measure(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2,
                       filters: list[str] | tuple = ()) -> dict:
         """Loudness, loudness range, noise floor and true peak of a clip as it plays (Auto-Match)."""

@@ -291,26 +291,3 @@ def plan_match(items: list[dict], targets: dict[str, float], opts: dict | None =
                       "result": round(x["level"] + g, 1), "gain_db": g, "group": len(members), "notes": notes[i]}
     return out
 
-
-def meter_db(pcm: np.ndarray, rate: int, window: float = 0.04, fall_db_s: float = 24.0, step: float = 0.01) -> np.ndarray:
-    """A track meter as the user reads it (docs/shorts-editing SFX grammar, BGM): the peak of the last `window`
-    seconds, falling back at most `fall_db_s` dB per second, read every `step` seconds. dBFS, both channels."""
-    if pcm.size == 0:
-        return np.zeros(0, dtype=np.float32)
-    x = np.abs(pcm).max(axis=1) if pcm.ndim == 2 else np.abs(pcm)
-    hop, win = max(1, round(rate * step)), max(1, round(rate * window))
-    n = len(x) // hop
-    if n == 0:
-        return np.zeros(0, dtype=np.float32)
-    blocks = x[: n * hop].reshape(n, hop).max(axis=1)
-    k = max(1, round(win / hop))
-    padded = np.concatenate([np.zeros(k - 1, dtype=blocks.dtype), blocks])
-    peak = np.lib.stride_tricks.sliding_window_view(padded, k).max(axis=1)
-    peak_db = 20 * np.log10(np.maximum(peak, 1e-6))
-    out = np.empty_like(peak_db)
-    fall = fall_db_s * step
-    cur = -120.0
-    for i, v in enumerate(peak_db):
-        cur = max(float(v), cur - fall)
-        out[i] = cur
-    return out.astype(np.float32)

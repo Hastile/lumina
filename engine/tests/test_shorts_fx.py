@@ -446,41 +446,34 @@ def test_tool_profiles():
             assert any(n.startswith(pat[:-1]) if pat.endswith("*") else n == pat for n in names), pat
 
 
-def test_set_bgm_lands_the_meter_median_on_target(tmp_path):
+def test_set_bgm_is_auto_match_in_lufs(tmp_path):
     import shutil
     import subprocess
 
-    import numpy as np
-
-    from lumina import audio_analysis
-
     if not shutil.which("ffmpeg"):
         pytest.skip("needs ffmpeg")
-    # the meter: a steady sine of peak 0.5 reads -6 dBFS; after silence it falls 24 dB/s
-    rate = 24000
-    t = np.arange(rate) / rate
-    pcm = np.stack([0.5 * np.sin(2 * np.pi * 440 * t)] * 2, axis=1).astype(np.float32)
-    m = audio_analysis.meter_db(np.concatenate([pcm, np.zeros_like(pcm)]), rate)
-    assert abs(float(np.median(m[10:90])) + 6.02) < 0.1
-    assert abs((m[100] - m[150]) - 12.0) < 0.6, "falls 24 dB per second"
-
-    wav = tmp_path / "bgm.wav"
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
-                    "-af", "volume=0.5", str(wav)], check=True)  # lavfi sine peaks at 1/8; x0.5 -> about -24 dBFS
+    bgm, narr = tmp_path / "bgm.wav", tmp_path / "narr.wav"
+    for path, freq in ((bgm, 220), (narr, 880)):
+        subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency={freq}:duration=6",
+                        str(path)], check=True)
     e = Engine(run_jobs=False)
     sid = e.dispatch("execute", {"name": "sequence.create", "params": {"name": "S", "audio_tracks": 5}})["result"]["sequence_id"]
     seq = e.session.doc["sequences"][sid]
-    a5 = seq["audio_tracks"][4]
-    mid = e.dispatch("execute", {"name": "media.import", "params": {"paths": [str(wav)]}})["result"]["media_ids"][0]
-    e.dispatch("execute", {"name": "track.set", "params": {"track_id": a5, "volume_db": -6.0}})
-    e.dispatch("execute", {"name": "clip.place", "params": {"media_id": mid, "at": 0, "audio_track_id": a5, "take_video": False}})
-    dry = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"dry_run": True}})["result"]
-    assert abs(dry["before"][1] - (-24.1 - 6.0)) < 0.6 and all(v == 0.0 for v in dry["gain_db"].values())
+    a1, a5 = seq["audio_tracks"][0], seq["audio_tracks"][4]
+    m_bgm, m_narr = e.dispatch("execute", {"name": "media.import", "params": {"paths": [str(bgm), str(narr)]}})["result"]["media_ids"]
+    e.dispatch("execute", {"name": "clip.place", "params": {"media_id": m_narr, "at": 0, "audio_track_id": a1, "take_video": False}})
+    e.dispatch("execute", {"name": "clip.place", "params": {"media_id": m_bgm, "at": 0, "audio_track_id": a5, "take_video": False}})
     r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]
-    assert abs(r["after"][1] - (-25.5)) < 0.1 and abs(list(r["gain_db"].values())[0] - r["change_db"]) < 0.11
-    again = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"dry_run": True}})["result"]
-    assert abs(again["before"][1] + 25.5) < 0.15, "measured after the change, the median is on target"
-
+    (cid, x), = r["clips"].items()
+    assert r["narration_tagged_dialogue"] == 1
+    assert x["target"] == -23.0 - 12.0 and abs(x["result"] - x["target"]) < 0.5, "a bed 12 LU under the dialogue target"
+    seq = e.session.doc["sequences"][sid]
+    clip = seq["tracks"][a5]["clips"][cid]
+    narr_clip = next(iter(seq["tracks"][a1]["clips"].values()))
+    assert clip["audio_tag"] == "music" and clip["volume_db"] == 0.0 and clip["gain_db"] == x["gain_db"]
+    assert narr_clip["audio_tag"] == "dialogue" and narr_clip["gain_db"] == 0.0, "the narration is only tagged"
+    r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"target_lufs": -30, "music_bed_db": None}})["result"]
+    assert abs(next(iter(r["clips"].values()))["result"] + 30) < 0.5
 
 def test_reveal_detection_and_name_hints():
     plan = sp.make_plan(cues(SHORT), names=("사이버펑크", "닮은꼴", "사스케"))

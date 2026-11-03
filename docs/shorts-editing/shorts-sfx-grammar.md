@@ -70,7 +70,9 @@ Learned 2026-10-21, read-only, from every Shorts sequence (has a "쇼츠 타이�
   - Clip Volume -3 dB on exactly 티딩, Kick 5 and Epic Hit 2 ("일단 이 3개"; there may be more later). This is newer than the archived projects.
   - Auto-Match goes on A2 and A3 only; A4 (Bells 2, 물방울) stays untouched.
 
-**BGM (user, 2026-10-22)**
+**BGM (user correction, 2026-11-03): BGM is levelled in LUFS by Auto-Match too ("bgm 도 lufs지").** Tag it Music and Auto-Match it (`shorts_set_bgm`); under the narration (A1 tagged Dialogue) it is matched as a bed 12 LU under the dialogue target (-35 LUFS by default), or to `target_lufs` if the user names one. The meter-reading procedure below is history, replaced by this.
+
+**BGM (user, 2026-10-22; replaced 2026-11-03)**
 - BGM must move between -24 and -27 dB on the track meter, measured post-fader on the BGM alone.
 - The user corrected this: it is meter dB (peak), not LUFS. -25 LUFS is about 8 dB too loud.
 - It sits on A5, whose track fader is -6 dB; set the clip's Audio Gain.
