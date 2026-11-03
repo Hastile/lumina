@@ -99,6 +99,7 @@ class Plan:
     effects: dict[int, str] = field(default_factory=dict)     # cue index -> pop/slam/fade
     sounds: dict[int, str] = field(default_factory=dict)      # cue index -> sound name ("choose: ..." for hits)
     problems: list[str] = field(default_factory=list)
+    hints: dict[int, str] = field(default_factory=dict)      # cue index -> a name first mentioned there (reveal?)
 
 
 # ---------------------------------------------------------------- reading Korean endings
@@ -325,14 +326,43 @@ def check(sents: list[list[Cue]], shots: list[Shot], min_shot: float) -> list[st
     return problems
 
 
-def make_plan(cues: list[Cue], *, reveal: tuple[int, ...] = (), min_shot: float = 1.1) -> Plan:
+REVEAL_LEADS = ("바로 ", "그 정체는", "정답은", "주인공은")
+
+
+def detect_reveals(cues: list[Cue], sents: list[list[Cue]]) -> tuple[int, ...]:
+    """Captions that open a reveal inside a sentence ("…이름은 / 바로 사스케입니다"): the new thing must be on screen
+    as its caption starts, so the shot changes there. Sentence starts are cuts already."""
+    starts = {s[0].i for s in sents}
+    return tuple(c.i for c in cues if c.i not in starts and c.text.strip().startswith(REVEAL_LEADS))
+
+
+def name_hints(cues: list[Cue], names: list[str]) -> dict[int, str]:
+    """The first caption naming each of `names` (works, characters), when that is not a sentence start: a possible
+    reveal or subject switch. Only a hint: in a look-alike section the original's name must NOT cut to it."""
+    seen, out = set(), {}
+    for c in cues:
+        for n in names:
+            if n and n not in seen and n in c.text:
+                seen.add(n)
+                out.setdefault(c.i, n)
+    return out
+
+
+def make_plan(cues: list[Cue], *, reveal: tuple[int, ...] = (), min_shot: float = 1.1, auto_reveal: bool = True,
+              names: tuple[str, ...] = ()) -> Plan:
     cues = sorted(cues, key=lambda c: c.start)
     for n, c in enumerate(cues):
         c.i = n
-    sents, shots = plan_shots(cues, reveal=reveal, min_shot=min_shot)
+    auto = detect_reveals(cues, sentences_of(cues)) if auto_reveal else ()
+    sents, shots = plan_shots(cues, reveal=tuple(sorted(set(reveal) | set(auto))), min_shot=min_shot)
+    for s in shots:
+        if s.cues[0].i in auto and s.cues[0].i not in reveal:
+            s.reason = "reveal (바로…)"
     eff = plan_effects(sents)
     plan = Plan(cues=cues, sentences=sents, shots=shots, effects=eff, sounds=plan_sounds(sents, shots, eff))
     plan.problems = check(sents, shots, min_shot)
+    starts = {s[0].i for s in sents}
+    plan.hints = {i: n for i, n in name_hints(cues, list(names)).items() if i not in starts}
     return plan
 
 
@@ -390,6 +420,7 @@ def to_dict(plan: Plan, fps_num: int, fps_den: int) -> dict:
         "captions": [{"i": c.i, "frame": f(c.start), "text": c.text, "clip_id": c.clip_id, "now": c.effect,
                       "effect": plan.effects.get(c.i), "sound": plan.sounds.get(c.i)} for c in plan.cues],
         "problems": plan.problems,
+        "reveal_hints": {str(i): n for i, n in plan.hints.items()},
     }
 
 
@@ -402,7 +433,8 @@ def render(plan: Plan, fps_num: int, fps_den: int) -> str:
     sent_end = {s[-1].i for s in plan.sentences}
     lines = [f"{len(plan.shots)} shots, {len(plan.sentences)} sentences, {len(plan.cues)} captions. "
              "Columns: caption# frame effect(now→plan) sound | text. '┃S' = a new shot (frames, seconds, why); "
-             "▪ = sentence end; 'hit?' = choose by meaning: " + " / ".join(HIT_CHOICES) + "."]
+             "▪ = sentence end; 'reveal?' = a name first said mid-sentence (add it to reveal if the picture should change); "
+             "'hit?' = choose by meaning: " + " / ".join(HIT_CHOICES) + "."]
     for c in plan.cues:
         if c.i in starts:
             n, s = starts[c.i]
@@ -410,7 +442,8 @@ def render(plan: Plan, fps_num: int, fps_den: int) -> str:
         eff = plan.effects.get(c.i, "")
         now = f"{c.effect}→" if c.effect and c.effect != eff else ""
         snd = plan.sounds.get(c.i, "")
-        lines.append(f"  {c.i:>3} {f(c.start):>5}f {now}{eff:<5} {snd:<14}| {c.text}{'  ▪' if c.i in sent_end else ''}")
+        hint = f"  ← reveal? ({plan.hints[c.i]})" if c.i in plan.hints else ""
+        lines.append(f"  {c.i:>3} {f(c.start):>5}f {now}{eff:<5} {snd:<14}| {c.text}{'  ▪' if c.i in sent_end else ''}{hint}")
     if plan.problems:
         lines.append("problems: " + "; ".join(plan.problems))
     return "\n".join(lines)

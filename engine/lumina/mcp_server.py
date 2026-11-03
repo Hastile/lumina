@@ -135,6 +135,11 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                         "srt": {"type": "string", "description": "read captions from this .srt instead of the sequence"},
                         "reveal": {"type": "array", "items": {"type": "integer"},
                                    "description": "caption numbers that must start a new shot (a name reveal, a new subject)"},
+                        "auto_reveal": {"type": "boolean", "default": True,
+                                        "description": "cut where a caption opens a reveal mid-sentence (바로 …)"},
+                        "names": {"type": "array", "items": {"type": "string"},
+                                  "description": "names to mark as 'reveal?' where first said mid-sentence; default the "
+                                                 "source DB's works and characters"},
                         "min_shot": {"type": "number", "default": 1.1},
                         "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}}, None),
     "shorts_check": ("shorts.check",
@@ -297,7 +302,47 @@ def tool_name(command: str) -> str:
     return command.replace(".", "_")
 
 
-def build_tools() -> list[types.Tool]:
+# Tool profiles (LUMINA_TOOLS): every tool's schema rides on every request in clients that do not defer
+# them, and all of them come to ~135k characters. A Short needs a fraction. Entries are profile names,
+# tool names or prefixes ending in '*', comma-separated; default "all". Hidden tools still answer if called.
+CORE_TOOLS = (
+    "get_project", "get_timeline_state", "get_clips", "undo", "redo", "begin_transaction", "commit_transaction",
+    "rollback_transaction", "open_project", "save_project", "list_projects", "activate_project", "get_frame_image",
+    "get_frame_strip", "export_media", "list_jobs", "convert_time", "media_import", "clip_place", "clip_move",
+    "clip_remove", "clip_trim", "clip_set", "clip_set_property", "clip_set_speed", "clip_razor", "caption_add",
+    "caption_set", "marker_*", "sequence_duplicate", "sequence_rename", "sequence_set_active", "track_set", "edit_check",
+    "source_*", "clip_place_shots")
+TOOL_PROFILES = {
+    "core": CORE_TOOLS,
+    "shorts": CORE_TOOLS + ("shorts_*", "clip_align_marker", "clip_audio_gain", "clip_set_audio_tag", "audio_auto_match",
+                            "graphic_replace_text", "graphic_set_layer", "graphic_create_text", "graphic_add_image",
+                            "caption_import_srt"),
+    "longform": CORE_TOOLS + ("caption_*", "graphic_*", "effect_*", "transition_*", "keyframes_*", "clip_keyframe",
+                              "clip_set_keyframes", "clip_set_keyframe_ease", "clip_toggle_animation", "clip_fit_to_frame",
+                              "clip_frame_hold", "clip_slip", "clip_slide", "clip_roll", "audio_*", "clip_audio_gain",
+                              "clip_set_audio_tag", "analyze_media", "plan_cuts", "plan_scene_cuts", "sequence_*",
+                              "track_add", "export_frame"),
+}
+
+
+def selected(names: list[str], spec: str | None) -> set[str]:
+    """Tool names a LUMINA_TOOLS spec keeps (all of them for None/'' /'all')."""
+    if not spec or spec.strip().lower() == "all":
+        return set(names)
+    pats: list[str] = []
+    for part in (x.strip() for x in spec.split(",")):
+        if not part:
+            continue
+        if part.lower() == "all":
+            return set(names)
+        pats += list(TOOL_PROFILES.get(part.lower(), (part,)))
+    keep = set()
+    for pat in pats:
+        keep |= {n for n in names if (n.startswith(pat[:-1]) if pat.endswith("*") else n == pat)}
+    return keep
+
+
+def build_tools(profile: str | None = None) -> list[types.Tool]:
     tools = []
     for spec in REGISTRY.commands.values():
         if spec.name == "media.set_derived":
@@ -310,7 +355,8 @@ def build_tools() -> list[types.Tool]:
         tools.append(types.Tool(name=name, description=desc, input_schema=schema))
     from .frame_strip import TOOL as STRIP
     tools.append(types.Tool(name="get_frame_strip", description=STRIP[0], input_schema=STRIP[1]))
-    return tools
+    keep = selected([t.name for t in tools], profile)
+    return [t for t in tools if t.name in keep]
 
 
 def _image_result(info: dict) -> types.CallToolResult:
@@ -335,7 +381,9 @@ def _image_result(info: dict) -> types.CallToolResult:
 
 
 def make_server(engine) -> Server:
-    tools = build_tools()
+    import os
+
+    tools = build_tools(os.environ.get("LUMINA_TOOLS"))
     by_tool = {tool_name(n): n for n in REGISTRY.commands}
 
     async def list_tools(ctx, params) -> types.ListToolsResult:

@@ -328,7 +328,12 @@ def test_calibration_against_an_archive_short():
     assert len(rows) == 1, "copies of a Short count once"
     rep = sc.calibrate(rows)
     assert rep["boundaries"] == 5
-    assert rep["cuts"]["precision"] == 1.0 and rep["cuts"]["recall"] == 0.5, rep
+    assert rep["cuts"]["precision"] == 1.0 and rep["cuts"]["recall"] == 1.0, "the 바로 reveal is the cut the user made"
+    no_auto = sc.compare({**rows[0]})  # the same Short without the automatic reveal misses that cut
+    from lumina import shorts_plan as spm
+    cues = [spm.Cue(n, round(c["start"] * SEC), round(c["end"] * SEC), c["text"]) for n, c in enumerate(caps)]
+    assert len(spm.make_plan(cues, auto_reveal=False).shots) == len(spm.make_plan(cues).shots) - 1
+    assert no_auto["f1"] == 1.0
     assert rep["by_kind"]["sentence end"]["user_cut"] == 1.0
     assert rep["effect_agreement"] is not None and "pop->pop" in rep["effects"]
     assert "worst Shorts" in sc.render(rep)
@@ -400,3 +405,87 @@ def test_tmi_hangs_on_its_caption():
         s.execute("shorts.add_tmi", {"items": [{"caption_clip_id": ids[0], "text": "다른 메모"}]})
     s.execute("shorts.add_tmi", {"replace": True, "items": [{"caption_clip_id": ids[0], "text": "다른 메모"}]})
     assert len(s.doc["sequences"][sid]["tracks"][v4]["clips"]) == 3
+
+
+def test_sound_calibration_and_names():
+    from lumina import shorts_calibrate as sc
+
+    assert sc.canonical_sound("KF - Whoosh Dramatic 4.wav") == "W4"
+    assert sc.canonical_sound("Epic Hit 3.wav") == "Epic Hit 3" and sc.canonical_sound("Kick 2.mp3") == "Kick 2"
+    assert sc.canonical_sound("Hit - Guns 01.wav") == "H:Guns" and sc.canonical_sound("티딩! 효과음.mp3") == "티딩"
+    assert sc.sound_kind("hit?") == sc.sound_kind("H:Cash") == "hit" and sc.sound_kind("W5") == "whoosh"
+    caps, t = [], 0.0
+    for d, text in SHORT[:6]:
+        caps.append({"start": t, "end": t + d, "text": text, "effect": "pop"})
+        t += d
+    sounds = [{"track": 1, "start": 0.0, "end": 1.0, "name": "KF - Whoosh Dramatic 3.wav"},          # W3 on frame 0: same
+              {"track": 2, "start": 1.0 - 0.7, "end": 2.0, "name": "Epic Hit 3.wav"},              # lands on cue 1 (draft: 뚜훅)
+              {"track": 1, "start": 3.1, "end": 4.0, "name": "KF - Whoosh Dramatic 1.wav"}]        # cue 3 (draft: W4)
+    row = {"project": "p", "sequence": "s", "fps": 30, "captions": caps,
+           "pictures": [{"track": 0, "start": 0.0, "end": 5.8, "name": "a"}], "sounds": sounds}
+    rep = sc.calibrate([row])
+    snd = rep["sounds"]
+    assert snd["user_has"] == 3 and snd["same_sound"] == round(1 / 3, 3) and snd["same_kind"] == 1.0
+    assert snd["by_draft_sound"]["Bells 2"] == {"(nothing)": 1, "n": 1}
+    assert "what the user had" in sc.render(rep)
+
+
+def test_tool_profiles():
+    from lumina.mcp_server import TOOL_PROFILES, build_tools, selected
+
+    names = [t.name for t in build_tools()]
+    shorts = selected(names, "shorts")
+    assert {"shorts_build", "source_plan", "clip_place_shots", "get_frame_strip", "marker_add"} <= shorts
+    assert "graphic_place_mogrt" not in shorts and len(shorts) < len(names) / 2
+    assert selected(names, "shorts,clip_slip") == shorts | {"clip_slip"}
+    assert selected(names, None) == selected(names, "all") == set(names)
+    assert {t.name for t in build_tools("core")} == selected(names, "core")
+    for prof in TOOL_PROFILES.values():  # every entry of a profile names something real
+        for pat in prof:
+            assert any(n.startswith(pat[:-1]) if pat.endswith("*") else n == pat for n in names), pat
+
+
+def test_set_bgm_lands_the_meter_median_on_target(tmp_path):
+    import shutil
+    import subprocess
+
+    import numpy as np
+
+    from lumina import audio_analysis
+
+    if not shutil.which("ffmpeg"):
+        pytest.skip("needs ffmpeg")
+    # the meter: a steady sine of peak 0.5 reads -6 dBFS; after silence it falls 24 dB/s
+    rate = 24000
+    t = np.arange(rate) / rate
+    pcm = np.stack([0.5 * np.sin(2 * np.pi * 440 * t)] * 2, axis=1).astype(np.float32)
+    m = audio_analysis.meter_db(np.concatenate([pcm, np.zeros_like(pcm)]), rate)
+    assert abs(float(np.median(m[10:90])) + 6.02) < 0.1
+    assert abs((m[100] - m[150]) - 12.0) < 0.6, "falls 24 dB per second"
+
+    wav = tmp_path / "bgm.wav"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=6",
+                    "-af", "volume=0.5", str(wav)], check=True)  # lavfi sine peaks at 1/8; x0.5 -> about -24 dBFS
+    e = Engine(run_jobs=False)
+    sid = e.dispatch("execute", {"name": "sequence.create", "params": {"name": "S", "audio_tracks": 5}})["result"]["sequence_id"]
+    seq = e.session.doc["sequences"][sid]
+    a5 = seq["audio_tracks"][4]
+    mid = e.dispatch("execute", {"name": "media.import", "params": {"paths": [str(wav)]}})["result"]["media_ids"][0]
+    e.dispatch("execute", {"name": "track.set", "params": {"track_id": a5, "volume_db": -6.0}})
+    e.dispatch("execute", {"name": "clip.place", "params": {"media_id": mid, "at": 0, "audio_track_id": a5, "take_video": False}})
+    dry = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"dry_run": True}})["result"]
+    assert abs(dry["before"][1] - (-24.1 - 6.0)) < 0.6 and all(v == 0.0 for v in dry["gain_db"].values())
+    r = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {}})["result"]
+    assert abs(r["after"][1] - (-25.5)) < 0.1 and abs(list(r["gain_db"].values())[0] - r["change_db"]) < 0.11
+    again = e.dispatch("execute", {"name": "shorts.set_bgm", "params": {"dry_run": True}})["result"]
+    assert abs(again["before"][1] + 25.5) < 0.15, "measured after the change, the median is on target"
+
+
+def test_reveal_detection_and_name_hints():
+    plan = sp.make_plan(cues(SHORT), names=("사이버펑크", "닮은꼴", "사스케"))
+    starts = {s.cues[0].text: s.reason for s in plan.shots}
+    assert starts.get("바로 사스케입니다") == "reveal (바로…)"
+    by = {c.text: c.i for c in plan.cues}
+    assert plan.hints == {by["바로 사스케입니다"]: "사스케"}, "only a name's first mention, mid-sentence"
+    assert "reveal?" in sp.render(plan, 30, 1)
+    assert "사이버펑크" not in plan.hints.values(), "a name at a sentence start is already a cut"

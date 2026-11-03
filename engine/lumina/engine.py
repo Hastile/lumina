@@ -38,6 +38,13 @@ class MediaServices:
         rate = 16000
         return audio_analysis.features(export_mod.decode_audio(path, src_start, src_dur, 1.0, rate, None, channels), rate)
 
+    def audio_meter(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2):
+        """Meter readings (dBFS every 10 ms, 40 ms peak, 24 dB/s fall) of a source range as it plays, before gain."""
+        from . import audio_analysis
+
+        rate = 24000
+        return audio_analysis.meter_db(export_mod.decode_audio(path, src_start, src_dur, speed, rate, None, channels), rate)
+
     def audio_measure(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2,
                       filters: list[str] | tuple = ()) -> dict:
         """Loudness, loudness range, noise floor and true peak of a clip as it plays (Auto-Match)."""
@@ -430,6 +437,25 @@ class Engine:
                                                                                "ripple": p.get("ripple", True)}, label)["result"]
         return plan
 
+    @staticmethod
+    def _known_names(p: dict) -> list[str]:
+        """Names to watch for reveals: the call's own, else the source DB's works and characters (when it is there)."""
+        if p.get("names") is not None:
+            return [str(n) for n in p["names"]]
+        try:
+            from .sourcedb import db
+
+            if not db.DEFAULT_DB_PATH.exists():
+                return []
+            con = db.connect(db.DEFAULT_DB_PATH)
+            try:
+                return [r[0] for r in con.execute("SELECT name FROM entity WHERE type IN ('work', 'character') "
+                                                  "AND length(name) >= 2")]
+            finally:
+                con.close()
+        except Exception:  # noqa: BLE001 - names are only hints
+            return []
+
     def _shorts_check(self, p: dict) -> dict:
         """The Short's edit checked against the grammar as text (read-only)."""
         from . import shorts_check
@@ -455,7 +481,8 @@ class Engine:
         if not cues:
             raise CommandError("NO_CAPTIONS", "no caption cues on the sequence's caption tracks (or give srt)")
         reveal = tuple(int(i) for i in p.get("reveal") or ())
-        plan = sp.make_plan(cues, reveal=reveal, min_shot=float(p.get("min_shot", 1.1)))
+        plan = sp.make_plan(cues, reveal=reveal, min_shot=float(p.get("min_shot", 1.1)),
+                            auto_reveal=p.get("auto_reveal", True) is not False, names=tuple(self._known_names(p)))
         if p.get("format", "text") == "json":
             return sp.to_dict(plan, st["fps_num"], st["fps_den"])
         return {"plan": sp.render(plan, st["fps_num"], st["fps_den"]),

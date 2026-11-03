@@ -72,8 +72,11 @@ def one(path):
                                  "src": (it.get("source_in") or 0) / TPS, "speed": it.get("speed", 1.0), "scale": m.get("scale")})
         if len(caps) < 8 or not pics:
             continue
+        # sound effects on A2-A4 (A1 is the narration, A5 the BGM), for the SFX half of calibrate_plan.py
+        sounds = [{"track": ti, "start": it["start"] / TPS, "end": it["end"] / TPS, "name": it["name"]}
+                  for ti, t in enumerate(s.get("audio_tracks") or []) if 1 <= ti <= 3 for it in t["items"]]
         out.append({"project": path, "sequence": s["name"], "fps": s["settings"]["fps_num"] / s["settings"]["fps_den"],
-                    "captions": caps, "pictures": pics})
+                    "captions": caps, "pictures": pics, "sounds": sorted(sounds, key=lambda x: x["start"])})
     return path, out, None
 
 
