@@ -109,6 +109,7 @@ class Engine:
             "analysis.plan_cuts": self._analysis_plan_cuts,
             "analysis.plan_scene_cuts": self._analysis_plan_scene,
             "shorts.plan": self._shorts_plan,
+            "shorts.check": self._shorts_check,
         }
 
     # ------------------------------------------------------------ dispatch
@@ -428,6 +429,15 @@ class Engine:
             plan["applied"] = self.session.execute("sequence.remove_ranges", {"sequence_id": p.get("sequence_id"), "ranges": plan["ranges"],
                                                                                "ripple": p.get("ripple", True)}, label)["result"]
         return plan
+
+    def _shorts_check(self, p: dict) -> dict:
+        """The Short's edit checked against the grammar as text (read-only)."""
+        from . import shorts_check
+        from .commands.project import seq_of
+
+        rep = shorts_check.check(self.session.doc, seq_of(self.session.doc, p.get("sequence_id")),
+                                 use_db=p.get("use_db", True) is not False)
+        return rep if p.get("format") == "json" else {"ok": rep["ok"], "report": shorts_check.render(rep)}
 
     def _shorts_plan(self, p: dict) -> dict:
         """Draft a Short's shots, caption effects and sounds from its captions (read-only)."""

@@ -1,4 +1,5 @@
 """shorts_plan (captions -> shots/effects/sounds), shorts.caption_effects and shorts.place_sfx."""
+import json
 
 import pytest
 
@@ -202,3 +203,131 @@ def test_place_sfx_finds_files_in_sfx_folders(tmp_path):
     r = s.execute("shorts.place_sfx", {"auto_match": False, "sfx_dirs": [str(tmp_path)],
                                        "sounds": [{"at": "10f", "sound": "H:Cash"}]})["result"]
     assert r["sounds"][0]["file"] == "H - Cash.wav" and r["sounds"][0]["also_matched"] == ["H - Cash Register.wav"]
+
+
+# ---------------------------------------------------------------- shorts.build and shorts_check
+
+from lumina import shorts_check  # noqa: E402
+
+F30 = SEC // 30
+
+
+class BuildServices(SfxServices):
+    def probe(self, path):
+        if "narr" in path:
+            return {"name": "narr.wav", "kind": "audio", "duration": round(5.8 * SEC), "video": None,
+                    "audio": {"channels": 1, "sample_rate": 48000, "codec": "pcm"}}
+        return super().probe(path)
+
+
+def build_session():
+    s, sid, tids, ids = shorts_session(Session(services=BuildServices()))
+    mids = s.execute("media.import", {"paths": ["a.mp4", "b.mp4", "/v/narr.wav", "/sfx/KF - Whoosh Dramatic 3.wav",
+                                                "/sfx/KF - Whoosh Dramatic 4.wav", "/sfx/뚜훅.wav", "/sfx/Bells 2.wav"]}
+                     )["result"]["media_ids"]
+    seq = s.doc["sequences"][sid]
+    s.execute("clip.place", {"media_id": mids[2], "at": 0, "audio_track_id": seq["audio_tracks"][0], "take_video": False})
+    return s, sid, tids, ids, mids
+
+
+def test_build_does_the_whole_short_in_one_undo():
+    s, sid, tids, ids, mids = build_session()
+    version = s.version
+    r = s.execute("shorts.build", {"auto_match": False, "shots": [
+        {"at": 0, "end": "93f", "media_id": mids[0]},
+        {"at": "93f", "end": "174f", "media_id": mids[1], "source_in": "5s"}]})["result"]
+    seq = s.doc["sequences"][sid]
+    end = round(5.8 * SEC) + 6 * F30
+    assert r["placed"] == 2 and r["end_frame"] == end // F30
+    v1 = sorted(seq["tracks"][seq["video_tracks"][0]]["clips"].values(), key=lambda c: c["start"])
+    assert v1[-1]["end"] == end, "the last shot reaches narration + 6 frames"
+    cues = [c for t in tids for c in seq["tracks"][t]["clips"].values()]
+    assert max(c["end"] for c in cues) == end, "so does the last caption"
+    assert cue_track(s, sid, ids[1]) == tids[1], "the draft's hook slam is on the slam track"
+    assert any(x.endswith("W3 (A2)") for x in r["sounds"]) and any("뚜훅" in x for x in r["sounds"])
+    assert "sounds not found, skipped: 티딩" in " ".join(r["notes"])
+    assert "shots" in r["check"]
+    assert s.version > version
+    s.undo()
+    seq = s.doc["sequences"][sid]
+    assert not seq["tracks"][seq["video_tracks"][0]]["clips"] and cue_track(s, sid, ids[1]) == tids[0]
+    assert not any(seq["tracks"][t]["clips"] for t in seq["audio_tracks"][1:]), "one undo removes the whole build"
+
+
+def test_build_refusal_changes_nothing():
+    s, sid, tids, ids, mids = build_session()
+    version = s.version
+    with pytest.raises(CommandError):
+        s.execute("shorts.build", {"auto_match": False, "shots": [{"at": 0, "end": "93f", "media_id": mids[0]}],
+                                   "sounds": [{"at": 0, "sound": "없는 소리"}]})
+    assert s.version == version
+    seq = s.doc["sequences"][sid]
+    assert not seq["tracks"][seq["video_tracks"][0]]["clips"]
+
+
+def test_check_lists_only_problems():
+    s, sid, tids, ids, mids = build_session()
+    seq = s.doc["sequences"][sid]
+    v1, a2 = seq["video_tracks"][0], seq["audio_tracks"][1]
+    s.execute("clip.place", {"media_id": mids[0], "at": 0, "source_out": "30f", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": mids[1], "at": "40f", "source_out": "5s", "video_track_id": v1, "take_audio": False})
+    s.execute("clip.place", {"media_id": mids[3], "at": 0, "audio_track_id": a2, "take_video": False, "source_out": "5f"})
+    s.execute("clip.place", {"media_id": mids[4], "at": "6f", "audio_track_id": a2, "take_video": False, "source_out": "5f"})
+    rep = shorts_check.check(s.doc, s.doc["sequences"][sid], use_db=False)
+    kinds = {p["kind"] for p in rep["problems"]}
+    assert {"short shot", "gap", "off caption", "ending", "sfx tag", "sfx close"} <= kinds, kinds
+    text = shorts_check.render(rep)
+    assert "source DB not consulted" in text and "black gap of 10 frames" in text
+
+
+def test_check_passes_a_clean_build():
+    s, sid, tids, ids, mids = build_session()
+    s.execute("shorts.build", {"auto_match": False, "sounds": [], "effects": [], "shots": [
+        {"at": 0, "end": "93f", "media_id": mids[0]}, {"at": "93f", "end": "174f", "media_id": mids[1], "source_in": "5s"}]})
+    rep = shorts_check.check(s.doc, s.doc["sequences"][sid], use_db=False)
+    assert rep["ok"], shorts_check.render(rep)
+
+
+def test_check_uses_the_source_db_for_flashes_and_dark_shots(tmp_path):
+    from lumina.sourcedb import db
+
+    clip = tmp_path / "ep1.mp4"
+    clip.write_bytes(b"x")
+    con = db.connect(tmp_path / "source.db")
+    mid, _ = db.register_file(con, clip, "video", probe={"duration_ticks": 20 * SEC, "fps_num": 30, "fps_den": 1})
+    db.set_cuts(con, mid, [{"start_ticks": 0, "end_ticks": 5 * SEC, "keyframe_ticks": 0},
+                           {"start_ticks": 5 * SEC, "end_ticks": 20 * SEC, "keyframe_ticks": 5 * SEC}])
+    db.put_facts(con, mid, "probe@1", [{"kind": "luma", "num": 0.05, "t0_ticks": 5 * SEC, "t1_ticks": 20 * SEC}])
+    con.commit()
+    con.close()
+    s, sid, tids, ids, mids = build_session()
+    m = s.execute("media.import", {"paths": [str(clip)]})["result"]["media_ids"][0]
+    v1 = s.doc["sequences"][sid]["video_tracks"][0]
+    # starts 2 frames before the scene change at 5 s: the previous shot flashes, then the dark shot runs
+    s.execute("clip.place", {"media_id": m, "at": 0, "source_in": 5 * SEC - 2 * F30, "source_out": 8 * SEC,
+                             "video_track_id": v1, "take_audio": False})
+    rep = shorts_check.check(s.doc, s.doc["sequences"][sid], db_path=tmp_path / "source.db")
+    kinds = {p["kind"] for p in rep["problems"]}
+    assert {"flash", "dark"} <= kinds and rep["summary"]["source_db"]
+
+
+def test_calibration_against_an_archive_short():
+    """One archive row in cut_grammar_extract.py's format: the user cut where the draft does, except one."""
+    from lumina import shorts_calibrate as sc
+
+    caps, t = [], 0.0
+    effects = ["pop", "slam", "fade", "pop", "pop", "fade"]
+    for (d, text), eff in zip(SHORT[:6], effects):
+        caps.append({"start": t, "end": t + d, "text": text, "size": 100, "effect": eff})
+        t += d
+    pics = [{"track": 0, "start": 0.0, "end": 3.1, "name": "a"}, {"track": 0, "start": 3.1, "end": 4.5, "name": "b"},
+            {"track": 0, "start": 4.5, "end": 5.8, "name": "c"}]
+    row = {"project": "p.prproj", "sequence": "s", "fps": 30, "captions": caps, "pictures": pics}
+    rows = sc.load([json.dumps(row, ensure_ascii=False), json.dumps(row, ensure_ascii=False)])
+    assert len(rows) == 1, "copies of a Short count once"
+    rep = sc.calibrate(rows)
+    assert rep["boundaries"] == 5
+    assert rep["cuts"]["precision"] == 1.0 and rep["cuts"]["recall"] == 0.5, rep
+    assert rep["by_kind"]["sentence end"]["user_cut"] == 1.0
+    assert rep["effect_agreement"] is not None and "pop->pop" in rep["effects"]
+    assert "worst Shorts" in sc.render(rep)

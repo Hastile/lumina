@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import os
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -34,6 +35,7 @@ from .. import timebase
 from ..tracks import caption_layer, is_caption_track
 from .project import seq_of
 from .registry import REGISTRY, CommandError, Context, Params, TimeValue, command, resolve_time
+from .shots import Shot as PlannedShot
 from .timeline import find_clip, is_free, write_clip
 
 # ---------------------------------------------------------------- caption effects
@@ -341,4 +343,118 @@ def shorts_place_sfx(ctx: Context, p: PlaceSfx):
     out = {"sounds": sorted(placed, key=lambda r: r["at_frame"]), "warnings": warnings}
     if matched is not None:
         out["auto_matched"] = len(match_ids)
+    return out
+
+
+# ---------------------------------------------------------------- the whole Short in one command
+
+class BuildShort(Params):
+    sequence_id: Optional[str] = None
+    shots: Optional[list[PlannedShot]] = Field(default=None, description="clip.place_shots shots; omit to keep V1 as it is")
+    edge_margin: float = 0.3
+    min_speed: float = 0.87
+    allow_cover: bool = Field(default=False, description="let the shots overwrite clips already on V1")
+    effects: Optional[list[CaptionEffect]] = Field(default=None, description="omit: the shorts_plan draft's effects")
+    sounds: Optional[list[Sound]] = Field(default=None, description="omit: the shorts_plan draft's sounds (hits marked "
+                                                                    "'hit?' are left for you and listed)")
+    reveal: list[int] = Field(default_factory=list, description="for the draft: caption numbers that start a new shot")
+    sfx_dirs: Optional[list[str]] = None
+    auto_match: bool = True
+    end_pad_frames: int = Field(default=6, ge=0, le=30, description="the video ends this long after the narration (A1)")
+    align_end: bool = Field(default=True, description="end V1, V5, V6, the last caption and every sound on the video's end")
+
+
+def _align_end(ctx: Context, seq: dict, end: int, notes: list[str]) -> None:
+    from .timeline import source_problem
+
+    vt, at, tracks = seq["video_tracks"], seq["audio_tracks"], seq["tracks"]
+    must_reach = [vt[0]] + [vt[k] for k in (4, 5) if len(vt) > k and not is_caption_track(tracks[vt[k]])]
+    caption_tids = [t for t in vt if is_caption_track(tracks[t])]
+    last_cue = max((c for t in caption_tids for c in tracks[t]["clips"].values()), key=lambda c: c["end"], default=None)
+    for tid in vt + at:
+        for c in list(tracks[tid]["clips"].values()):
+            if c["start"] >= end:
+                ctx.m.delete(["sequences", seq["id"], "tracks", tid, "clips", c["id"]])
+                notes.append(f"removed '{c['name']}' after the end")
+            elif c["end"] > end:
+                write_clip(ctx, seq, tid, dict(c, end=end))
+    for tid in must_reach:
+        clips = tracks[tid]["clips"]
+        if not clips:
+            continue
+        last = max(clips.values(), key=lambda c: c["end"])
+        if last["end"] < end and is_free(tracks[tid], last["end"], end):
+            longer = dict(last, end=end)
+            if source_problem(ctx.doc, longer):
+                notes.append(f"'{last['name']}' cannot reach the end: its source runs out")
+            else:
+                write_clip(ctx, seq, tid, longer)
+    if last_cue is not None and last_cue["end"] < end:
+        tid = next(t for t in caption_tids if last_cue["id"] in tracks[t]["clips"])
+        write_clip(ctx, seq, tid, dict(tracks[tid]["clips"][last_cue["id"]], end=end))
+
+
+@command("shorts.build", BuildShort)
+def shorts_build(ctx: Context, p: BuildShort):
+    """A Short's edit in one command and one undo step: place the shots on V1 (clip.place_shots), end every track
+    end_pad_frames after the narration, give the captions their effects and place the sounds (yours, or the
+    shorts_plan draft's), then check the result (shorts_check) and return its problems. Anything refused rolls
+    the whole command back."""
+    from .. import shorts_check, shorts_plan as sp
+    from .shots import PlaceShots, clip_place_shots
+
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    tpf = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+    out: dict = {"notes": []}
+    if p.shots:
+        r = clip_place_shots(ctx, PlaceShots(sequence_id=seq["id"], shots=p.shots, edge_margin=p.edge_margin,
+                                             min_speed=p.min_speed, allow_cover=p.allow_cover))
+        out["placed"] = len(r["placed"])
+        out["dark_or_text"] = [f"{x['shot']}: {', '.join(x['notes'])}" for x in r["placed"] if x["notes"]]
+
+    end = None
+    a1 = seq["tracks"][seq["audio_tracks"][0]]["clips"] if seq["audio_tracks"] else {}
+    if p.align_end and a1:
+        end = max(c["end"] for c in a1.values()) + p.end_pad_frames * tpf
+        _align_end(ctx, seq, end, out["notes"])
+        out["end_frame"] = end // tpf
+
+    cues = sp.cues_from_sequence(seq)
+    plan = sp.make_plan(cues, reveal=tuple(p.reveal)) if cues else None
+    effects = p.effects
+    if effects is None and plan is not None:
+        effects = [CaptionEffect(clip_id=c.clip_id, effect=plan.effects[c.i]) for c in plan.cues if c.clip_id]
+    if effects:
+        r = shorts_caption_effects(ctx, CaptionEffects(sequence_id=seq["id"], items=effects))
+        out["effects"] = dict(sorted(Counter(x["effect"] for x in r["captions"]).items()))
+        out["notes"] += [f"'{x['text']}': {x['note']}" for x in r["captions"] if x.get("note")]
+
+    sounds = p.sounds
+    if sounds is None and plan is not None:
+        dirs = sfx_dirs(p.sfx_dirs)
+        sounds, out["hits_to_choose"], missing = [], [], []
+        for c in plan.cues:
+            name = plan.sounds.get(c.i)
+            if not name:
+                continue
+            if name == "hit?":
+                out["hits_to_choose"].append({"at": f"{c.start // tpf}f", "caption": c.text})
+                continue
+            mid, path, _ = resolve_sound(ctx.doc, name, dirs)
+            if mid is None and path is None:
+                missing.append(name)
+                continue
+            sounds.append(Sound(at=c.start, sound=name))
+        if missing:
+            out["notes"].append(f"sounds not found, skipped: {', '.join(sorted(set(missing)))}")
+    if sounds:
+        r = shorts_place_sfx(ctx, PlaceSfx(sequence_id=seq["id"], sounds=sounds, end_at=end, sfx_dirs=p.sfx_dirs,
+                                           auto_match=p.auto_match))
+        out["sounds"] = [f"{x['at_frame']}f {x['sound']} ({x['track']})" for x in r["sounds"]]
+        out["notes"] += r["warnings"]
+
+    rep = shorts_check.check(ctx.doc, seq)
+    out["check"] = shorts_check.render(rep)
+    out["ok"] = rep["ok"]
     return out

@@ -89,6 +89,13 @@
     (엣지러너 2: `--episodes 10 --episode-min 26`). claude.ai의 「엣지러너 2 소스 커버리지」 아티팩트는 Claude만 갱신할 수 있다.
 - 끝내 없으면 "구하지 못한 소스"로 사용자에게 알린다.
 
+### 4~6. 배치·자막 효과·효과음을 한 번에: `shorts_build`
+- 순서: `shorts_plan`(초안) → 고치기 → `source_plan`(샷마다 `look`, 한 번) → **`shorts_build`** → 결과의 check에 나온 것만 고치기 → `get_frame_strip` 한 장 → 저장.
+- `shorts_build`는 한 명령, 한 번의 되돌리기로 다음을 한다: `shots`를 V1에 배치(place_shots 규칙) → 영상 끝을 내레이션 + 6프레임에 맞춤(V1·V5·V6·마지막 자막을 늘이거나 자르고, 넘치는 소리는 자름) → 자막 효과(`effects`를 안 주면 초안대로) → 효과음(`sounds`를 안 주면 초안대로; `hit?`은 `hits_to_choose`로 돌려주니 뜻을 보고 `shorts_place_sfx`로 추가) → `shorts_check` 결과를 돌려준다.
+- 하나라도 거부되면(짧은 소스, 없는 효과음 이름 등) 아무것도 바뀌지 않는다.
+- **눈으로 컷마다 보지 않는다.** `shorts_check`가 글로 문제만 돌려준다: 1.1초 미만 샷, 검은 틈, 자막 시작이 아닌 컷, 87–105% 밖 속도, 장면 경계 3프레임 안쪽(이웃 샷이 비침, 소스 DB), 샷 안의 장면 전환, 어두운 샷, 끝 처리, 겹친 자막, 810px를 넘는 120 자막, SFX 태그 누락, 0.5초 안쪽 효과음. 그다음 `get_frame_strip` 한 장으로 그림만 확인한다.
+- 초안 규칙을 바꾸면 PC에서 아카이브와 비교해 F1이 오를 때만 유지한다(토큰 0): `uv run --project engine python docs/shorts-editing/calibrate_plan.py cuts.jsonl` (`cuts.jsonl`은 `cut_grammar_extract.py`로 만든다).
+
 ### 4. 배치 (V1)
 - **계획 초안은 `shorts_plan` 한 번으로 받는다.** V7 자막(또는 `srt`)을 읽어 아래 규칙대로 샷 묶음, 자막마다 효과(pop/slam/fade)와 효과음 제안, 규칙 위반 목록을 한 표로 돌려준다. 머릿속으로 자막을 하나씩 묶지 않는다.
   - 초안은 자막 어미만 보고 만든 것이다. 의미로 판단할 곳(이름 공개·주어 전환은 `reveal`에 자막 번호, 타격음 `hit?`은 뜻으로 고르기)만 고친다.

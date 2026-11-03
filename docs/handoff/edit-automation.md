@@ -27,6 +27,8 @@ by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 | `shorts_plan` (MCP, read-only): captions → shots (sentence grammar), pop/slam/fade per caption, sounds (W3/W4/rotation, hit?, Bells 2, 물방울, 티딩), grammar problems. The planning half of next steps 1–3. | `engine/lumina/shorts_plan.py` |
 | `shorts.caption_effects`: all effects in one all-or-nothing edit; slams 120 only when they fit 810 px. Next step 2. | `engine/lumina/commands/shorts_fx.py` |
 | `shorts.place_sfx`: sounds by name, grammar tracks, Epic Hit pre-roll, tails cut, sfx tag, A2/A3 Auto-Match, -3/-7 rules. Next step 3. | same |
+| `shorts.build` (one command, one undo: place_shots → end at narration + 6 f → effects → sounds → check) and `shorts_check` (text-only review: shots, gaps, flashes/dark from the DB, ending, captions, sounds). | `engine/lumina/commands/shorts_fx.py`, `engine/lumina/shorts_check.py` |
+| Calibration of the draft against the archive (precision/recall/F1 of cuts per boundary kind, effect confusion, worst Shorts): run `docs/shorts-editing/calibrate_plan.py` on the PC on `cut_grammar_extract.py` output. **First thing to run on the PC**: it says how good `shorts_plan` is. | `engine/lumina/shorts_calibrate.py` |
 | Source DB upkeep: `health` (read-only report with fixing commands), `backup`, `recut --stale`, `describe --misaligned`, `merge`. See `docs/shorts-editing/source-db-frozen-schema.md` "Upkeep". | `engine/lumina/sourcedb/health.py` |
 | The SigLIP text encoder starts in the background when the MCP server starts (`LUMINA_WARM_ENCODER=0` turns it off). Next step 5. | `engine/lumina/mcp_server.py` |
 

@@ -22,8 +22,8 @@ Times accept ticks (int) or strings: "12.5s", "45f", "00:01:02:15". Omitted sequ
 Typical flow: open_project/new_project -> media_import -> sequence_create_from_media -> edits -> get_timeline_state -> save_project.
 Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure).
 Use get_frame_image to look at the result, and export_media to render a verified file.
-Shorts, few calls: shorts_plan drafts shots/effects/sounds from the captions -> fix the draft -> source_plan (one call,
-add `look` per shot) -> clip_place_shots -> get_frame_strip -> shorts_caption_effects -> shorts_place_sfx."""
+Shorts, few calls: shorts_plan (draft from the captions) -> source_plan (one call, `look` per shot) -> shorts_build
+(shots + end + effects + sounds + check, one undo) -> fix what its check lists -> get_frame_strip once -> save."""
 
 _OBJ = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -137,6 +137,15 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                                    "description": "caption numbers that must start a new shot (a name reveal, a new subject)"},
                         "min_shot": {"type": "number", "default": 1.1},
                         "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}}, None),
+    "shorts_check": ("shorts.check",
+                     "Check a Short's edit as text, without frames: short shots, gaps, cuts off caption starts, speeds, "
+                     "neighbour-shot flashes and scene changes inside shots (source DB), dark shots, the ending (video = "
+                     "narration + 3-9 f; V5/V6/last caption/V1 on that frame), overlapping or too-wide captions, untagged or "
+                     "crowded sounds. Lists only problems, each with its frame.",
+                     {"type": "object", "properties": {"sequence_id": {"type": "string"},
+                                                       "use_db": {"type": "boolean", "default": True},
+                                                       "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}},
+                     None),
     "plan_scene_cuts": ("analysis.plan_scene_cuts",
                         "Scene Edit Detection: razor points where a clip's picture cuts to a new shot. apply=true razors there "
                         "(one undo step).",
