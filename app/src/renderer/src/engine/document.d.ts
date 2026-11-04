@@ -61,6 +61,10 @@ export type OutPoint = number | null;
  * Make Offline: shown as missing media even if the file exists
  */
 export type Offline = boolean;
+/**
+ * bumped each time the file is reloaded after it changed on disk (an Audition save, a re-render); decoders and generated files are keyed by it
+ */
+export type Revision = number;
 export type Id3 = string;
 export type Start = number;
 export type Duration1 = number;
@@ -369,6 +373,12 @@ export type Layers = (TextLayer | ShapeLayer | ImageLayer)[];
 export type Source = string | null;
 export type Text2 = string;
 /**
+ * Acoustic character times in sequence ticks; valid only for the recorded text/start/end
+ */
+export type Timing = {
+  [k: string]: unknown;
+} | null;
+/**
  * per-cue overrides of CaptionStyle fields
  */
 export type Style = {
@@ -453,6 +463,12 @@ export type OutPoint1 = number | null;
  * Audio Track Mixer's Mix fader
  */
 export type MasterVolumeDb = number;
+/**
+ * Editable sequence transcript, separate from rendered captions and graphics
+ */
+export type Transcript = {
+  [k: string]: unknown;
+} | null;
 /**
  * source patching: the track source video goes to (Insert/Overwrite); null = the first targeted video track; '' = none
  */
@@ -545,6 +561,7 @@ export interface MediaItem {
   in_point: InPoint;
   out_point: OutPoint;
   offline: Offline;
+  revision: Revision;
   markers: Markers;
 }
 /**
@@ -608,6 +625,7 @@ export interface Sequence {
   in_point: InPoint1;
   out_point: OutPoint1;
   master_volume_db: MasterVolumeDb;
+  transcript: Transcript;
   source_video_track: SourceVideoTrack;
   source_audio_track: SourceAudioTrack;
 }
@@ -868,6 +886,7 @@ export interface ImageLayer {
  */
 export interface Caption {
   text: Text2;
+  timing: Timing;
   style: Style;
 }
 /**

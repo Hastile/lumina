@@ -1,0 +1,193 @@
+[
+  {
+    "key": "hoshino",
+    "project": "D:\\유튜브 채널\\Project\\블루 아카이브\\아비도스 고등학교\\타카나시 호시노\\인계 파일\\타카나시 호시노.prproj",
+    "sha256": "6d4ba6e60b5820b6b84d655a2a66492b0ac906fc018c122283ed9e42915203c1",
+    "sequence": "시퀀스 09",
+    "sequence_uid": "6bd43655-f95b-4b9f-8742-4bb398d0016e",
+    "settings": {
+      "width": 1920,
+      "height": 1080,
+      "fps_num": 24000,
+      "fps_den": 1001,
+      "sample_rate": 48000
+    },
+    "duration": 905.237667,
+    "media_instances": 352,
+    "media_kinds": {
+      "video": 167,
+      "image": 185
+    },
+    "median_media_instance_seconds": 2.773604166666667,
+    "under_one_second_instances": 21,
+    "media_instances_with_motion_keys": 20,
+    "media_instances_with_changed_speed": 42,
+    "text_styles": {
+      "RixInooAriDuriR | 200.0 | tracking=-20.0 | box=None": 1,
+      "Pretendard-Black | 60.0 | tracking=-18.0 | box=None": 1,
+      "S-CoreDream-9Black | 120.0 | tracking=-18.0 | box=None": 4,
+      "Pretendard-Medium | 36.0 | tracking=-20.0 | box=[1440.0, 324.0]": 11,
+      "Pretendard-Medium | 60.0 | tracking=-20.0 | box=[1440.0, 324.0]": 432,
+      "Pretendard-Black | 120.0 | tracking=-20.0 | box=[1440.0, 324.0]": 4,
+      "Pretendard-Black | 96.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-Medium | 72.0 | tracking=-20.0 | box=[1440.0, 324.0]": 2,
+      "Pretendard-Black | 200.0 | tracking=-20.0 | box=None": 2,
+      "Pretendard-Medium | 80.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-ExtraBold | 96.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-Medium | 100.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-Bold | 96.0 | tracking=-20.0 | box=[1440.0, 324.0]": 2,
+      "Pretendard-ExtraBold | 120.0 | tracking=-20.0 | box=[1440.0, 324.0]": 2,
+      "Pretendard-Medium | 40.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-Medium | 96.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1,
+      "Pretendard-Black | 120.0 | tracking=-20.0 | box=[1928.0, 324.0]": 1,
+      "Pretendard-Medium | 61.0 | tracking=-20.0 | box=[1440.0, 324.0]": 1
+    },
+    "import_warnings": [
+      "Sequence 'SEQ': skipped 26 graphics/synthetic clip(s), 3 unsupported effect(s) (AE.ADBE AECrop, AE.Impact_Blur_FX), transition(s) imported as dissolves: 사용자 지정 페이드",
+      "Sequence '시퀀스 09': skipped 27 graphics/synthetic clip(s), 7 unsupported effect(s) (AE.ADBE AECrop, AE.ADBE Black & White, AE.ADBE Graphic Group, AE.Impact_Blur_FX), transition(s) imported as dissolves: 가속 페이드, 사용자 지정 페이드, 지속 가감속"
+    ]
+  },
+  {
+    "key": "ishigori",
+    "project": "D:\\유튜브 채널\\Project\\주술회전\\이시고리 류\\이시고리 류.prproj",
+    "sha256": "01d2aa8013f98ae6c579c8978ce796af2ef6d906ed54f3d2aeb3d0c18f191088",
+    "sequence": "SEQ",
+    "sequence_uid": "ec99c520-4d51-481e-8d07-ac58c5ca0113",
+    "settings": {
+      "width": 1920,
+      "height": 1080,
+      "fps_num": 24000,
+      "fps_den": 1001,
+      "sample_rate": 48000
+    },
+    "duration": 351.309292,
+    "media_instances": 105,
+    "media_kinds": {
+      "video": 75,
+      "image": 30
+    },
+    "median_media_instance_seconds": 3.25325,
+    "under_one_second_instances": 3,
+    "media_instances_with_motion_keys": 1,
+    "media_instances_with_changed_speed": 27,
+    "text_styles": {
+      "S-CoreDream-9Black | 300.0 | tracking=-18.0 | box=None": 2,
+      "Pretendard-Bold | 48.0 | tracking=-30.0 | box=None": 5,
+      "Ownglyph_corncorn-Rg | 48.0 | tracking=-18.0 | box=None": 1,
+      "SanSwB | 300.0 | tracking=-18.0 | box=None": 2,
+      "Ownglyph_corncorn-Rg | 80.0 | tracking=-18.0 | box=None": 3,
+      "RixInooAriDuriR | 200.0 | tracking=-20.0 | box=None": 2,
+      "Pretendard-Bold | 100.0 | tracking=-30.0 | box=None": 16,
+      "Ownglyph_corncorn-Rg | 60.0 | tracking=-18.0 | box=None": 1,
+      "Pretendard-Black | 60.0 | tracking=-18.0 | box=None": 1,
+      "RixMMjSEPL | 300.0 | tracking=-18.0 | box=None": 2
+    },
+    "import_warnings": [
+      "Sequence 'SEQ': skipped 3 graphics/synthetic clip(s), 1 unsupported effect(s) (AE.ADBE Black & White), transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'source seq': skipped 4 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence 'output': skipped 16 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence '시퀀스 02 (shorts)': skipped 1 unsupported effect(s) (AE.ADBE Graphic Group)",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속"
+    ]
+  },
+  {
+    "key": "denji",
+    "project": "D:\\유튜브 채널\\Project\\체인소맨\\덴지\\덴지.prproj",
+    "sha256": "d99783692af768d8a11fd8641560e6183e77b428bc5c5639d3d30138fd525315",
+    "sequence": "SEQ",
+    "sequence_uid": "ac4c8030-f6b8-42c9-b3fc-63dcaadcd9eb",
+    "settings": {
+      "width": 1920,
+      "height": 1080,
+      "fps_num": 24000,
+      "fps_den": 1001,
+      "sample_rate": 48000
+    },
+    "duration": 587.33675,
+    "media_instances": 143,
+    "media_kinds": {
+      "image": 62,
+      "video": 81
+    },
+    "median_media_instance_seconds": 4.004,
+    "under_one_second_instances": 5,
+    "media_instances_with_motion_keys": 7,
+    "media_instances_with_changed_speed": 29,
+    "text_styles": {
+      "S-CoreDream-9Black | 160.0 | tracking=-18.0 | box=None": 1,
+      "Ownglyph_corncorn-Rg | 60.0 | tracking=-18.0 | box=None": 11,
+      "Pretendard-ExtraBold | 96.0 | tracking=-18.0 | box=None": 1,
+      "Paperlogy-9Black | 160.0 | tracking=-18.0 | box=None": 5,
+      "RixInooAriDuriR | 200.0 | tracking=-20.0 | box=None": 2,
+      "S-CoreDream-9Black | 80.0 | tracking=-18.0 | box=None": 1,
+      "S-CoreDream-9Black | 240.0 | tracking=-18.0 | box=None": 1,
+      "S-CoreDream-9Black | 300.0 | tracking=-18.0 | box=None": 12,
+      "S-CoreDream-6Bold | 36.0 | tracking=-18.0 | box=None": 1
+    },
+    "import_warnings": [
+      "Sequence 'SEQ': skipped 6 graphics/synthetic clip(s), 7 unsupported effect(s) (AE.ADBE Black & White, AE.ADBE Graphic Group, unnamed effect), transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'source seq': skipped 4 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence 'output': skipped 16 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence '_Gth - Disp Blocks Max - 3': skipped 1 graphics/synthetic clip(s)",
+      "Sequence 'SEQ (Gth - Disp Blocks Max - 3     RSSB)': skipped 3 unsupported effect(s) (unnamed effect)",
+      "Sequence 'SEQ (Gth - Disp Blocks Max - 3     RSSB)': skipped 3 unsupported effect(s) (unnamed effect)",
+      "Sequence '_Gth - Disp Blocks Max - 1': skipped 1 graphics/synthetic clip(s)",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속"
+    ]
+  },
+  {
+    "key": "reze",
+    "project": "D:\\유튜브 채널\\Project\\체인소맨\\레제\\Long\\reze.prproj",
+    "sha256": "a06740c3a2a587e2c66d9af2ade4f21e914fd246e5344538e07efda237079a2d",
+    "sequence": "SEQ",
+    "sequence_uid": "ec99c520-4d51-481e-8d07-ac58c5ca0113",
+    "settings": {
+      "width": 1920,
+      "height": 1080,
+      "fps_num": 24000,
+      "fps_den": 1001,
+      "sample_rate": 48000
+    },
+    "duration": 602.518583,
+    "media_instances": 182,
+    "media_kinds": {
+      "video": 125,
+      "image": 57
+    },
+    "median_media_instance_seconds": 2.7944583333333335,
+    "under_one_second_instances": 19,
+    "media_instances_with_motion_keys": 15,
+    "media_instances_with_changed_speed": 64,
+    "text_styles": {
+      "JalpullineunharuM | 127.0 | tracking=0.0 | box=None": 1,
+      "Ownglyph_corncorn-Rg | 80.0 | tracking=-18.0 | box=None": 29,
+      "S-CoreDream-9Black | 300.0 | tracking=-18.0 | box=None": 1,
+      "RixInooAriDuriR | 200.0 | tracking=-20.0 | box=None": 3,
+      "KoPubWorldDotumBold | 90.0 | tracking=-18.0 | box=None": 1,
+      "S-CoreDream-6Bold | 64.0 | tracking=-18.0 | box=None": 4,
+      "Ownglyph_corncorn-Rg | 80.0 | tracking=0.0 | box=None": 1,
+      "S-CoreDream-9Black | 180.0 | tracking=-18.0 | box=None": 4,
+      "Pretendard-ExtraBold | 150.0 | tracking=-18.0 | box=None": 8,
+      "NotoSansCJKkr-Black | 66.0 | tracking=0.0 | box=None": 3,
+      "Dovemayo_gothic | 150.0 | tracking=0.0 | box=None": 1,
+      "S-CoreDream-9Black | 96.0 | tracking=-18.0 | box=None": 1,
+      "SanSwB | 120.0 | tracking=-18.0 | box=None": 1,
+      "S-CoreDream-9Black | 320.0 | tracking=300.0 | box=[1646.0, 324.0]": 1,
+      "Pretendard-Light | 80.0 | tracking=-18.0 | box=None": 2
+    },
+    "import_warnings": [
+      "1 project item(s) are not file media (graphics/MOGRT/synthetic) and were skipped: Black",
+      "Sequence 'SEQ': skipped 5 graphics/synthetic clip(s), 12 unsupported effect(s) (AE.ADBE Black & White, AE.ADBE Corner Pin, AE.ADBE Graphic Group, AE.ADBE Lumetri, AE.ADBE Ultra Key), transition(s) imported as dissolves: 사용자 지정 페이드, 지속 가감속",
+      "Sequence 'source seq': skipped 4 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence 'output': skipped 16 unsupported effect(s) (AE.ADBE Ultra Key)",
+      "Sequence 'Outro 2': skipped 1 unsupported effect(s) (AE.ADBE Graphic Group)",
+      "Sequence '시퀀스 02 (shorts)': skipped 2 unsupported effect(s) (AE.ADBE Corner Pin, AE.ADBE Lumetri)",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속",
+      "Sequence 'SEQ': skipped transition(s) imported as dissolves: 지속 가감속"
+    ]
+  }
+]

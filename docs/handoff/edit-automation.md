@@ -31,7 +31,7 @@ by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 | Calibration of the draft against the archive (precision/recall/F1 of cuts per boundary kind, effect confusion, worst Shorts): run `docs/shorts-editing/calibrate_plan.py` on the PC on `cut_grammar_extract.py` output. **First thing to run on the PC**: it says how good `shorts_plan` is. | `engine/lumina/shorts_calibrate.py` |
 | `edit_check` (MCP; the same checker with `profile: longform`): reuse of a source span or near-duplicate media, caption completion rules (frame 0, gaps, trailing punctuation, protected splits, 3.5 s / 5 s / two sentences), cuts that split a phrase. Shorts get reuse and caption checks too. | `engine/lumina/shorts_check.py` |
 | `shorts.add_tmi`: TMI notes on caption cues in one edit (V4/TMI track, cue timing, Pretendard-Medium 48, y 680/670/960, the caption track's stroke/shadow/effects; warnings for polite endings, long one-liners, missing glyphs). Verify on the PC that the copied caption effect animates the note with its caption. | `engine/lumina/commands/shorts_fx.py` |
-| `LUMINA_TOOLS` tool profiles (shorts 58 tools / 57k chars, longform 111, core 42, all 154 / 136k). | `engine/lumina/mcp_server.py` |
+| `LUMINA_TOOLS` tool profiles (shorts 82 tools / 69k chars, longform 134, core 54, all 179 / 149k; counts after merging pc/wip). | `engine/lumina/mcp_server.py` |
 | SFX calibration: `cut_grammar_extract.py` now records A2-A4 sounds; `calibrate_plan.py` reports sound precision/recall, same kind, same sound, and what the user had where the draft put each sound. **Re-run the extract** before calibrating. | `engine/lumina/shorts_calibrate.py` |
 | `shorts.set_bgm`: BGM kept inside -27 to -24 LUFS by Auto-Match (user, 2026-11-03): left alone inside the band, matched to the nearer edge outside it, no midpoint; tagged Music, clip volume untouched. | `engine/lumina/commands/shorts_fx.py` |
 | Reveals: a caption opening with 바로 / 그 정체는 / 정답은 / 주인공은 mid-sentence is a cut in the draft (`auto_reveal`); names from the DB's works/characters first said mid-sentence are marked `reveal?` only (look-alike sections must not cut to the original). | `engine/lumina/shorts_plan.py` |
@@ -44,6 +44,13 @@ by look, `place_shots` 0.2 s, off-centre subject centred by DB `subject_x`.
 | The SigLIP text encoder starts in the background when the MCP server starts (`LUMINA_WARM_ENCODER=0` turns it off). Next step 5. | `engine/lumina/mcp_server.py` |
 
 Tested headless only (`tests/test_shorts_fx.py`). Still to verify on the PC: `shorts_plan` on a real Short against the user's own cut (e.g. 사스케 닮은꼴), sound names against the real SFX folders, and the 120-px fit with Pretendard installed.
+
+## Merged the PC's work (2026-11-04)
+
+`pc/wip` (cuts@4, caption timing and speech tools, frame review, GUI engine, GUI changes) was squashed into
+`claude/wizardly-franklin-m74wpy` as one commit, without the nine `tmp-*.jpg/.wav` frames and sounds that
+the push had picked up at the repo root (now ignored). Delete the remote `pc/wip` branch so those files are
+no longer referenced. `CUTS_V` is cuts@4, so `health` and `recut --stale` work against it.
 
 ## What a cloud session can and cannot do
 

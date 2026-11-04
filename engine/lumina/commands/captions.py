@@ -41,7 +41,7 @@ def caption_clip(text: str, start: int, end: int) -> dict:
         "id": new_id(), "media_id": None, "sequence_id": None, "name": first_line(text), "start": start, "end": end,
         "source_in": 0, "speed": 1.0, "enabled": True, "link_id": None, "label": "yellow", "opacity": 100.0,
         "volume_db": 0.0, "gain_db": 0.0, "audio_tag": None, "muted": False, "auto_match": None, "motion": dict(DEFAULT_MOTION),
-        "keyframes": {}, "graphic": None, "caption": {"text": text, "style": None}, "effects": [], "freeze": None, "adjustment": False,
+        "keyframes": {}, "graphic": None, "caption": {"text": text, "style": None, "timing": None}, "effects": [], "freeze": None, "adjustment": False,
     }
 
 
@@ -148,6 +148,9 @@ def caption_set(ctx: Context, p: SetCaption):
     cap = copy.deepcopy(clip["caption"])
     if p.text is not None:
         cap["text"] = p.text
+        if p.text != clip["caption"]["text"]:
+            from .caption_timing import remap_timing
+            cap["timing"] = remap_timing(cap.get("timing"), clip["caption"]["text"], p.text)
     if p.clear_style:
         cap["style"] = None
     if p.style:
@@ -266,7 +269,7 @@ def caption_from_graphics(ctx: Context, p: TrackRef):
     for c, (text, layer) in candidates:
         over = {k: layer[k] for k in STYLE_FIELDS if k in layer and layer[k] != style.get(k)}
         path = clip_path(seq, p.track_id, c["id"])
-        ctx.m.set(path + ["caption"], {"text": text, "style": over or None})
+        ctx.m.set(path + ["caption"], {"text": text, "style": over or None, "timing": None})
         ctx.m.set(path + ["graphic"], None)
     return {"converted": len(candidates), "style": style}
 

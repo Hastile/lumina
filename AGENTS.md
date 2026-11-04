@@ -12,4 +12,4 @@ Before editing a Short in a Lumina project, read `docs/shorts-editing/CARD.md` (
 
 ## MCP tool profile
 
-The Lumina MCP server lists every tool (154, ~135k characters of schemas) unless `LUMINA_TOOLS` narrows it: `shorts` (58), `longform` (111), `core` (42), `all` (default), or a comma list of profiles, tool names and `prefix*` patterns (e.g. `shorts,clip_slip`). Set it in the MCP server's environment for clients that send every tool schema with each request. A hidden tool still answers if called by name.
+The Lumina MCP server lists every tool (179, ~149k characters of schemas) unless `LUMINA_TOOLS` narrows it: `shorts` (82), `longform` (134), `core` (54), `all` (default), or a comma list of profiles, tool names and `prefix*` patterns (e.g. `shorts,clip_slip`). Set it in the MCP server's environment for clients that send every tool schema with each request. A hidden tool still answers if called by name.

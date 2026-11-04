@@ -96,6 +96,114 @@ def media_locate(ctx: Context, p: Locate):
     return {"linked": linked, "missing": missing, "rejected": rejected}
 
 
+DERIVED = ("proxy_path", "thumbnail_path", "waveform_path", "filmstrip_path")
+
+
+class Refresh(Params):
+    media_ids: list[str] = Field(min_length=1)
+
+
+@command("media.refresh", Refresh, undoable=False)
+def media_refresh(ctx: Context, p: Refresh):
+    """The file changed on disk (saved in Audition, re-rendered): re-read it, bump its revision and
+    forget its generated files so they are made again (cache data, not undoable)."""
+    if ctx.services is None:
+        raise CommandError("NO_SERVICES", "media services unavailable")
+    out = []
+    for mid in p.media_ids:
+        item = media_of(ctx.doc, mid)
+        try:
+            info = ctx.services.probe(item["path"])
+        except Exception as exc:  # noqa: BLE001
+            raise CommandError("PROBE_FAILED", f"cannot read {item['path']}: {exc}") from None
+        base = ["media", mid]
+        for k in ("duration", "video", "audio"):  # the kind stays: its clips depend on it
+            if k in info and info[k] != item.get(k):
+                ctx.m.set(base + [k], info[k])
+        for k in DERIVED:
+            if item.get(k):
+                ctx.m.set(base + [k], None)
+        revision = int(item.get("revision") or 0) + 1
+        ctx.m.set(base + ["revision"], revision)
+        out.append({"media_id": mid, "revision": revision, "duration": info.get("duration", item["duration"])})
+    return {"refreshed": out}
+
+
+class AudioForEdit(Params):
+    clip_ids: list[str] = Field(min_length=1)
+    sequence_id: str | None = None
+
+
+def _extracted_path(src: str, clip_name: str) -> Path:
+    """'<clip name> Audio Extracted.wav' next to the source, numbered when taken (Premiere's naming)."""
+    folder = Path(src).parent
+    stem = clip_name
+    if Path(clip_name).suffix.lower() == Path(src).suffix.lower():
+        stem = Path(clip_name).stem
+    stem = "".join("_" if ch in '<>:"/\\|?*' else ch for ch in stem).strip() or Path(src).stem
+    path, n = folder / f"{stem} Audio Extracted.wav", 1
+    while path.exists():
+        path, n = folder / f"{stem} Audio Extracted {n}.wav", n + 1
+    return path
+
+
+def _shift_keyframes(kfs: dict, delta: int) -> dict:
+    return {k: [{**kf, "t": kf["t"] - delta} for kf in lst] for k, lst in kfs.items()}
+
+
+@command("clip.prepare_audio_edit", AudioForEdit)
+def clip_prepare_audio_edit(ctx: Context, p: AudioForEdit):
+    """Edit in Adobe Audition (Premiere's Edit > Edit in Adobe Audition > Clip): the file each audio clip is
+    edited in. A clip that plays its whole audio file untouched (from its start to its end at 100 %) edits that
+    file. Any other clip has the source range it plays rendered to '<clip> Audio Extracted.wav' next to the
+    source; the copy is imported and the clip switched to it, keeping its timing, speed, gain, effects and
+    keyframes. Undo puts the clip back and, as in Premiere, leaves the rendered file on disk."""
+    from .. import timebase
+    from .project import new_media_item, seq_of
+    from .timeline import find_clip
+
+    if ctx.services is None:
+        raise CommandError("NO_SERVICES", "media services unavailable")
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    frame = timebase.ticks_per_frame(st["fps_num"], st["fps_den"])
+    out = []
+    for cid in p.clip_ids:
+        tid, c = find_clip(seq, cid)
+        media = ctx.doc["media"].get(c.get("media_id") or "")
+        if seq["tracks"][tid]["kind"] != "audio" or media is None or not media.get("audio"):
+            raise CommandError("NOT_AUDIO_CLIP", f"not an audio clip of a media file: {cid}")
+        span = round((c["end"] - c["start"]) * c["speed"])
+        lo, hi = sorted((c["source_in"], c["source_in"] + span))
+        lo, hi = max(0, lo), min(media["duration"], hi)
+        untouched = (media["kind"] == "audio" and c["speed"] == 1 and lo <= frame // 2
+                     and hi >= media["duration"] - frame // 2)
+        if untouched:
+            out.append({"clip_id": cid, "media_id": media["id"], "path": media["path"], "extracted": False})
+            continue
+        if hi <= lo:
+            raise CommandError("EMPTY_RANGE", f"clip {cid} plays no audio of its media")
+        dest = _extracted_path(media["path"], c["name"])
+        try:
+            ctx.services.extract_audio(media["path"], lo, hi - lo, str(dest), media["audio"])
+            info = ctx.services.probe(str(dest))
+        except Exception as exc:  # noqa: BLE001
+            raise CommandError("EXTRACT_FAILED", f"cannot render {dest.name}: {exc}") from None
+        item = new_media_item(str(dest), media["bin_id"], info)
+        ctx.m.set(["media", item["id"]], item)
+        base = ["sequences", seq["id"], "tracks", tid, "clips", cid]
+        ctx.m.set(base + ["media_id"], item["id"])
+        ctx.m.set(base + ["name"], item["name"])
+        ctx.m.set(base + ["source_in"], c["source_in"] - lo)
+        if c.get("keyframes"):  # keyframes sit on source time
+            ctx.m.set(base + ["keyframes"], _shift_keyframes(c["keyframes"], lo))
+        if any(fx.get("keyframes") for fx in c.get("effects") or []):
+            ctx.m.set(base + ["effects"], [{**fx, "keyframes": _shift_keyframes(fx["keyframes"], lo)} if fx.get("keyframes") else fx
+                                           for fx in c["effects"]])
+        out.append({"clip_id": cid, "media_id": item["id"], "path": str(dest), "extracted": True})
+    return {"clips": out}
+
+
 class MakeOffline(Params):
     media_ids: list[str] = Field(min_length=1)
     offline: bool = Field(default=True, description="false brings it back online (if the file exists)")

@@ -7,6 +7,8 @@ from lumina.commands.timeline import clip_markers
 from lumina.model import validate_project
 
 from .test_session import SEC, clips, make
+from .test_session import FakeServices
+from lumina.session import Session
 
 
 def placed(source_in=0):
@@ -66,3 +68,22 @@ def test_sequence_markers_still_go_on_the_sequence():
     s, sid, a, v = placed()
     mid = s.execute("marker.add", {"at": "4s"})["result"]["marker_id"]
     assert s.doc["sequences"][sid]["markers"][mid]["start"] == 4 * SEC and s.doc["media"][a]["markers"] == {}
+
+
+def test_source_marks_and_markers_without_sequence():
+    s = Session(services=FakeServices())
+    media = s.execute('media.import', {'paths':['a.mp4']})['result']['media_ids'][0]
+    assert not s.doc['sequences']
+    s.execute('media.set_marks', {'media_id':media,'in_point':SEC})
+    s.execute('media.set_marks', {'media_id':media,'out_point':3*SEC})
+    marker = s.execute('marker.add', {'media_id':media,'at':'2s'})['result']['marker_id']
+    assert s.doc['media'][media]['markers'][marker]['start']==2*SEC
+    assert s.doc['media'][media]['in_point']==SEC
+    assert s.doc['media'][media]['out_point']==3*SEC
+    s.execute('marker.update', {'media_id':media,'marker_id':marker,'at':'3s','name':'source marker'})
+    assert s.doc['media'][media]['markers'][marker]['start']==3*SEC
+    s.execute('marker.remove', {'media_id':media,'marker_ids':[marker]})
+    assert not s.doc['media'][media]['markers']
+    s.execute('media.set_marks', {'media_id':media,'clear_in':True})
+    assert s.doc['media'][media]['in_point'] is None
+    assert s.doc['media'][media]['out_point']==3*SEC

@@ -1,0 +1,278 @@
+[
+  {
+    "id": "4a65807fa97a492fac04328c5bed0eaa",
+    "kind": "export",
+    "media_id": null,
+    "status": "done",
+    "error": null,
+    "progress": 1,
+    "phase": "done",
+    "path": "D:\\Dev\\lumina\\.tmp\\av-review\\hoshino-034-042.wav",
+    "sequence_id": "d9fbff525e3f440780b12f7040ee1753",
+    "preset": "wav",
+    "result": {
+      "path": "D:\\Dev\\lumina\\.tmp\\av-review\\hoshino-034-042.wav",
+      "preset": "wav",
+      "encoder": null,
+      "range": {
+        "start": 8634585960000,
+        "end": 10668746088000,
+        "seconds": 8.008
+      },
+      "frames": 0,
+      "elapsed_seconds": 1.72,
+      "size_bytes": 1537614,
+      "verification": {
+        "container": "wav",
+        "durationSeconds": 8.008,
+        "sizeBytes": 1537614,
+        "bitRate": 1536077,
+        "videoStreamCount": 0,
+        "audioStreamCount": 1,
+        "video": null,
+        "audio": {
+          "codec": "pcm_s16le",
+          "sampleRate": 48000,
+          "channels": 2,
+          "channelLayout": null
+        },
+        "tags": {
+          "encoder": "Lavf63.5.100"
+        }
+      },
+      "warnings": []
+    }
+  },
+  {
+    "id": "368c057e08c84f12bf0bdbcadbc93540",
+    "kind": "export",
+    "media_id": null,
+    "status": "done",
+    "error": null,
+    "progress": 1,
+    "phase": "done",
+    "path": "D:\\Dev\\lumina\\.tmp\\av-review\\hoshino-098-105.mp4",
+    "sequence_id": "d9fbff525e3f440780b12f7040ee1753",
+    "preset": "h264",
+    "result": {
+      "path": "D:\\Dev\\lumina\\.tmp\\av-review\\hoshino-098-105.mp4",
+      "preset": "h264",
+      "encoder": "h264_nvenc",
+      "range": {
+        "start": 24897272400000,
+        "end": 26666567928000,
+        "seconds": 6.965291666666666
+      },
+      "frames": 167,
+      "elapsed_seconds": 8.36,
+      "size_bytes": 6836404,
+      "verification": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "durationSeconds": 6.965292,
+        "sizeBytes": 6836404,
+        "bitRate": 7851965,
+        "videoStreamCount": 1,
+        "audioStreamCount": 1,
+        "video": {
+          "codec": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pixelFormat": "yuv420p",
+          "avgFrameRate": 23.976023976023978,
+          "rFrameRate": 23.976023976023978
+        },
+        "audio": {
+          "codec": "aac",
+          "sampleRate": 48000,
+          "channels": 2,
+          "channelLayout": "stereo"
+        },
+        "tags": {
+          "major_brand": "isom",
+          "minor_version": "512",
+          "compatible_brands": "isomiso2avc1mp41",
+          "encoder": "Lavf63.5.100"
+        }
+      },
+      "warnings": []
+    },
+    "frame": 167,
+    "frames": 167,
+    "fps": 23,
+    "eta_seconds": 0
+  },
+  {
+    "id": "736da871684f49daabd1348b29583f29",
+    "kind": "export",
+    "media_id": null,
+    "status": "done",
+    "error": null,
+    "progress": 1,
+    "phase": "done",
+    "path": "D:\\Dev\\lumina\\.tmp\\av-review\\ishigori-182-190.mp4",
+    "sequence_id": "b07f37768e71483b820fd62f501dd05e",
+    "preset": "h264",
+    "result": {
+      "path": "D:\\Dev\\lumina\\.tmp\\av-review\\ishigori-182-190.mp4",
+      "preset": "h264",
+      "encoder": "h264_nvenc",
+      "range": {
+        "start": 46234764576000,
+        "end": 48258330120000,
+        "seconds": 7.966291666666667
+      },
+      "frames": 191,
+      "elapsed_seconds": 5.88,
+      "size_bytes": 4655921,
+      "verification": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "durationSeconds": 7.966292,
+        "sizeBytes": 4655921,
+        "bitRate": 4675621,
+        "videoStreamCount": 1,
+        "audioStreamCount": 1,
+        "video": {
+          "codec": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pixelFormat": "yuv420p",
+          "avgFrameRate": 23.976023976023978,
+          "rFrameRate": 23.976023976023978
+        },
+        "audio": {
+          "codec": "aac",
+          "sampleRate": 48000,
+          "channels": 2,
+          "channelLayout": "stereo"
+        },
+        "tags": {
+          "major_brand": "isom",
+          "minor_version": "512",
+          "compatible_brands": "isomiso2avc1mp41",
+          "encoder": "Lavf63.5.100"
+        }
+      },
+      "warnings": []
+    },
+    "frame": 191,
+    "frames": 191,
+    "fps": 36.9,
+    "eta_seconds": 0
+  },
+  {
+    "id": "13a65715808541db927c5fea066e39db",
+    "kind": "export",
+    "media_id": null,
+    "status": "done",
+    "error": null,
+    "progress": 1,
+    "phase": "done",
+    "path": "D:\\Dev\\lumina\\.tmp\\av-review\\denji-256-263.mp4",
+    "sequence_id": "105612dab2a440f1ae4f45c55199f5bd",
+    "preset": "h264",
+    "result": {
+      "path": "D:\\Dev\\lumina\\.tmp\\av-review\\denji-256-263.mp4",
+      "preset": "h264",
+      "encoder": "h264_nvenc",
+      "range": {
+        "start": 65029556592000,
+        "end": 66809446704000,
+        "seconds": 7.007
+      },
+      "frames": 168,
+      "elapsed_seconds": 7.39,
+      "size_bytes": 3675746,
+      "verification": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "durationSeconds": 7.007,
+        "sizeBytes": 3675746,
+        "bitRate": 4196655,
+        "videoStreamCount": 1,
+        "audioStreamCount": 1,
+        "video": {
+          "codec": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pixelFormat": "yuv420p",
+          "avgFrameRate": 23.976023976023978,
+          "rFrameRate": 23.976023976023978
+        },
+        "audio": {
+          "codec": "aac",
+          "sampleRate": 48000,
+          "channels": 2,
+          "channelLayout": "stereo"
+        },
+        "tags": {
+          "major_brand": "isom",
+          "minor_version": "512",
+          "compatible_brands": "isomiso2avc1mp41",
+          "encoder": "Lavf63.5.100"
+        }
+      },
+      "warnings": []
+    },
+    "frame": 168,
+    "frames": 168,
+    "fps": 25,
+    "eta_seconds": 0
+  },
+  {
+    "id": "9c11b0c30465408aa2921e11ea0e571e",
+    "kind": "export",
+    "media_id": null,
+    "status": "done",
+    "error": null,
+    "progress": 1,
+    "phase": "done",
+    "path": "D:\\Dev\\lumina\\.tmp\\av-review\\reze-455-467.mp4",
+    "sequence_id": "8c0efe9033c34f9ba5dc3e07698d2f16",
+    "preset": "h264",
+    "result": {
+      "path": "D:\\Dev\\lumina\\.tmp\\av-review\\reze-455-467.mp4",
+      "preset": "h264",
+      "encoder": "h264_nvenc",
+      "range": {
+        "start": 115576316856000,
+        "end": 118627557048000,
+        "seconds": 12.012
+      },
+      "frames": 288,
+      "elapsed_seconds": 10.48,
+      "size_bytes": 4538444,
+      "verification": {
+        "container": "mov,mp4,m4a,3gp,3g2,mj2",
+        "durationSeconds": 12.012,
+        "sizeBytes": 4538444,
+        "bitRate": 3022606,
+        "videoStreamCount": 1,
+        "audioStreamCount": 1,
+        "video": {
+          "codec": "h264",
+          "width": 1920,
+          "height": 1080,
+          "pixelFormat": "yuv420p",
+          "avgFrameRate": 23.976023976023978,
+          "rFrameRate": 23.976023976023978
+        },
+        "audio": {
+          "codec": "aac",
+          "sampleRate": 48000,
+          "channels": 2,
+          "channelLayout": "stereo"
+        },
+        "tags": {
+          "major_brand": "isom",
+          "minor_version": "512",
+          "compatible_brands": "isomiso2avc1mp41",
+          "encoder": "Lavf63.5.100"
+        }
+      },
+      "warnings": []
+    },
+    "frame": 288,
+    "frames": 288,
+    "fps": 29.8,
+    "eta_seconds": 0
+  }
+]

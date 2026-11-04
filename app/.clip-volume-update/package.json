@@ -1,0 +1,16 @@
+{
+  "name": "lumina-app",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lumina video editor (Electron GUI)",
+  "main": "out/main/index.js",
+  "type": "module",
+  "dependencies": {
+    "dockview-react": "^8.5.1",
+    "lucide-react": "^1.56.0",
+    "mediabunny": "^1.61.4",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "zustand": "^5.0.15"
+  }
+}

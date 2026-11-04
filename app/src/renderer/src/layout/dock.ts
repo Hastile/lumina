@@ -19,6 +19,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   properties: 'Properties',
   metadata: 'Metadata',
   text: 'Text',
+  sourceReview: 'Source Review',
   audioTrackMixer: 'Audio Track Mixer',
   graphicTemplates: 'Graphic Templates',
   history: 'History'
@@ -65,6 +66,7 @@ export function buildEditingLayout(a: DockviewApi): void {
   // top row spans the bottom row's width
   add('effectControls', { direction: 'above' })
   add('source', { referencePanel: 'effectControls', direction: 'within' })
+  add('sourceReview', { referencePanel: 'source', direction: 'within' })
   add('audioMixer', { referencePanel: 'effectControls', direction: 'within' })
   add('metadata', { referencePanel: 'effectControls', direction: 'within' })
   add('text', { referencePanel: 'effectControls', direction: 'within' })
@@ -138,6 +140,12 @@ export function restoreLayout(a: DockviewApi): void {
     }
   }
   if (!ok) buildEditingLayout(a)
+  if (!a.getPanel('sourceReview')) {
+    const active = a.activePanel
+    a.addPanel({ id: 'sourceReview', component: 'sourceReview', title: t('Source Review'),
+      position: a.getPanel('source') ? { referencePanel: 'source', direction: 'within' } : undefined })
+    active?.api.setActive()
+  }
   setLayoutLocked(isLayoutLocked())
 }
 

@@ -1,3 +1,4 @@
+import { InlineValueInput } from '../panels/InlineValueInput'
 // Shared controls for keyframable properties (Effect Controls + Properties panels).
 import { openContextMenu } from '../layout/Chrome'
 import { useState } from 'react'
@@ -10,8 +11,19 @@ import { activeSequence, exec, findClip, useStore } from '../state/store'
 import { goTo } from '../state/transport'
 import { keyframesOf, seqTimeOf, sourceTime, valueAt, type Kf, type KeyframeProp } from '../util/motion'
 import { ticksPerFrame } from '../util/time'
+import { liveValue } from '../util/liveValue'
 
 export type ClipCtx = { seq: Sequence; clip: Clip; kind: 'video' | 'audio'; media: MediaItem | null; time: number }
+
+export function useSelectedClips(): ClipCtx[] {
+  const state = useStore()
+  const seq = activeSequence(state)
+  if (!seq) return []
+  return state.selectedClips.flatMap((id) => {
+    const found = findClip(seq, id)
+    return found ? [{ seq, clip: found.clip, kind: found.track.kind, media: found.clip.media_id ? state.doc?.media[found.clip.media_id] ?? null : null, time: state.programTime }] : []
+  })
+}
 
 /** The selected clip (first of the selection) with its sequence, media and the playhead. */
 export function useSelectedClip(): ClipCtx | null {
@@ -37,26 +49,20 @@ export function clipTime(c: ClipCtx): number {
 }
 
 export function NumberScrub({ value, min = -1e9, max = 1e9, step = 1, digits = 1, suffix = '', onChange, disabled }: {
-  value: number; min?: number; max?: number; step?: number; digits?: number; suffix?: string; onChange: (v: number) => void; disabled?: boolean
+  value: number | null; min?: number; max?: number; step?: number; digits?: number; suffix?: string; onChange: (v: number) => void; disabled?: boolean
 }) {
   const [edit, setEdit] = useState<string | null>(null)
   const [live, setLive] = useState<number | null>(null)
   if (edit !== null) {
     return (
-      <input
+      <InlineValueInput
         className="lm-value-input"
-        autoFocus
-        value={edit}
-        onChange={(e) => setEdit(e.target.value)}
-        onBlur={() => setEdit(null)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            const v = Number(edit)
-            if (!Number.isNaN(v)) onChange(Math.max(min, Math.min(max, v)))
-            setEdit(null)
-          }
-          if (e.key === 'Escape') setEdit(null)
+        initialValue={edit}
+        onCommit={(text) => {
+          const v = Number(text)
+          if (text.trim() && Number.isFinite(v)) onChange(Math.max(min, Math.min(max, v)))
         }}
+        onClose={() => setEdit(null)}
       />
     )
   }
@@ -68,26 +74,28 @@ export function NumberScrub({ value, min = -1e9, max = 1e9, step = 1, digits = 1
         if (disabled || e.button !== 0) return
         const startX = e.clientX
         let moved = false
-        let current = value
+        let current = value ?? 0
+        const preview = liveValue(onChange)
         const move = (ev: MouseEvent) => {
           const dx = ev.clientX - startX
           if (Math.abs(dx) > 2) moved = true
-          current = Math.max(min, Math.min(max, value + Math.round(dx) * step * (ev.shiftKey ? 10 : 1)))
+          current = Math.max(min, Math.min(max, (value ?? 0) + Math.round(dx) * step * (ev.shiftKey ? 10 : 1)))
           setLive(current)
+          if (moved) preview.update(current)
         }
         const up = () => {
           window.removeEventListener('mousemove', move)
           window.removeEventListener('mouseup', up)
           setLive(null)
-          if (moved && current !== value) onChange(current)
-          else if (!moved) setEdit(value.toFixed(digits))
+          if (moved) preview.finish(current)
+          else if (!moved) setEdit(value == null ? '-' : value.toFixed(digits))
         }
         window.addEventListener('mousemove', move)
         window.addEventListener('mouseup', up)
       }}
     >
-      {shown.toFixed(digits)}
-      {suffix}
+      {shown == null ? '-' : shown.toFixed(digits)}
+      {shown == null ? '' : suffix}
     </span>
   )
 }

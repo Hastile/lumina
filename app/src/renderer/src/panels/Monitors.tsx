@@ -1,13 +1,14 @@
+import { InlineValueInput } from './InlineValueInput'
 import { newShapeLayer } from '../actions/actions'
 import { playbackStats } from '../playback/GLStage'
 import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDownToLine, ArrowRightToLine, Bookmark, Brackets, ChevronFirst, ChevronLast, Pause, Play, SkipBack, SkipForward,
-  StepBack, StepForward, Upload, Import as InsertIcon, Replace
+  StepBack, StepForward, Upload, Import as InsertIcon, Replace, Video, AudioLines
 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { Clip, Effect, MediaItem, Sequence } from '../engine/document'
-import { mediaUrl } from '../engine/client'
+import { mediaFileUrl, mediaUrl } from '../engine/client'
 import { runAction } from '../actions/actions'
 import { DRAG_MIME } from './ProjectPanel'
 import { activeSequence, exec, findClip, get, set, sequenceEnd, useStore } from '../state/store'
@@ -15,6 +16,8 @@ import { goTo, type Monitor } from '../state/transport'
 import { focusPanel, toggleMaximize } from '../layout/dock'
 import { floorToFrame, parseTimecode, ticksPerFrame, ticksToSeconds, timecode, TICKS_PER_SECOND, type Rate } from '../util/time'
 import { sourceTime, transformAt, transformCss, valueAt } from '../util/motion'
+import { sourceRange, setSourceEdge } from '../state/sourceRange'
+import { SourceRangeOverlay, SourceWaveform } from './SourceWaveform'
 import { effectCss, effectMedia, trackTransitions, transitionProgress } from '../util/effects'
 import { MediaLayer } from './MediaLayer'
 import { FrameCanvas } from '../playback/FrameCanvas'
@@ -24,7 +27,7 @@ import { GraphicView } from './GraphicView'
 import { activeTrackEffects, clipGraphic, mediaTime, timingClip } from '../util/tracks'
 
 export function mediaSrc(m: MediaItem): string {
-  return mediaUrl(m.proxy_path ?? m.path)
+  return m.proxy_path ? mediaUrl(m.proxy_path) : mediaFileUrl(m)
 }
 
 const dbToGain = (db: number) => Math.pow(10, db / 20)
@@ -34,20 +37,12 @@ const dbToGain = (db: number) => Math.pow(10, db / 20)
 function Timecode({ value, rate, onCommit }: { value: number; rate: Rate; onCommit: (t: number) => void }) {
   const [editing, setEditing] = useState<string | null>(null)
   return editing !== null ? (
-    <input
+    <InlineValueInput
       className="lm-tc"
-      autoFocus
-      value={editing}
-      onChange={(e) => setEditing(e.target.value)}
-      onBlur={() => setEditing(null)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          const v = parseTimecode(editing, rate)
-          if (v != null) onCommit(v)
-          setEditing(null)
-        } else if (e.key === 'Escape') setEditing(null)
-      }}
-    />
+        initialValue={editing}
+      onCommit={(text) => { const v = parseTimecode(text, rate); if (v != null) onCommit(v) }}
+      onClose={() => setEditing(null)}
+      />
   ) : (
     <button className="lm-tc" onClick={() => setEditing(timecode(value, rate))}>
       {timecode(value, rate)}
@@ -67,7 +62,7 @@ function Scrubber({ monitor, duration, time, inPoint, outPoint, markers }: {
   return (
     <div
       ref={ref}
-      className="lm-scrub"
+      className={`lm-scrub${monitor === 'source' ? ' source' : ''}`}
       onMouseDown={(e) => {
         scrub(e.clientX)
         const move = (ev: MouseEvent) => scrub(ev.clientX)
@@ -83,6 +78,7 @@ function Scrubber({ monitor, duration, time, inPoint, outPoint, markers }: {
         <div className="inout" style={{ left: pct(inPoint ?? 0), width: `calc(${pct((outPoint ?? duration) - (inPoint ?? 0))})` }} />
       )}
       {markers?.map((m, i) => <div key={i} className="marker" style={{ left: pct(m) }} />)}
+      {monitor === 'source' && inPoint != null && outPoint != null && <SourceRangeOverlay duration={duration} inPoint={inPoint} outPoint={outPoint} />}
       <div className="head" style={{ left: pct(time) }} />
     </div>
   )
@@ -117,44 +113,47 @@ function Frame({ width, height, children, onDrop, onDoubleClick }: {
 // ---------------------------------------------------------------- Source
 
 export function SourceMonitor() {
+  const state = useStore()
+  const { inPoint, outPoint } = sourceRange(state)
   const media = useStore((s) => (s.sourceMediaId ? s.doc?.media[s.sourceMediaId] ?? null : null))
   const time = useStore((s) => s.sourceTime)
   const playing = useStore((s) => s.playing === 'source')
   const rate = useStore((s) => s.shuttle)
+  const [view, setView] = useState<{ id: string; mode: 'video' | 'audio' } | null>(null)
+  const hasVideo = !!media && (!!media.video || media.kind === 'image')
+  const mode = !hasVideo ? 'audio' : media?.audio && view?.id === media.id ? view.mode : 'video'
 
   const r: Rate = media?.video ? { fps_num: media.video.fps_num, fps_den: media.video.fps_den } : { fps_num: 30, fps_den: 1 }
   const duration = media ? media.duration || 5 * TICKS_PER_SECOND : 0
-  const inOutDur = media && (media.in_point != null || media.out_point != null) ? (media.out_point ?? duration) - (media.in_point ?? 0) : duration
+  const inOutDur = outPoint - inPoint
 
   const onDrop = (e: React.DragEvent) => {
     const ids = JSON.parse(e.dataTransfer.getData(DRAG_MIME) || '[]') as string[]
     const doc = useStore.getState().doc
     const id = ids.find((i) => doc?.media[i])
-    if (id) set({ sourceMediaId: id, sourceTime: 0 })
+    if (id) {
+      set({ sourceMediaId: id, sourceClip: null, sourceTime: 0 })
+      focusPanel('source')
+    }
   }
 
   return (
     <div className="lm-panel lm-monitor">
       <div className="lm-monitor-title">{t('Source')}: {media ? media.name : t('(no clips)')}</div>
-      <Frame width={media?.video?.width || 1920} height={media?.video?.height || 1080} onDrop={onDrop}>
+      <Frame width={mode === 'video' ? media?.video?.width || 1920 : 1920} height={mode === 'video' ? media?.video?.height || 1080 : 1080} onDrop={onDrop}>
         {() => (
           <>
-            {media && (media.video || media.kind === 'image') && (
+            {media && mode === 'video' && (media.video || media.kind === 'image') && (
               media.kind === 'image' ? (
                 <MediaLayer url={mediaSrc(media)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%' }} />
               ) : (
                 <>
-                  <FrameCanvas url={mediaUrl(media.path)} fallbackUrl={media.proxy_path ? mediaUrl(media.proxy_path) : undefined} time={ticksToSeconds(time)} playing={playing} rate={rate} style={{ width: '100%', height: '100%' }} />
-                  {media.audio && <MediaLayer url={mediaSrc(media)} kind="audio" time={ticksToSeconds(time)} playing={playing} rate={rate} />}
+                  <FrameCanvas url={mediaFileUrl(media)} fallbackUrl={media.proxy_path ? mediaUrl(media.proxy_path) : undefined} time={ticksToSeconds(time)} playing={playing} rate={rate} style={{ width: '100%', height: '100%' }} />
                 </>
               )
             )}
-            {media && !media.video && media.kind !== 'image' && (
-              <>
-                <MediaLayer url={mediaSrc(media)} kind="audio" time={ticksToSeconds(time)} playing={playing} rate={rate} />
-                <div className="lm-audio-only">{media.name}</div>
-              </>
-            )}
+            {media?.audio && <MediaLayer url={mediaSrc(media)} kind="audio" time={ticksToSeconds(time)} playing={playing} rate={rate} />}
+            {media?.audio && mode === 'audio' && <SourceWaveform key={media.id} path={media.waveform_path} duration={duration} time={time} inPoint={inPoint} outPoint={outPoint} />}
           </>
         )}
       </Frame>
@@ -163,8 +162,18 @@ export function SourceMonitor() {
         <span style={{ flex: 1 }} />
         <span className="lm-tc dim">{media ? timecode(inOutDur, r) : '00:00:00:00'}</span>
       </div>
-      <Scrubber monitor="source" duration={duration} time={time} inPoint={media?.in_point} outPoint={media?.out_point} markers={Object.values(media?.markers ?? {}).map((m) => m.start)} />
+      {media && <div className="lm-monitor-bar">
+        <span>I · {t('In')}</span><Timecode value={inPoint} rate={r} onCommit={(v) => void setSourceEdge('in', v)} />
+        <span>O · {t('Out')}</span><Timecode value={outPoint} rate={r} onCommit={(v) => void setSourceEdge('out', v)} />
+      </div>}
+      <Scrubber monitor="source" duration={duration} time={time} inPoint={media ? inPoint : null} outPoint={media ? outPoint : null} markers={Object.values(media?.markers ?? {}).map((m) => m.start)} />
       <Transport monitor="source" playing={playing} />
+      <div className="lm-source-modes" role="group" aria-label="Source preview mode">
+        <button className="lm-iconbtn" title="비디오 미리보기" aria-label="비디오 미리보기" aria-pressed={!!media && mode === 'video'} disabled={!hasVideo}
+          onClick={() => { if (media) setView({ id: media.id, mode: 'video' }); focusPanel('source') }}><Video size={17} /></button>
+        <button className="lm-iconbtn" title="오디오 파형" aria-label="오디오 파형" aria-pressed={!!media?.audio && mode === 'audio'} disabled={!media?.audio}
+          onClick={() => { if (media) setView({ id: media.id, mode: 'audio' }); focusPanel('source') }}><AudioLines size={17} /></button>
+      </div>
     </div>
   )
 }
@@ -478,7 +487,7 @@ function Stage({ seq, media, at, playing, rate, scale }: {
       <MediaLayer url={mediaSrc(l.media!)} kind="image" time={0} playing={false} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'fill', display: 'block' }} />
     ) : (
       <FrameCanvas
-        url={mediaUrl(l.media!.path)}
+        url={mediaFileUrl(l.media!)}
         fallbackUrl={l.media!.proxy_path ? mediaUrl(l.media!.proxy_path) : undefined}
         // a prerolled clip waits on its first frame (forward) or its last frame (reverse)
         time={ticksToSeconds(mediaTime(clip, sourceTime(clip, !l.preroll ? at : rate < 0 ? clip.end - ticksPerFrame(seq.settings) : clip.start)))}
@@ -649,7 +658,7 @@ export function ProgramMonitor() {
 function Transport({ monitor, playing }: { monitor: Monitor; playing: boolean }) {
   const focus = () => set({ focusedPanel: monitor })
   const btn = (title: string, key: string, action: string, Icon: React.FC<{ size?: number }>) => (
-    <button className="lm-iconbtn" title={`${t(title)} (${key})`} onMouseDown={focus} onClick={() => runAction(action)}>
+    <button className="lm-iconbtn" title={`${t(title)} (${key})`} onMouseDown={focus} onClick={() => { focus(); runAction(action) }}>
       <Icon size={15} />
     </button>
   )

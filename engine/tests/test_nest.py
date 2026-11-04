@@ -63,3 +63,20 @@ def test_unnest_puts_the_shown_part_back():
     v = clips(s, sid)
     assert (v[0]["start"], v[0]["source_in"]) == (5 * SEC, 3 * SEC) and len(v) == 2
     assert out["warnings"] and "opacity" in out["warnings"][0]
+
+
+@pytest.mark.parametrize("command", ["clip.place", "clip.place_sequence"])
+@pytest.mark.parametrize("mode", ["insert", "overwrite"])
+def test_place_disabled_audio_with_explicit_drop_track(command, mode):
+    s, sid, (a, *_) = make()
+    s.execute("clip.place", {"media_id": a, "at": 0, "source_out": "3s"})
+    other = s.execute("sequence.create", {"name": "Destination", "activate": False})["result"]["sequence_id"]
+    seq = s.doc["sequences"][other]
+    source = {"media_id": a} if command == "clip.place" else {"nested_id": sid}
+    s.execute(command, {
+        "sequence_id": other, **source, "at": 0, "mode": mode,
+        "video_track_id": seq["video_tracks"][0],
+        "audio_track_id": seq["audio_tracks"][0], "take_audio": False,
+    })
+    assert len(clips(s, other)) == 1
+    assert clips(s, other, "audio") == []

@@ -1,0 +1,238 @@
+{
+  "version": "1.5",
+  "prepared_date": "2026-11-01",
+  "sources": [
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\쇼츠-대본-지침_v4.4.txt",
+      "archive_entry": "downloads/쇼츠-대본-지침_v4.4.txt",
+      "sha256": "b0c2845bda28ffa4717aefe9f9adb2a3b0a50fa22c0c88e5461ca16b567473fd",
+      "bytes": 44463
+    },
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\캐디노트_롱폼_대본_지침_v1.1.md",
+      "archive_entry": "downloads/캐디노트_롱폼_대본_지침_v1.1.md",
+      "sha256": "9cbcea9ebe9a43b34b369267d94774b9db17a45236082ab2a9e1d4140da045fc",
+      "bytes": 32433
+    },
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\캐디노트_콘텐츠_지침_v4.md",
+      "archive_entry": "downloads/캐디노트_콘텐츠_지침_v4.md",
+      "sha256": "44dc308adac5f978dddaeffe5373ec9ea277fcbb3917ba68c0d320cf34ccf810",
+      "bytes": 21987
+    },
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\캐디노트_통합_대본_문체_지침_v2.2.txt",
+      "archive_entry": "downloads/캐디노트_통합_대본_문체_지침_v2.2.txt",
+      "sha256": "ae5bd06e4196c15db5862c387c66264b9dabb46e3b4c1f46408f475497b734cf",
+      "bytes": 49275
+    },
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\캐디노트_편집_지침_v1.0.md",
+      "archive_entry": "downloads/캐디노트_편집_지침_v1.0.md",
+      "sha256": "428bfb77cc1be8ddc01aca4b47397c6ada7d2de0d792a7f184bd470cd94e17f1",
+      "bytes": 9978
+    },
+    {
+      "path": "C:\\Users\\HETX\\Downloads\\캐디노트_지침_2026-10-24\\캐릭터_디자인_분석_STRICT_MASTER_v2.md",
+      "archive_entry": "downloads/캐릭터_디자인_분석_STRICT_MASTER_v2.md",
+      "sha256": "7d170fc73f26b832762edc8db5f69c428c6a30826ebdb456478b345d162ee09e",
+      "bytes": 51416
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\editing-grammar\\README.md",
+      "archive_entry": "repository/docs/editing-grammar/README.md",
+      "sha256": "93a842848c12349310f6268778895d309347df047ed784a825629dd6f80c95d1",
+      "bytes": 3776
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\editing-grammar\\common-cuts.md",
+      "archive_entry": "repository/docs/editing-grammar/common-cuts.md",
+      "sha256": "3d2e75a4171398b0ecc9332a8276203b9a2c95f4532014a1cc3bc1dfc4fde3e0",
+      "bytes": 11725
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\editing-grammar\\캐디노트_편집_지침_v1.0.md",
+      "archive_entry": "repository/docs/editing-grammar/캐디노트_편집_지침_v1.0.md",
+      "sha256": "428bfb77cc1be8ddc01aca4b47397c6ada7d2de0d792a7f184bd470cd94e17f1",
+      "bytes": 9978
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\editing-grammar\\longform.md",
+      "archive_entry": "repository/docs/editing-grammar/longform.md",
+      "sha256": "91e2145427b113fad7746e77c853f5ab78effe86b7a242a0d0d6c8c19aff0a80",
+      "bytes": 8750
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\editing-grammar\\lumina-workflow.md",
+      "archive_entry": "repository/docs/editing-grammar/lumina-workflow.md",
+      "sha256": "a61362d050b199dea73d3f5f26d14caec44c9833583e904397372c2aeb3a07d0",
+      "bytes": 5328
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\longform-editing\\caption-segmentation.md",
+      "archive_entry": "repository/docs/longform-editing/caption-segmentation.md",
+      "sha256": "b4a0a1cd78b5593c4181ab99447af5158c850ccd615e6d68dd552df348135547",
+      "bytes": 10018
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\README.md",
+      "archive_entry": "repository/docs/shorts-editing/README.md",
+      "sha256": "356495490effd60a402dfd7f77aa9d69286128a8d182395c761dde25ee1a9fb6",
+      "bytes": 10964
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-cut-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-cut-grammar.md",
+      "sha256": "9bb0ba3d9215d99a9180f564e558b453cfff18ebba08996d851a3e1487affb55",
+      "bytes": 13263
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-caption-effect-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-caption-effect-grammar.md",
+      "sha256": "b292609af2dcc4854f905258215f0f9584ca2ee5f3726b14df3c2ba7aa24e368",
+      "bytes": 9162
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-sfx-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-sfx-grammar.md",
+      "sha256": "cf22127e074945ff3a9c1182d7e6dd5d5f2c5a461c01e5b02ddbd37e1997bd40",
+      "bytes": 7932
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-marker-workflow.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-marker-workflow.md",
+      "sha256": "d3dd0d30e7d95acde11f37684159798c1041fdc966730a6e94c0aae0aae860b2",
+      "bytes": 1730
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-edit-review-lessons.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-edit-review-lessons.md",
+      "sha256": "10510c0c0c486bf8eb4210828eac9ee160ab3336febec1c81b6e18c7457a007b",
+      "bytes": 4844
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-tmi-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-tmi-grammar.md",
+      "sha256": "ea21774377a977a04850218381faceb92641bc9eb7b80bc8813aa78a8cf7a378",
+      "bytes": 4852
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-copy-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-copy-grammar.md",
+      "sha256": "5aa1584baae1c09ebf042b7550cf0a1472b19e09827a15fa6d2cc04fb78d74b7",
+      "bytes": 2268
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-project-per-folder.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-project-per-folder.md",
+      "sha256": "e0c496f60528a7dfdb1427635ad3d2a1de362946b84b93557d4e49677355ccb0",
+      "bytes": 2726
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\move-sources-not-copy.md",
+      "archive_entry": "repository/docs/shorts-editing/move-sources-not-copy.md",
+      "sha256": "f4d74c1dccce8a1adfc0fd0f9c13871409043f40551f08d5992ad7f41275f74b",
+      "bytes": 1104
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\shorts-editing\\shorts-upload-title-grammar.md",
+      "archive_entry": "repository/docs/shorts-editing/shorts-upload-title-grammar.md",
+      "sha256": "af2c77827ce065c4e0da502154863a7afc42ff9ce19d2f9c3bb5dd6b88b894a6",
+      "bytes": 1819
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\text-panel.md",
+      "archive_entry": "repository/docs/text-panel.md",
+      "sha256": "1519b4e922d0445ef97e3a955b400d88eaf7716a4884045bb04245bc4507100a",
+      "bytes": 6820
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\chat-project\\PROJECT_INSTRUCTIONS.md",
+      "archive_entry": "repository/docs/chat-project/PROJECT_INSTRUCTIONS.md",
+      "sha256": "24aabbb4a1e42a46837a238d46acdfc6117d1aa2e1f6a1b0884723e6405851bf",
+      "bytes": 7115
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\chat-project\\01_MCP_WORKFLOW.md",
+      "archive_entry": "repository/docs/chat-project/01_MCP_WORKFLOW.md",
+      "sha256": "b771a00f8134f836727bbbb26c330dd49320b72de0059111626c3e5f03e22c9f",
+      "bytes": 17155
+    },
+    {
+      "path": "D:\\Dev\\lumina\\docs\\chat-project\\05_REFERENCE_EVIDENCE.md",
+      "archive_entry": "repository/docs/chat-project/05_REFERENCE_EVIDENCE.md",
+      "sha256": "af3b367782722a212fff061856cf931d8a821681498206435853be5a7c4c703e",
+      "bytes": 55539
+    }
+  ],
+  "backup_sha256": "b87d696b36adb30314edd29257cb3006758121ed9d71bb7a1088b24a94a9a2f1",
+  "supplements": [
+    {
+      "file": "../editing-grammar/caption-quality.md",
+      "purpose": "초반 공백·종결부호·긴 자막 후처리; 03에 통합",
+      "sha256": "6572e9b866662c7b6b8d9cf354318a1774a4b1e2c0920b2b167e30fdf607abb3"
+    },
+    {
+      "file": "../editing-grammar/cut-quality.md",
+      "purpose": "컷/프레임 튐 분류와 연속 프레임 검수; 03에 통합",
+      "sha256": "70e8c4ec5ffb7d8f43118626cbf5afe5c490d2a18f0da0b7cc6c182a83bf2e28"
+    },
+    {
+      "file": "research_ip_examples.json",
+      "purpose": "공식 자료·원연구에 근거한 실제 IP 개념 예시; 해석 구분 및 출처를 05에 포함",
+      "sha256": "bc007d040f76330793367d4a280f99a5fc50e70c6701e6bfea96132c37219da5"
+    }
+  ],
+  "outputs": [
+    {
+      "file": "PROJECT_INSTRUCTIONS.md",
+      "sha256": "d434707e2bbd88ac86ad097e042af1483af9edf0887bf674d38014681a3cfac4",
+      "bytes": 6138
+    },
+    {
+      "file": "01_COMMON.md",
+      "sha256": "a94a67da9927fc33d9b2557b90b7bf3178884d4e8fff7bd14f48e1173e432d4a",
+      "bytes": 9026
+    },
+    {
+      "file": "02_SCRIPT.md",
+      "sha256": "8ed01652baa7172647a0834e533cc92dd76f275b6ff3f44fe0bf3b40bd72c5a8",
+      "bytes": 11582
+    },
+    {
+      "file": "03_EDITING.md",
+      "sha256": "21fca2cd7cc386e7189de2c680667d6ffaa50e873153980beb5eb197ff4eb8ca",
+      "bytes": 28614
+    },
+    {
+      "file": "04_LUMINA_MCP.md",
+      "sha256": "0e59518596c6a4136d6d64cbfadf355cf1ce6ed70851499730eb6cb8fc3efc2c",
+      "bytes": 13843
+    },
+    {
+      "file": "05_RESEARCH_REFERENCE.md",
+      "sha256": "f529f42985e670a3af4fc3a15d8d9a4c4750a058a95aa4c421f51a7da9cae4ff",
+      "bytes": 82930
+    },
+    {
+      "file": "06_EXAMPLES_REFERENCE.md",
+      "sha256": "9a6e909dc853ce8020d2cbc81c6543477bc26bca48fafd63ce8ba2cfe6b9330c",
+      "bytes": 98131
+    },
+    {
+      "file": "README.md",
+      "sha256": "d6e7b8cb3d36a5611c90210b0524c9e1b52ed5cfe8a1973b78443fd45445cd5f",
+      "bytes": 4843
+    },
+    {
+      "file": "MERGE_NOTES.md",
+      "sha256": "8d58b5848861e53ca2a7014a709fc2b3cf1e1370f4b0621319dec7e19c876eb0",
+      "bytes": 7085
+    },
+    {
+      "file": "UPDATE_CHECKLIST.md",
+      "sha256": "a81afc56ee7cb6a3bb368adb7d13b4fc49da1b6826c37c1ef4470008b0e26a5e",
+      "bytes": 1443
+    }
+  ]
+}

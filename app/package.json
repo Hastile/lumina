@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Lumina video editor (Electron GUI)",
-  "main": "out/main/index.js",
+  "main": "out/main/index.cjs",
   "type": "module",
   "scripts": {
     "dev": "electron-vite dev",
@@ -32,6 +32,7 @@
     "vitest": "^3.2.7"
   },
   "dependencies": {
+    "@mediabunny/prores": "^1.64.0",
     "dockview-react": "^8.5.1",
     "lucide-react": "^1.56.0",
     "mediabunny": "^1.61.4",

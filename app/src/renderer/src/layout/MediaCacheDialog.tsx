@@ -122,7 +122,7 @@ export function MediaCacheDialog() {
             />
             {t('Automatically delete cache files older than')}
             <input
-              type="number"
+              type="number" onFocus={(e) => e.currentTarget.select()}
               min={1}
               max={3650}
               value={days}

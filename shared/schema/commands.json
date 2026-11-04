@@ -1494,12 +1494,12 @@
           "title": "Reverse"
         },
         "ripple": {
-          "default": true,
+          "default": false,
           "title": "Ripple",
           "type": "boolean"
         },
         "include_linked": {
-          "default": true,
+          "default": false,
           "title": "Include Linked",
           "type": "boolean"
         }
@@ -7620,6 +7620,64 @@
     }
   },
   {
+    "name": "media.refresh",
+    "description": "The file changed on disk (saved in Audition, re-rendered): re-read it, bump its revision and\nforget its generated files so they are made again (cache data, not undoable).",
+    "undoable": false,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "media_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Media Ids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "media_ids"
+      ],
+      "title": "Refresh",
+      "type": "object"
+    }
+  },
+  {
+    "name": "clip.prepare_audio_edit",
+    "description": "Edit in Adobe Audition (Premiere's Edit > Edit in Adobe Audition > Clip): the file each audio clip is\nedited in. A clip that plays its whole audio file untouched (from its start to its end at 100 %) edits that\nfile. Any other clip has the source range it plays rendered to '<clip> Audio Extracted.wav' next to the\nsource; the copy is imported and the clip switched to it, keeping its timing, speed, gain, effects and\nkeyframes. Undo puts the clip back and, as in Premiere, leaves the rendered file on disk.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "clip_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Clip Ids",
+          "type": "array"
+        },
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        }
+      },
+      "required": [
+        "clip_ids"
+      ],
+      "title": "AudioForEdit",
+      "type": "object"
+    }
+  },
+  {
     "name": "media.make_offline",
     "description": "Make Offline: the media renders as missing (the file is kept); offline=false undoes it.",
     "undoable": true,
@@ -7774,6 +7832,16 @@
           ],
           "default": null,
           "title": "Audio Track Id"
+        },
+        "take_video": {
+          "default": true,
+          "title": "Take Video",
+          "type": "boolean"
+        },
+        "take_audio": {
+          "default": true,
+          "title": "Take Audio",
+          "type": "boolean"
         }
       },
       "required": [
@@ -8568,6 +8636,185 @@
         }
       },
       "title": "SetCopy",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.split_text",
+    "description": "Split caption text at the cursor and its clip at a supplied/acoustic time, preserving styling in one Undo.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "offset": {
+          "description": "Unicode character offset; left text ends here, right starts here",
+          "exclusiveMinimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "at": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Explicit split time, or acoustic character boundary when available. Never estimates timing from character count.",
+          "title": "At"
+        },
+        "expected_text": {
+          "title": "Expected Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id",
+        "offset",
+        "expected_text"
+      ],
+      "title": "SplitCaption",
+      "type": "object"
+    }
+  },
+  {
+    "name": "caption.merge_next",
+    "description": "Merge the next touching caption on the same track. Refuses differing styles/effects instead of discarding them.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "clip_id": {
+          "title": "Clip Id",
+          "type": "string"
+        },
+        "direction": {
+          "default": "next",
+          "enum": [
+            "next",
+            "previous"
+          ],
+          "title": "Direction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "clip_id"
+      ],
+      "title": "MergeCaption",
+      "type": "object"
+    }
+  },
+  {
+    "name": "text.set_script",
+    "description": "Save the editable script without changing rendered captions or graphics.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sequence Id"
+        },
+        "text": {
+          "maxLength": 500000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "text"
+      ],
+      "title": "TranscriptSet",
+      "type": "object"
+    }
+  },
+  {
+    "name": "text.apply_speech",
+    "description": "Apply a reviewed speech result atomically. Stale results cannot overwrite subsequent timeline edits.",
+    "undoable": true,
+    "params": {
+      "additionalProperties": false,
+      "properties": {
+        "sequence_id": {
+          "title": "Sequence Id",
+          "type": "string"
+        },
+        "expected_fingerprint": {
+          "title": "Expected Fingerprint",
+          "type": "string"
+        },
+        "mode": {
+          "title": "Mode",
+          "type": "string"
+        },
+        "rows": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Rows",
+          "type": "array"
+        },
+        "audio_track_id": {
+          "title": "Audio Track Id",
+          "type": "string"
+        },
+        "transcript_only": {
+          "default": false,
+          "title": "Transcript Only",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sequence_id",
+        "expected_fingerprint",
+        "mode",
+        "rows",
+        "audio_track_id"
+      ],
+      "title": "ApplySpeech",
       "type": "object"
     }
   }

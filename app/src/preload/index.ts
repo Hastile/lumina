@@ -12,6 +12,8 @@ const api = {
   recentProjects: (): Promise<string[]> => ipcRenderer.invoke('recent:list'),
   lastDir: (purpose: string): Promise<string | null> => ipcRenderer.invoke('recent:lastDir', purpose),
   setLastDir: (purpose: string, dir: string): Promise<void> => ipcRenderer.invoke('recent:setDir', purpose, dir),
+  defaultExportDir: (projectPath?: string | null): Promise<string> => ipcRenderer.invoke('export:defaultDir', projectPath),
+  setDefaultExportDir: (dir: string): Promise<void> => ipcRenderer.invoke('export:setDefaultDir', dir),
   setTitle: (title: string): Promise<void> => ipcRenderer.invoke('window:setTitle', title),
   setLocale: (locale: 'ko' | 'en'): Promise<void> => ipcRenderer.invoke('app:setLocale', locale),
   onMenuAction: (fn: (action: string) => void): (() => void) => {
@@ -26,10 +28,19 @@ const api = {
     return () => ipcRenderer.removeListener('app:closeRequest', listener)
   },
   confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirmClose'),
+  /** Project files Lumina was launched with (Explorer double-click), each returned once. */
+  takeOpenFiles: (): Promise<string[]> => ipcRenderer.invoke('app:takeOpenFiles'),
+  /** Another launch queued files to open: call takeOpenFiles(). */
+  onOpenFiles: (fn: () => void): (() => void) => {
+    const listener = () => fn()
+    ipcRenderer.on('app:openFiles', listener)
+    return () => ipcRenderer.removeListener('app:openFiles', listener)
+  },
   /** Alt was used with the mouse (Alt-click, Alt-drag): releasing it must not open the menu bar. */
   altGesture: (): void => ipcRenderer.send('app:altGesture'),
   pathForFile: (file: File): string => webUtils.getPathForFile(file),
   showItemInFolder: (path: string): Promise<void> => ipcRenderer.invoke('shell:showItem', path),
+  openInAudition: (paths: string[]): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('audition:open', paths),
   videosDir: (): Promise<string> => ipcRenderer.invoke('app:videosDir')
 }
 

@@ -24,7 +24,7 @@ export function FrameCanvas({ url, fallbackUrl, time, playing, rate, hold = fals
   const source = useRef<FrameSource | null>(null)
   const latest = useRef({ time, playing, rate, hold })
   latest.current = { time, playing, rate, hold }
-  const drawn = useRef<number | null>(null)
+  const drawn = useRef<ImageBitmap | null>(null)
   const [mode, setMode] = useState<'pending' | 'webcodecs' | 'fallback'>('pending')
   const resolution = useStore((s) => s.playbackResolution)
 
@@ -36,11 +36,12 @@ export function FrameCanvas({ url, fallbackUrl, time, playing, rate, hold = fals
     if (!f) return
     el.dataset.exact = f.exact ? '1' : '0'
     el.dataset.debug = src.debug
-    if (drawn.current === f.sample.timestamp) return
+    if (drawn.current === f.sample.bitmap) return
     const ctx = el.getContext('2d')
     if (!ctx) return
+    ctx.clearRect(0, 0, el.width, el.height)
     ctx.drawImage(f.sample.bitmap, 0, 0, el.width, el.height)
-    drawn.current = f.sample.timestamp
+    drawn.current = f.sample.bitmap
     el.dataset.frame = String(f.sample.timestamp)
   }
 

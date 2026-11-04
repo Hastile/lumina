@@ -75,7 +75,7 @@ def project_import_premiere(ctx: Context, p: ImportPremiere):
         ctx.m.set(["media", mid], {
             "id": mid, "name": m["name"], "path": m["path"], "bin_id": bin_map.get(m["bin"], top),
             "label": m["label"], "proxy_path": None, "thumbnail_path": None, "waveform_path": None, "filmstrip_path": None,
-            "in_point": None, "out_point": None, "offline": False,
+            "in_point": None, "out_point": None, "offline": False, "revision": 0,
             "kind": info["kind"], "duration": duration, "video": info["video"], "audio": info["audio"],
             "markers": {k["id"]: k for k in ({"id": new_id(), **mk} for mk in m.get("markers") or [])},
         })

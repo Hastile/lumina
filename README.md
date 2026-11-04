@@ -34,9 +34,36 @@ runs electron-builder. The installed app needs neither `uv`, Python nor FFmpeg.
 
 While the GUI is open, its engine writes `~/.lumina/engine.json`. Agents and
 scripts attach to that engine, so their edits show up live in the open window.
-With no GUI running, they start a headless engine instead.
+The default MCP starts idle without a headless engine. `get_editor_status` checks
+the GUI without launching it; `ensure_editor(project_path)` starts/connects the
+GUI and prepares the requested project. An already open target is activated
+without reloading unsaved edits. Other open projects stay open when a new target
+is opened. A later manual project switch blocks edits until the target is
+confirmed again. GUI launch failures never fall back to headless editing.
+`LUMINA_HEADLESS=1` is an explicit opt-in for requested unattended work; CLI
+`call`/`exec` and `render` retain their separate behavior. See the
+[MCP lifecycle and three project cases](docs/mcp-lifecycle.md).
 
-- MCP: `.mcp.json` in this repo registers `lumina mcp`. It exposes one tool per
+[Source review tab](docs/source-review.md): active-source ingest, frame-boundary inspection,
+IP/character/dialogue correction and reviewed publishing to Lumina's source database.
+
+Development, unpacked and installed GUI builds share the `Lumina` profile and
+single-instance lock. A second launch focuses the existing editor and cannot
+start an invisible engine. `LUMINA_HOME` isolates both discovery and GUI profile
+for tests/custom instances; all clients must use the same value. The renderer
+recovers missing events with a snapshot heartbeat without reopening the file.
+After updating client code, reconnect an already-running MCP session once so it
+loads the new code.
+
+Integration check (isolated temporary home, persistent real MCP stdio session):
+`cd app; npm run build; node test/mcp-gui-sync.mjs`. To verify packaged binaries,
+set `LUMINA_TEST_EXE` to `release/win-unpacked/Lumina.exe` and
+`LUMINA_TEST_MCP_EXE` to its `resources/engine/lumina-engine.exe`.
+`LUMINA_TEST_SECOND_EXE` can point to another GUI build to verify the shared lock.
+
+- MCP: `.mcp.json` in this repo registers `python -m lumina mcp` (equivalent to
+  `lumina mcp`, without a Windows launcher named like the GUI installer target).
+  It exposes one tool per
   command (`clip_place`, `clip_razor`, `sequence_remove_ranges`, …) plus
   `get_timeline_state`, `undo`, `begin_transaction` / `commit_transaction` /
   `rollback_transaction`, `save_project`, `export_media` (render + ffprobe

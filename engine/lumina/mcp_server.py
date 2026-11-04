@@ -14,12 +14,15 @@ from mcp import types
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 
-from .client import FollowingEngine
+from .client import FollowingEngine, GuiEngine
 from .commands.registry import REGISTRY, CommandError
 
 INSTRUCTIONS = """Lumina is a Premiere-style video editor. Every edit is an undoable command.
 Times accept ticks (int) or strings: "12.5s", "45f", "00:01:02:15". Omitted sequence_id = active sequence.
 Typical flow: open_project/new_project -> media_import -> sequence_create_from_media -> edits -> get_timeline_state -> save_project.
+GUI-first: call get_editor_status to inspect without launching. Before project work call ensure_editor(project_path).
+It starts the GUI if needed, activates an already open target without reloading unsaved edits, or opens the target alongside other projects.
+All editing uses the GUI engine; a missing GUI never silently creates a headless project. Verify the active project before edits.
 Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure).
 Use get_frame_image to look at the result, and export_media to render a verified file.
 Shorts, few calls: shorts_plan (draft from the captions) -> source_plan (one call, `look` per shot) -> shorts_build
@@ -28,6 +31,32 @@ Shorts, few calls: shorts_plan (draft from the captions) -> source_plan (one cal
 _OBJ = {"type": "object", "properties": {}, "additionalProperties": False}
 
 EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
+    'source_review_choices': ('source_review.choices', 'Read IP-catalog work and character enums; query searches works, work scopes characters. Also returns source type and shot enums.',
+        {'type':'object','properties':{'query':{'type':'string'},'work':{'type':'string'}},'additionalProperties':False}, None),
+    'source_review_save': ('source_review.save', 'Atomically save source edits and synchronize search DB. Revision and DB baseline checked. Boundary moves this cut end and next cut start. Untouched AI facts are not approved. No timeline changes.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'},'changes':{'type':'array','minItems':1,'maxItems':50,'items':{'type':'object','properties':{'action':{'enum':['update','identity','boundary','split','merge','keyframe','undo']},'cut_id':{'type':'string'},'time':{'type':'integer'},'fields':{'type':'object'}},'required':['action'],'additionalProperties':False}}},'required':['media_id','revision','changes'],'additionalProperties':False}, lambda a: {**a, 'actor':'agent'}),
+    'source_review_get': ('source_review.get', 'Read active-project source review draft, detected boundaries, IP, characters, speaker/dialogue and provenance. media_id is the project media ID, not source DB ID.',
+        {'type':'object','properties':{'media_id':{'type':'string'}},'required':['media_id'],'additionalProperties':False}, None),
+    'source_review_start': ('source_review.start', 'Read existing analysis first. ingest/missing run only absent stages; existing cuts and completed jobs are reused. Individual stages skip completed work unless force=true. Stages: cuts, describe (Claude), tagger or speech (local). Poll source_review_get. Does not publish or edit timeline. Re-running cuts replaces draft; undo restores it.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'},'stage':{'enum':['ingest','missing','cuts','describe','tagger','speech']},'force':{'type':'boolean'}},'required':['media_id','stage'],'additionalProperties':False}, None),
+    'source_review_update': ('source_review.update', 'Edit revision-checked source review draft. Actions: update fields; identity; split/boundary/keyframe at integer source ticks; merge next; review; undo. Characters on screen are NOT necessarily speakers. Review requires examining the actual frames/audio.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'},'action':{'enum':['update','identity','split','boundary','keyframe','merge','review','undo']},'cut_id':{'type':'string'},'time':{'type':'integer'},'fields':{'type':'object'},'reviewed':{'type':'boolean'}},'required':['media_id','revision','action'],'additionalProperties':False}, lambda a: {**a, 'actor': 'agent'}),
+    'source_review_preview': ('source_review.preview', 'Preview exact revision for publishing reviewed source cuts to Lumina source.db. Does not alter timeline.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'}},'required':['media_id','revision'],'additionalProperties':False}, None),
+    'source_review_publish': ('source_review.publish', 'Publish reviewed draft with token from source_review_preview. All cuts including exclusions must be reviewed. Replaces source search evidence; preserves audit history. Does not alter project timeline.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'},'token':{'type':'string'}},'required':['media_id','revision','token'],'additionalProperties':False}, lambda a: {**a, 'actor': 'agent'}),
+    'source_review_import_srt': ('source_review.import_srt', 'Replace draft dialogues from source-time SRT file. Leaves speakers unknown and all cuts unreviewed.',
+        {'type':'object','properties':{'media_id':{'type':'string'},'revision':{'type':'integer'},'path':{'type':'string'}},'required':['media_id','revision','path'],'additionalProperties':False}, None),
+    'speech_status': ('speech.status', 'Check Lumina internal speech runtime. No Phrase Studio server required.', _OBJ, None),
+    'speech_start': ('speech.start', 'Transcribe narration, align script lines or retime existing caption tracks in Lumina. Produces a preview; no timeline mutation until speech_apply. Korean acoustic timing; never estimates from character count.',
+                     {'type': 'object', 'properties': {'sequence_id': {'type': 'string'}, 'audio_track_id': {'type': 'string'}, 'mode': {'type': 'string', 'enum': ['transcribe', 'script', 'retime']}, 'caption_track_ids': {'type': 'array', 'items': {'type': 'string'}}, 'shorts': {'type': 'boolean'}}, 'required': ['audio_track_id']}, None),
+    'speech_list': ('speech.list', 'List speech jobs for the active project.', _OBJ, None),
+    'speech_job': ('speech.job', 'Read speech progress and the full reviewable result; timestamps are sequence ticks.', {'type': 'object', 'properties': {'job_id': {'type': 'string'}}, 'required': ['job_id']}, None),
+    'speech_cancel': ('speech.cancel', 'Cancel a speech job or discard its preview without changing the timeline.', {'type': 'object', 'properties': {'job_id': {'type': 'string'}}, 'required': ['job_id']}, None),
+    'speech_apply': ('speech.apply', 'Apply a reviewed speech preview as one undoable edit; refuses changed inputs or another project. Caption finishing removes terminal comma/period, starts at frame zero, closes gaps and splits long cues at acoustic clause boundaries. Retiming preserves original tracks/styles; first child keeps the original ID. Inspect quality_warnings.', {'type': 'object', 'properties': {'job_id': {'type': 'string'}, 'transcript_only': {'type': 'boolean'}}, 'required': ['job_id']}, None),
+    "get_editor_status": ("editor.status", "Inspect GUI connection and open projects without starting the GUI.", _OBJ, None),
+    "ensure_editor": ("editor.ensure", "Connect/start the GUI and prepare the requested project. An already open target is activated without reloading; other projects and unsaved work stay open.",
+                      {"type": "object", "properties": {"project_path": {"type": "string"}}}, None),
     # tool name: (rpc method, description, schema, param mapper)
     "get_project": ("project.summary", "Project overview: bins, media (ids, durations, streams) and sequences.", _OBJ, None),
     "get_timeline_state": ("timeline.state", "Tracks, clips (ticks/seconds/timecode), markers and playhead of a sequence.",
@@ -311,17 +340,19 @@ CORE_TOOLS = (
     "get_frame_strip", "export_media", "list_jobs", "convert_time", "media_import", "clip_place", "clip_move",
     "clip_remove", "clip_trim", "clip_set", "clip_set_property", "clip_set_speed", "clip_razor", "caption_add",
     "caption_set", "marker_*", "sequence_duplicate", "sequence_rename", "sequence_set_active", "track_set", "edit_check",
-    "source_*", "clip_place_shots")
+    "source_*", "clip_place_shots", "get_editor_status", "ensure_editor", "inspect_source_frames",
+    "inspect_timeline_frames")
 TOOL_PROFILES = {
     "core": CORE_TOOLS,
     "shorts": CORE_TOOLS + ("shorts_*", "clip_align_marker", "clip_audio_gain", "clip_set_audio_tag", "audio_auto_match",
                             "graphic_replace_text", "graphic_set_layer", "graphic_create_text", "graphic_add_image",
-                            "caption_import_srt"),
+                            "caption_import_srt", "caption_split_text", "caption_merge_next", "speech_*", "text_*",
+                            "media_refresh"),
     "longform": CORE_TOOLS + ("caption_*", "graphic_*", "effect_*", "transition_*", "keyframes_*", "clip_keyframe",
                               "clip_set_keyframes", "clip_set_keyframe_ease", "clip_toggle_animation", "clip_fit_to_frame",
                               "clip_frame_hold", "clip_slip", "clip_slide", "clip_roll", "audio_*", "clip_audio_gain",
                               "clip_set_audio_tag", "analyze_media", "plan_cuts", "plan_scene_cuts", "sequence_*",
-                              "track_add", "export_frame"),
+                              "track_add", "export_frame", "speech_*", "text_*", "media_refresh"),
 }
 
 
@@ -343,6 +374,7 @@ def selected(names: list[str], spec: str | None) -> set[str]:
 
 
 def build_tools(profile: str | None = None) -> list[types.Tool]:
+    from .frame_review import TOOLS as FRAME_TOOLS
     tools = []
     for spec in REGISTRY.commands.values():
         if spec.name == "media.set_derived":
@@ -355,6 +387,8 @@ def build_tools(profile: str | None = None) -> list[types.Tool]:
         tools.append(types.Tool(name=name, description=desc, input_schema=schema))
     from .frame_strip import TOOL as STRIP
     tools.append(types.Tool(name="get_frame_strip", description=STRIP[0], input_schema=STRIP[1]))
+    for name, (desc, schema) in FRAME_TOOLS.items():
+        tools.append(types.Tool(name=name, description=desc, input_schema=schema))
     keep = selected([t.name for t in tools], profile)
     return [t for t in tools if t.name in keep]
 
@@ -392,7 +426,10 @@ def make_server(engine) -> Server:
     async def call_tool(ctx, params: types.CallToolRequestParams) -> types.CallToolResult:
         args = params.arguments or {}
         try:
-            if params.name in by_tool:
+            if params.name in ("inspect_source_frames", "inspect_timeline_frames"):
+                from .frame_review import inspect
+                return await anyio.to_thread.run_sync(lambda: inspect(params.name, args, engine))
+            elif params.name in by_tool:
                 result = await anyio.to_thread.run_sync(
                     lambda: engine.dispatch("execute", {"name": by_tool[params.name], "params": args, "label": f"Agent: {params.name}"})
                 )
@@ -436,7 +473,8 @@ def _warm_text_encoder() -> None:
 def main() -> None:
     import os
 
-    engine = FollowingEngine()
+    # Explicit opt-in only, for unattended workflows requested by the user.
+    engine = FollowingEngine() if os.environ.get('LUMINA_HEADLESS') == '1' else GuiEngine()
     if os.environ.get("LUMINA_WARM_ENCODER", "1") != "0":
         _warm_text_encoder()
 
@@ -445,4 +483,7 @@ def main() -> None:
         async with stdio_server() as (read, write):
             await server.run(read, write, server.create_initialization_options())
 
-    anyio.run(run)
+    try:
+        anyio.run(run)
+    finally:
+        engine.close()  # Disconnect MCP; the independently running GUI stays open.

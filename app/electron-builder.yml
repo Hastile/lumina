@@ -13,6 +13,11 @@ extraResources:
   - from: build-resources/ffmpeg
     to: ffmpeg
 asar: true
+fileAssociations:
+  - ext: lumina
+    name: Lumina Project
+    description: Lumina Project
+    role: Editor
 win:
   target:
     - target: nsis

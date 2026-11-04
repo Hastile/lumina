@@ -13,28 +13,58 @@ export function DialogHost() {
   const dialog = useDialog((s) => s.dialog)
   const [values, setValues] = useState<Record<string, string | number | boolean>>({})
   const first = useRef<HTMLInputElement | null>(null)
+  const draft = useRef<Record<string, string | number | boolean>>({})
+  const finished = useRef(false)
+  const dirty = useRef(false)
 
   useEffect(() => {
     if (!dialog) return
-    setValues(Object.fromEntries(dialog.fields.map((f) => [f.key, f.value])))
-    setTimeout(() => first.current?.select(), 0)
+    draft.current = Object.fromEntries(dialog.fields.map((f) => [f.key, f.value]))
+    setValues(draft.current)
+    finished.current = false
+    dirty.current = false
+    const timer = setTimeout(() => first.current?.select(), 0)
+    const commit = () => {
+      if (!dialog.commitOnBlur || finished.current || !dirty.current) return
+      finished.current = true
+      void dialog.onSubmit(draft.current)
+    }
+    const blur = () => {
+      if (!dialog.commitOnBlur) return
+      commit()
+      closeDialog()
+    }
+    window.addEventListener('blur', blur)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('blur', blur)
+      commit()
+    }
   }, [dialog])
 
   if (!dialog) return null
   const submit = async () => {
+    if (finished.current) return
+    finished.current = true
     const d = dialog
     closeDialog()
-    await d.onSubmit(values)
+    if (!d.commitOnBlur || dirty.current) await d.onSubmit(draft.current)
+  }
+  const dismiss = () => dialog.commitOnBlur ? void submit() : closeDialog()
+  const change = (key: string, value: string | number | boolean) => {
+    draft.current = { ...draft.current, [key]: value }
+    dirty.current = true
+    setValues(draft.current)
   }
   return (
-    <div className="lm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && closeDialog()}>
+    <div className="lm-dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && dismiss()}>
       <form
         className="lm-dialog"
         onSubmit={(e) => {
           e.preventDefault()
           void submit()
         }}
-        onKeyDown={(e) => e.key === 'Escape' && closeDialog()}
+        onKeyDown={(e) => { if (e.key === 'Escape') dismiss() }}
       >
         <h3>{dialog.title}</h3>
         <div className="body">
@@ -44,7 +74,7 @@ export function DialogHost() {
             <FieldRow key={f.key}>
               <label htmlFor={`f-${f.key}`}>{f.label}</label>
               {f.type === 'select' ? (
-                <select id={`f-${f.key}`} value={String(values[f.key] ?? '')} onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}>
+                <select id={`f-${f.key}`} value={String(values[f.key] ?? '')} onChange={(e) => change(f.key, e.target.value)}>
                   {f.options.map((o) => (
                     <option key={o.value} value={o.value}>
                       {o.label}
@@ -52,7 +82,7 @@ export function DialogHost() {
                   ))}
                 </select>
               ) : f.type === 'checkbox' ? (
-                <input id={`f-${f.key}`} type="checkbox" checked={Boolean(values[f.key])} onChange={(e) => setValues({ ...values, [f.key]: e.target.checked })} />
+                <input id={`f-${f.key}`} type="checkbox" checked={Boolean(values[f.key])} onChange={(e) => change(f.key, e.target.checked)} />
               ) : (
                 <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                   <input
@@ -60,11 +90,13 @@ export function DialogHost() {
                     ref={i === 0 ? first : undefined}
                     autoFocus={i === 0}
                     type={f.type}
+                    onFocus={(e) => e.currentTarget.select()}
                     min={f.type === 'number' ? f.min : undefined}
                     max={f.type === 'number' ? f.max : undefined}
                     step={f.type === 'number' ? f.step : undefined}
                     value={String(values[f.key] ?? '')}
-                    onChange={(e) => setValues({ ...values, [f.key]: f.type === 'number' ? Number(e.target.value) : e.target.value })}
+                    onChange={(e) => change(f.key, f.type === 'number' ? Number(e.target.value) : e.target.value)}
+                    onBlur={() => { if (dialog.commitOnBlur) void submit() }}
                     style={{ width: f.type === 'number' ? 90 : 240 }}
                   />
                   {f.type === 'number' && f.suffix}
@@ -74,8 +106,8 @@ export function DialogHost() {
           ))}
         </div>
         <div className="actions">
-          <button type="button" className="lm-btn" onClick={closeDialog}>
-            {t('Cancel')}
+          <button type="button" className="lm-btn" onClick={dismiss}>
+            {dialog.commitOnBlur ? t('Close') : t('Cancel')}
           </button>
           <button type="submit" className="lm-btn primary">
             {dialog.okLabel ?? 'OK'}

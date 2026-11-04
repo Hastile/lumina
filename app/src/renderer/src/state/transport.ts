@@ -31,7 +31,9 @@ export function getTime(m: Monitor): number {
 }
 
 export function setTime(m: Monitor, t: number): void {
-  const clamped = Math.max(0, Math.min(t, duration(m)))
+  // Scrubbing and the playback clock produce fractional ticks; engine commands
+  // accept integer ticks, including marks placed while playback is running.
+  const clamped = Math.round(Math.max(0, Math.min(t, duration(m))))
   if (m === 'program') set({ programTime: clamped })
   else set({ sourceTime: clamped })
 }

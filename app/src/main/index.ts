@@ -1,11 +1,15 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, protocol, shell, type MenuItemConstructorOptions } from 'electron'
 import { spawn, execFile, type ChildProcess } from 'node:child_process'
-import { createReadStream, existsSync, statSync, writeFileSync } from 'node:fs'
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { Readable } from 'node:stream'
 import { createInterface } from 'node:readline'
 import { setLocale, t, type Locale } from '../shared/i18n'
-import { addRecent, clearRecent, lastDir, recentProjects, rememberPick, removeRecent, setDir, withDefaultDir, type Purpose } from './recent'
+import { addRecent, clearRecent, defaultExportDir, setDefaultExportDir, lastDir, recentProjects, rememberPick, removeRecent, setDir, withDefaultDir, type Purpose } from './recent'
+
+// Explorer-brokered launches do not inherit MCP's custom environment.
+const launchHome = app.commandLine.getSwitchValue('lumina-home')
+if (launchHome) process.env.LUMINA_HOME = resolve(launchHome)
 
 // ---------------------------------------------------------------- media protocol
 // Renderer loads media as lumina-media://file/<encodeURIComponent(path)>, with
@@ -287,6 +291,7 @@ const MENU: Record<string, Item[]> = {
     { label: 'Properties', action: 'window.properties' },
     { label: 'Metadata', action: 'window.metadata' },
     { label: 'Text', action: 'window.text' },
+    { label: 'Source Review', action: 'window.sourceReview' },
     { label: 'Audio Track Mixer', action: 'window.audioTrackMixer' },
     { label: 'Graphic Templates', action: 'window.graphicTemplates' }
   ],
@@ -352,7 +357,7 @@ function createWindow(): BrowserWindow {
     title: 'Lumina',
     show: false,
     webPreferences: {
-      preload: join(import.meta.dirname, '../preload/index.cjs'),
+      preload: join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
       sandbox: false
     }
@@ -395,7 +400,7 @@ function createWindow(): BrowserWindow {
   if (process.env.ELECTRON_RENDERER_URL) {
     win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    win.loadFile(join(import.meta.dirname, '../renderer/index.html'))
+    win.loadFile(join(__dirname, '../renderer/index.html'))
   }
   return win
 }
@@ -443,6 +448,8 @@ ipcMain.handle('recent:remove', (_e, path: string) => {
 ipcMain.handle('recent:list', () => recentProjects())
 ipcMain.handle('recent:lastDir', (_e, purpose: Purpose) => lastDir(purpose))
 ipcMain.handle('recent:setDir', (_e, purpose: Purpose, dir: string) => setDir(purpose, dir))
+ipcMain.handle('export:defaultDir', (_e, projectPath?: string | null) => defaultExportDir(projectPath))
+ipcMain.handle('export:setDefaultDir', (_e, dir: string) => setDefaultExportDir(dir))
 
 ipcMain.handle('app:setLocale', (e, locale: Locale) => {
   setLocale(locale)
@@ -451,13 +458,77 @@ ipcMain.handle('app:setLocale', (e, locale: Locale) => {
 })
 
 ipcMain.handle('shell:showItem', (_e, path: string) => shell.showItemInFolder(path))
+
+/** The newest installed Adobe Audition (LUMINA_AUDITION overrides). */
+function auditionExe(): string | null {
+  if (process.env.LUMINA_AUDITION) return existsSync(process.env.LUMINA_AUDITION) ? process.env.LUMINA_AUDITION : null
+  const roots = [...new Set([process.env.ProgramW6432, process.env.ProgramFiles, 'C:\\Program Files'].filter(Boolean) as string[])]
+  const found: { exe: string; year: number }[] = []
+  for (const root of roots) {
+    let names: string[] = []
+    try {
+      names = readdirSync(join(root, 'Adobe')).filter((n) => /^Adobe Audition/i.test(n))
+    } catch {
+      continue
+    }
+    for (const n of names) {
+      const exe = join(root, 'Adobe', n, 'Adobe Audition.exe')
+      if (existsSync(exe)) found.push({ exe, year: Number(/(\d{4})/.exec(n)?.[1] ?? 0) })
+    }
+  }
+  return found.sort((a, b) => b.year - a.year)[0]?.exe ?? null
+}
+
+// Edit in Adobe Audition: Audition opens the files (a running Audition takes them in); saving there is
+// picked up by the engine's hot reload
+ipcMain.handle('audition:open', (_e, paths: string[]) => {
+  const exe = auditionExe()
+  if (!exe) return { ok: false, error: t('Adobe Audition is not installed.') }
+  try {
+    spawn(exe, paths, { detached: true, stdio: 'ignore' }).unref()
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: (err as Error).message }
+  }
+})
 ipcMain.handle('app:videosDir', () => app.getPath('videos'))
 
 ipcMain.handle('window:setTitle', (e, title: string) => {
   BrowserWindow.fromWebContents(e.sender)?.setTitle(title)
 })
 
-app.whenReady().then(async () => {
+// Opening a .lumina from Explorer (file association) passes its path on the command line. The
+// renderer takes the queued paths once the engine is connected; a second launch hands its paths to
+// the running window instead of starting another app.
+const pendingOpen: string[] = []
+const launchFiles = (argv: string[]): string[] =>
+  argv.slice(1).filter((a) => /\.(lumina|prproj)$/i.test(a) && existsSync(a)).map((a) => resolve(a))
+pendingOpen.push(...launchFiles(process.argv))
+
+// Development, unpacked and installed builds belong to the same interactive editor.
+// Test/custom homes remain isolated; explicit Electron profile switches take precedence.
+app.setName('Lumina')
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+  const profile = process.env.LUMINA_HOME ? join(process.env.LUMINA_HOME, 'gui') : join(app.getPath('appData'), 'Lumina')
+  // Chromium's singleton lock requires the profile directory to exist already.
+  mkdirSync(profile, { recursive: true })
+  app.setPath('userData', profile)
+}
+const ownsInstance = app.requestSingleInstanceLock()
+if (!ownsInstance) app.quit()
+app.on('second-instance', (_e, argv) => {
+  const win = BrowserWindow.getAllWindows()[0]
+  pendingOpen.push(...launchFiles(argv))
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.focus()
+  win.webContents.send('app:openFiles')
+})
+ipcMain.handle('app:takeOpenFiles', () => pendingOpen.splice(0))
+
+// app.quit() alone does not cancel a queued whenReady callback. A rejected second
+// launch must not start an invisible engine and steal the discovery file.
+if (ownsInstance) app.whenReady().then(async () => {
   registerMediaProtocol()
   const enginePromise = startEngine().catch((err: Error) => {
     engineError = err.message

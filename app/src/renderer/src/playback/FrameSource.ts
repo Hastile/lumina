@@ -13,6 +13,10 @@
 //     prefetched before the clock reaches it.
 
 import { ALL_FORMATS, EncodedPacketSink, Input, UrlSource, VideoSampleSink, type InputVideoTrack, type VideoSample } from 'mediabunny'
+import { registerProresDecoder } from '@mediabunny/prores'
+
+// ProRes MOV (including 4444 alpha) is not a native browser WebCodecs codec.
+registerProresDecoder()
 
 /** A decoded frame copied out of the decoder. Hardware decoders own only ~10 output frames and
  * stall while those stay open, so frames are copied to GPU bitmaps and released immediately. */
@@ -22,9 +26,9 @@ async function copyFrame(s: VideoSample, scale = 1): Promise<Frame | null> {
   try {
     const vf = s.toVideoFrame()
     try {
-      const opts: ImageBitmapOptions | undefined = scale < 1
-        ? { resizeWidth: Math.max(2, Math.round(vf.displayWidth * scale)), resizeHeight: Math.max(2, Math.round(vf.displayHeight * scale)), resizeQuality: 'medium' }
-        : undefined
+      const opts: ImageBitmapOptions = scale < 1
+        ? { premultiplyAlpha: 'premultiply', resizeWidth: Math.max(2, Math.round(vf.displayWidth * scale)), resizeHeight: Math.max(2, Math.round(vf.displayHeight * scale)), resizeQuality: 'high' }
+        : { premultiplyAlpha: 'premultiply' }
       return { timestamp: s.timestamp, duration: s.duration, bitmap: await createImageBitmap(vf, opts) }
     } finally {
       vf.close()
@@ -154,7 +158,8 @@ export class FrameSource {
       // pressing play continues from already-decoded frames instead of warming up the decoder
       const live = this.stream && t >= this.streamFrom - 1e-6 && t <= this.lastPulled + 1.5
       if (!live) this.stopStream()
-      if (!this.frame(t)?.exact) this.seek(t)
+      const frame = this.frame(t)
+      if (!frame?.exact || frame.sample.bitmap.width < this.media.width) this.seek(t)
       if (this.primeTimer) clearTimeout(this.primeTimer)
       if (!live) {
         this.primeTimer = setTimeout(() => {
@@ -231,7 +236,8 @@ export class FrameSource {
       let target: number | null = t
       while (target !== null && !this.disposed) {
         this.seekNext = null
-        if (!this.frame(target)?.exact) {
+        const frame = this.frame(target)
+        if (!frame?.exact || frame.sample.bitmap.width < this.media.width) {
           try {
             const raw = await this.sink.getSample(target)
             const s = raw ? await copyFrame(raw) : null
@@ -298,7 +304,10 @@ export class FrameSource {
     let i = c.length
     while (i > 0 && c[i - 1].timestamp > s.timestamp) i--
     if (i > 0 && Math.abs(c[i - 1].timestamp - s.timestamp) < 1e-6) {
-      s.bitmap.close()
+      if (s.bitmap.width > c[i - 1].bitmap.width) {
+        c[i - 1].bitmap.close()
+        c[i - 1] = s
+      } else s.bitmap.close()
       return
     }
     c.splice(i, 0, s)

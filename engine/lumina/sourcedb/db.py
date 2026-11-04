@@ -28,6 +28,8 @@ HUMAN = "human"
 # here; connect() inserts the missing ones. Never rename or remove one that
 # rows may use.
 KINDS: tuple[tuple[str, str, int, str], ...] = (
+    ("source_review", "json", 0, "source review draft, detected boundaries and undo history; not search evidence"),
+    ("dialogue", "json", 1, "reviewed dialogue: speaker, text, source-time span and provenance"),
     # who and what
     ("work", "ref", 1, "the work (game, anime, film) it is from"),
     ("character", "ref", 1, "a character on screen; num = confidence"),

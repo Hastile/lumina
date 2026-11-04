@@ -12,6 +12,7 @@ import { engine } from '../engine/client'
 import { activeSequence, exec, findClip, get, useStore } from '../state/store'
 import { valueAt } from '../util/motion'
 import { fmtDb } from './Audio'
+import { NumberScrub } from './PropertyControls'
 
 type AudioTag = 'dialogue' | 'music' | 'sfx' | 'ambience'
 
@@ -329,7 +330,9 @@ function ClipVolume({ seq, audio, time }: { seq: Sequence; audio: { clip: Clip; 
           }}
         />
         <span className="name">{t('Clip Volume')}</span>
-        <span className="val" data-clip-volume={vol.toFixed(1)}>{fmtDb(vol)} dB</span>
+        <span className="val" data-clip-volume={vol.toFixed(1)} title={keyed ? t('This clip has volume keyframes: adjust them on the rubber band or in Effect Controls') : undefined}>
+          <NumberScrub value={vol} min={-96} max={15} step={0.1} suffix=" dB" disabled={keyed} onChange={(db) => { setEnabled(true); void commit(db) }} />
+        </span>
       </div>
       <input
         type="range"

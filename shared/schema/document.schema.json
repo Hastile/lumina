@@ -187,6 +187,20 @@
           "title": "Text",
           "type": "string"
         },
+        "timing": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Acoustic character times in sequence ticks; valid only for the recorded text/start/end",
+          "title": "Timing"
+        },
         "style": {
           "anyOf": [
             {
@@ -225,6 +239,7 @@
       },
       "required": [
         "text",
+        "timing",
         "style"
       ],
       "title": "Caption",
@@ -1280,6 +1295,12 @@
           "title": "Offline",
           "type": "boolean"
         },
+        "revision": {
+          "default": 0,
+          "description": "bumped each time the file is reloaded after it changed on disk (an Audition save, a re-render); decoders and generated files are keyed by it",
+          "title": "Revision",
+          "type": "integer"
+        },
         "markers": {
           "additionalProperties": {
             "$ref": "#/$defs/Marker"
@@ -1306,6 +1327,7 @@
         "in_point",
         "out_point",
         "offline",
+        "revision",
         "markers"
       ],
       "title": "MediaItem",
@@ -1488,6 +1510,20 @@
           "title": "Master Volume Db",
           "type": "number"
         },
+        "transcript": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Editable sequence transcript, separate from rendered captions and graphics",
+          "title": "Transcript"
+        },
         "source_video_track": {
           "anyOf": [
             {
@@ -1528,6 +1564,7 @@
         "in_point",
         "out_point",
         "master_volume_db",
+        "transcript",
         "source_video_track",
         "source_audio_track"
       ],

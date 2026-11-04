@@ -1,3 +1,4 @@
+import { InlineValueInput } from './InlineValueInput'
 // Audio Meters, Audio Track Mixer and Audio Clip Mixer (Premiere's layout).
 // Levels come from the Web Audio buses the Program monitor plays through
 // (playback/AudioEngine.ts), so the meters show exactly what is heard.
@@ -195,20 +196,15 @@ function Fader({ db, onPreview, onCommit, label }: { db: number; onPreview: (db:
       {edit === null ? (
         <span className="val" onClick={() => setEdit(fmtDb(db))}>{fmtDb(shown)}</span>
       ) : (
-        <input
+        <InlineValueInput
           className="val"
-          autoFocus
-          value={edit}
-          onChange={(e) => setEdit(e.target.value)}
-          onBlur={() => setEdit(null)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const n = Number(edit.replace('∞', 'Infinity'))
-              if (!Number.isNaN(n)) onCommit(Math.max(-96, Math.min(6, n)))
-              setEdit(null)
-            } else if (e.key === 'Escape') setEdit(null)
+        initialValue={edit}
+          onCommit={(text) => {
+            const n = Number(text.replace('?', 'Infinity'))
+            if (text.trim() && !Number.isNaN(n)) onCommit(Math.max(-96, Math.min(6, n)))
           }}
-        />
+          onClose={() => setEdit(null)}
+      />
       )}
     </div>
   )

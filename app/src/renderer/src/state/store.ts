@@ -6,7 +6,7 @@ export type Tool = 'select' | 'trackSelect' | 'ripple' | 'rolling' | 'rate' | 'r
 
 export type PanelId =
   | 'history' | 'project' | 'source' | 'program' | 'timeline' | 'effectControls' | 'audioMixer' | 'effects' | 'mediaBrowser' | 'tools' | 'audioMeters'
-  | 'essentialSound' | 'lumetri' | 'properties' | 'metadata' | 'text' | 'audioTrackMixer' | 'graphicTemplates'
+  | 'essentialSound' | 'lumetri' | 'properties' | 'metadata' | 'sourceReview' | 'text' | 'audioTrackMixer' | 'graphicTemplates'
 
 export type Toast = { id: number; kind: 'error' | 'info'; text: string }
 
@@ -32,6 +32,7 @@ type State = {
   currentBin: string | null
 
   sourceMediaId: string | null
+  sourceClip: { sequenceId: string; clipId: string } | null
   sourceTime: number
   programTime: number
   playing: 'source' | 'program' | null
@@ -93,6 +94,7 @@ export const useStore = create<State>(() => ({
   selectedItems: [],
   currentBin: null,
   sourceMediaId: null,
+  sourceClip: null,
   sourceTime: 0,
   programTime: 0,
   playing: null,
@@ -242,9 +244,53 @@ export async function call<T = unknown>(method: string, params: Record<string, u
 
 // ---------------------------------------------------------------- engine sync
 
+let eventRevision = 0
+let syncing = false
+let connecting = false
+let syncTimer: ReturnType<typeof setInterval> | undefined
+let patchGap = false
+
+// Recover missed external edits without closing, saving or reopening the project.
+export async function synchronizeEngine(): Promise<void> {
+  if (syncing || connecting) return
+  if (!get().connected) { await connectEngine(); return }
+  syncing = true
+  const revision = eventRevision
+  try {
+    const snapshot = await engine.call<{ document: Project; version: number; path: string | null } & HistoryState>('snapshot')
+    // A newer event arrived while this response was in flight. Never roll it back.
+    if (eventRevision !== revision) return
+    const { document: doc, version, path, ...history } = snapshot
+    const current = get()
+    if (doc.id !== current.doc?.id) {
+      onEvent({ type: 'reset', ...snapshot })
+    } else if (patchGap || version !== current.version || path !== current.path) {
+      const seq = doc.active_sequence_id ? doc.sequences[doc.active_sequence_id] : null
+      set({ doc, version, path, history,
+        selectedClips: seq ? current.selectedClips.filter(id => findClip(seq, id)) : [],
+        sourceMediaId: current.sourceMediaId && doc.media[current.sourceMediaId] ? current.sourceMediaId : null,
+        ...(!current.playing ? { programTime: seq?.playhead ?? 0 } : {}) })
+    } else {
+      set({ history })
+    }
+    patchGap = false
+    const projects = await engine.call<ProjectInfo[]>('project.list')
+    if (eventRevision === revision) set({ projects })
+  } catch {
+    // Existing document remains visible; retry the read on the next heartbeat.
+  } finally { syncing = false }
+}
+
 function onEvent(e: EngineEvent): void {
+  if (['patch', 'reset', 'saved', 'history', 'projects'].includes(e.type)) eventRevision++
   switch (e.type) {
+    case 'disconnected': set({ connected: false }); break
     case 'patch': {
+      if (patchGap || !get().doc || e.version !== get().version + 1) {
+        patchGap = true
+        void synchronizeEngine()
+        break
+      }
       set((s) => {
         let doc = s.doc
         for (const p of e.patches) doc = applyPatch(doc, p)
@@ -261,10 +307,11 @@ function onEvent(e: EngineEvent): void {
       break
     }
     case 'reset': {
+      patchGap = false
       const { type: _t, document, path, version, ...history } = e
       const doc = document as Project
       const seq = doc.active_sequence_id ? doc.sequences[doc.active_sequence_id] : null
-      set({ doc, path, version, history, selectedClips: [], selectedItems: [], sourceMediaId: null, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
+      set({ doc, path, version, history, selectedClips: [], selectedItems: [], sourceMediaId: null, sourceClip: null, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
       break
     }
     case 'saved': {
@@ -288,15 +335,21 @@ function onEvent(e: EngineEvent): void {
 }
 
 export async function connectEngine(): Promise<void> {
+  if (connecting) return
+  connecting = true
+  if (!syncTimer) {
+    syncTimer = setInterval(() => { void synchronizeEngine() }, 2000)
+    window.addEventListener('focus', () => { void synchronizeEngine() })
+  }
   try {
     engine.onEvent(onEvent)
     const hello = (await engine.connect()) as { document: Project; path: string | null; version: number; projects?: ProjectInfo[] } & HistoryState
     const { document: doc, path, version, projects = [], ...history } = hello
     const seq = doc.active_sequence_id ? doc.sequences[doc.active_sequence_id] : null
-    set({ connected: true, doc, path, version, projects, history: { ...emptyHistory, ...history }, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
+    set({ connected: true, fatal: null, doc, path, version, projects, history: { ...emptyHistory, ...history }, currentBin: doc.root_bin_id, programTime: seq?.playhead ?? 0 })
   } catch (err) {
-    set({ fatal: String(err instanceof Error ? err.message : err) })
-  }
+    set({ connected: false, fatal: String(err instanceof Error ? err.message : err) })
+  } finally { connecting = false }
 }
 
 // Keep the engine's playhead in sync for agents (debounced, not every frame).

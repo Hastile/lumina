@@ -110,7 +110,7 @@ def test_caption_add_edit_and_upgrade(media):
     r = run(e, "caption.add", text="hello", at="1s", duration="1s")
     run(e, "caption.set", clip_id=r["clip_id"], text="world", style={"color": "#ff0000"})
     c = clips(e, tid=r["track_id"])[0]
-    assert c["caption"] == {"text": "world", "style": {"color": "#ff0000"}}
+    assert c["caption"] == {"text": "world", "style": {"color": "#ff0000"}, "timing": None}
     img = frame(e, "1.2s")
     red = (img[..., 0] > 180) & (img[..., 1] < 80)
     assert red.sum() > 20

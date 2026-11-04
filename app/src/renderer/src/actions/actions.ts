@@ -10,9 +10,12 @@ import { factoryLayout, focusPanel, isLayoutLocked, resetToSaved, saveLayout, se
 import { openDialog } from '../state/dialog'
 import { exportFrame, openExportDialog } from '../layout/ExportDialog'
 import { activeSequence, call, exec, findClip, get, sequenceEnd, set, sourceMedia, toast, toggleFlag, type PanelId, type Tool } from '../state/store'
+import { sourcePlacement } from '../util/sourcePlacement'
+import { addEditTarget } from '../util/addEditTarget'
+import { sourceRange, setSourceEdge } from '../state/sourceRange'
 import { nearestClipMarker } from '../util/markers'
 import { goTo, shuttle, slowShuttle, step, stop, togglePlay, type Monitor } from '../state/transport'
-import { secondsToTicks, TICKS_PER_SECOND, ticksPerFrame, ticksToSeconds } from '../util/time'
+import { floorToFrame, secondsToTicks, TICKS_PER_SECOND, ticksPerFrame, ticksToSeconds } from '../util/time'
 
 export type Action = { id: string; label: string; run: () => void | Promise<void> }
 
@@ -193,11 +196,11 @@ async function placeFromSource(mode: 'insert' | 'overwrite'): Promise<void> {
   const media = sourceMedia()
   if (!seq) return
   if (!media) return toast(t('Open a clip in the Source Monitor first (double-click it in the Project panel)'), 'info')
-  const v = targetedTracks(seq, 'video')[0]
-  const a = targetedTracks(seq, 'audio')[0]
+  const placement = sourcePlacement(seq, undefined, media)
+  const { video_track_id: v, audio_track_id: a } = placement
   const res = await exec<{ end: number }>('clip.place', {
     sequence_id: seq.id, media_id: media.id, at: get().programTime, mode,
-    video_track_id: v ?? null, audio_track_id: a ?? null, take_video: !!v, take_audio: !!a
+    ...placement
   }, mode === 'insert' ? 'Insert' : 'Overwrite')
   if (res) {
     set({ programTime: res.end })
@@ -246,12 +249,18 @@ async function markInOut(which: 'in' | 'out' | 'clear' | 'clip'): Promise<void> 
   // "In after Out clears Out"), so rapid I/O presses never race.
   const s = get()
   const delta = (t: number, frame: number) =>
-    which === 'in' ? { in_point: t } : which === 'out' ? { out_point: t + frame } : { clear_in: true, clear_out: true }
+    which === 'in' ? { in_point: Math.round(t) } : which === 'out' ? { out_point: Math.round(t + frame) } : { clear_in: true, clear_out: true }
   if (monitor() === 'source') {
     const media = sourceMedia()
     if (!media || which === 'clip') return
-    const frame = ticksPerFrame(media.video ?? { fps_num: 30, fps_den: 1 })
-    await exec('media.set_marks', { media_id: media.id, ...delta(s.sourceTime, frame) }, which === 'clear' ? 'Clear In and Out' : `Mark ${which === 'in' ? 'In' : 'Out'}`)
+    const rate = media.video ?? { fps_num: 30, fps_den: 1 }
+    const frame = ticksPerFrame(rate)
+    if (which === 'in' || which === 'out') {
+      await setSourceEdge(which, Math.round(floorToFrame(s.sourceTime, rate)) + (which === 'out' ? frame : 0))
+      return
+    }
+    if (s.sourceClip) return // Clearing media marks must not detach or alter a timeline clip.
+    await exec('media.set_marks', { media_id: media.id, ...delta(Math.round(floorToFrame(s.sourceTime, rate)), frame) }, which === 'clear' ? 'Clear In and Out' : `Mark ${which === 'in' ? 'In' : 'Out'}`)
     return
   }
   const seq = seqOrToast()
@@ -558,8 +567,21 @@ def('clip.link', t('Link'), async () => {
 
 // Sequence
 def('sequence.addEdit', t('Add Edit'), async () => {
+  const state = get()
+  if (state.focusedPanel === 'source') {
+    const binding = state.sourceClip
+    const seq = binding && state.doc?.sequences[binding.sequenceId]
+    const found = seq && findClip(seq, binding!.clipId)
+    if (!seq || !found || found.clip.media_id !== state.sourceMediaId || found.clip.freeze != null) return
+    const at = found.clip.start + Math.round((state.sourceTime - found.clip.source_in) / found.clip.speed)
+    const tracks = addEditTarget(seq, [found.clip.id], at)
+    if (tracks.length) await exec('clip.razor', { sequence_id: seq.id, at, track_ids: tracks }, 'Add Edit')
+    return
+  }
   const seq = seqOrToast()
-  if (seq) await exec('clip.razor', { sequence_id: seq.id, at: get().programTime, track_ids: targetedTracks(seq) }, 'Add Edit')
+  if (!seq) return
+  const tracks = addEditTarget(seq, state.selectedClips, state.programTime)
+  if (tracks.length) await exec('clip.razor', { sequence_id: seq.id, at: state.programTime, track_ids: tracks }, 'Add Edit')
 })
 def('sequence.addEditAll', t('Add Edit to All Tracks'), async () => {
   const seq = seqOrToast()
@@ -611,12 +633,12 @@ def('markers.markClip', t('Mark Clip'), () => markInOut('clip'))
 def('markers.clearInOut', t('Clear In and Out'), () => markInOut('clear'))
 def('markers.goIn', t('Go to In'), () => {
   const m = monitor()
-  const t = m === 'source' ? sourceMedia()?.in_point : activeSequence()?.in_point
+  const t = m === 'source' ? sourceRange().inPoint : activeSequence()?.in_point
   if (t != null) goTo(m, t)
 })
 def('markers.goOut', t('Go to Out'), () => {
   const m = monitor()
-  const t = m === 'source' ? sourceMedia()?.out_point : activeSequence()?.out_point
+  const t = m === 'source' ? sourceRange().outPoint : activeSequence()?.out_point
   if (t != null) goTo(m, t)
 })
 def('markers.markSelection', t('Mark Selection'), async () => {
@@ -627,10 +649,22 @@ def('markers.markSelection', t('Mark Selection'), async () => {
   await exec('sequence.set_in_out', { sequence_id: seq.id, in_point: Math.min(...clips.map((c) => c.start)), out_point: Math.max(...clips.map((c) => c.end)) }, t('Mark Selection'))
 })
 def('markers.clearIn', t('Clear In'), async () => {
+  if (monitor() === 'source') {
+    if (get().sourceClip) return
+    const media = sourceMedia()
+    if (media) await exec('media.set_marks', { media_id: media.id, clear_in: true }, t('Clear In'))
+    return
+  }
   const seq = seqOrToast()
   if (seq) await exec('sequence.set_in_out', { sequence_id: seq.id, clear_in: true }, t('Clear In'))
 })
 def('markers.clearOut', t('Clear Out'), async () => {
+  if (monitor() === 'source') {
+    if (get().sourceClip) return
+    const media = sourceMedia()
+    if (media) await exec('media.set_marks', { media_id: media.id, clear_out: true }, t('Clear Out'))
+    return
+  }
   const seq = seqOrToast()
   if (seq) await exec('sequence.set_in_out', { sequence_id: seq.id, clear_out: true }, t('Clear Out'))
 })
@@ -722,7 +756,7 @@ def('markers.add', t('Add Marker'), async () => {
   // Source monitor: a clip marker on the media at the source time
   if (monitor() === 'source') {
     const m = sourceMedia()
-    if (m) await exec('marker.add', { media_id: m.id, at: get().sourceTime }, t('Add Marker'))
+    if (m) await exec('marker.add', { media_id: m.id, at: Math.round(floorToFrame(get().sourceTime, m.video ?? { fps_num: 30, fps_den: 1 })) }, t('Add Marker'))
     return
   }
   const seq = seqOrToast()
@@ -869,6 +903,7 @@ def('window.history', t('History'), panel('history'))
 def('window.properties', t('Properties'), panel('properties'))
 def('window.metadata', t('Metadata'), panel('metadata'))
 def('window.text', t('Text'), panel('text'))
+def('window.sourceReview', t('Source Review'), panel('sourceReview'))
 def('window.audioTrackMixer', t('Audio Track Mixer'), panel('audioTrackMixer'))
 def('window.graphicTemplates', t('Graphic Templates'), panel('graphicTemplates'))
 def('window.maximize', 'Maximize or Restore Frame Under Cursor', () => toggleMaximize(get().focusedPanel))

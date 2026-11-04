@@ -65,6 +65,8 @@ class MediaItem(_Model):
     in_point: int | None = Field(default=None, description="source monitor In mark, ticks")
     out_point: int | None = Field(default=None, description="source monitor Out mark, ticks")
     offline: bool = Field(default=False, description="Make Offline: shown as missing media even if the file exists")
+    revision: int = Field(default=0, description="bumped each time the file is reloaded after it changed on disk (an Audition "
+                                                 "save, a re-render); decoders and generated files are keyed by it")
     markers: dict[str, "Marker"] = Field(default_factory=dict, description="clip markers (Premiere's master clip markers): "
                                                                             "start is source time, so every clip of the media shows them")
 
@@ -236,6 +238,7 @@ class CaptionStyle(_Model):
 class Caption(_Model):
     """A caption cue: its text, drawn with the track's style (overrides apply to this cue only)."""
     text: str
+    timing: dict | None = Field(default=None, description="Acoustic character times in sequence ticks; valid only for the recorded text/start/end")
     style: dict[str, str | float | bool | list[float] | None] | None = Field(
         default=None, description="per-cue overrides of CaptionStyle fields")
 
@@ -364,6 +367,7 @@ class Sequence(_Model):
     in_point: int | None = None
     out_point: int | None = None
     master_volume_db: float = Field(default=0.0, description="Audio Track Mixer's Mix fader")
+    transcript: dict | None = Field(default=None, description="Editable sequence transcript, separate from rendered captions and graphics")
     source_video_track: str | None = Field(default=None, description="source patching: the track source video goes to "
                                            "(Insert/Overwrite); null = the first targeted video track; '' = none")
     source_audio_track: str | None = Field(default=None, description="source patching for audio; null = first targeted audio track; '' = none")

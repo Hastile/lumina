@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { t } from '@shared/i18n'
 import { DockviewReact, type DockviewReadyEvent, type IDockviewPanelProps } from 'dockview-react'
 import { Home } from 'lucide-react'
+import { openProjectPath } from './actions/actions'
 import { installKeymap } from './actions/keymap'
 import { restoreLayout, setDockApi } from './layout/dock'
 import { ChoiceHost, ContextMenuHost, DialogHost, Toasts } from './layout/Chrome'
@@ -21,6 +22,7 @@ import { AudioClipMixerPanel, AudioMeters, AudioTrackMixerPanel } from './panels
 import { EffectsPanel } from './panels/EffectsPanel'
 import { GraphicTemplatesPanel, LumetriPanel, MetadataPanel, PropertiesPanel } from './panels/RightPanels'
 import { EssentialSoundPanel } from './panels/EssentialSound'
+import { SourceReviewPanel } from './panels/SourceReviewPanel'
 import { TextPanel } from './panels/TextPanel'
 
 const panel = (id: PanelId, C: React.FC) => {
@@ -49,6 +51,7 @@ const components: Record<string, React.FunctionComponent<IDockviewPanelProps>> =
   properties: panel('properties', PropertiesPanel),
   metadata: panel('metadata', MetadataPanel),
   text: panel('text', TextPanel),
+  sourceReview: panel('sourceReview', SourceReviewPanel),
   audioTrackMixer: panel('audioTrackMixer', AudioTrackMixerPanel),
   graphicTemplates: panel('graphicTemplates', GraphicTemplatesPanel),
   history: panel('history', HistoryPanel)
@@ -90,8 +93,18 @@ export function App() {
   const dirty = useStore((s) => s.history.dirty)
 
   useEffect(() => {
-    void connectEngine()
-    return installKeymap()
+    // files from Explorer open once the engine is up
+    const openLaunchFiles = async () => {
+      if (!useStore.getState().connected) return
+      for (const p of await window.lumina.takeOpenFiles()) await openProjectPath(p)
+    }
+    void connectEngine().then(openLaunchFiles)
+    const offOpen = window.lumina.onOpenFiles(() => void openLaunchFiles())
+    const offKeys = installKeymap()
+    return () => {
+      offOpen()
+      offKeys()
+    }
   }, [])
 
   useEffect(() => {

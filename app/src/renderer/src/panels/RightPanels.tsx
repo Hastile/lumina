@@ -15,6 +15,8 @@ import { GraphicProperties } from './GraphicProperties'
 import { DRAG_MIME, setDraggedItems } from './ProjectPanel'
 import { placeAsset } from '../actions/extra'
 import { TrackPanel, useSelectedTrack } from './TrackPanel'
+import { useSelectedClips } from './PropertyControls'
+import { MultiClipProperties } from './MultiClipProperties'
 
 function Section({ title, children, reset }: { title: string; children: React.ReactNode; reset?: () => void }) {
   return (
@@ -35,9 +37,11 @@ function Section({ title, children, reset }: { title: string; children: React.Re
 }
 
 export function PropertiesPanel() {
+  const selected = useSelectedClips()
   const c = useSelectedClip()
   const tr = useSelectedTrack()
   const cueTrack = c?.clip.caption ? findClip(c.seq, c.clip.id)?.track : undefined
+  if (selected.length > 1) return <MultiClipProperties key={selected.map((c) => c.clip.id).join(':')} clips={selected} />
   if ((!c && tr) || (c && cueTrack?.caption_style)) {
     // a caption cue shows its track: Premiere's captions have one style and transform per track
     const seq = c ? c.seq : tr!.seq

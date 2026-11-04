@@ -3,6 +3,7 @@
 // with draggable Bezier handles (horizontal = influence, vertical = speed).
 
 import { useEffect, useRef, useState } from 'react'
+import { liveValue } from '../util/liveValue'
 import { t } from '@shared/i18n'
 import { autoSpeed, interpolate, isBezier, seqTimeOf, sourceTime, type Kf } from '../util/motion'
 import { laneSpan, type ClipCtx } from './PropertyControls'
@@ -257,7 +258,11 @@ export function ValueSlider({ value, min, max, onCommit }: { value: number; min:
         max={max}
         step={(max - min) / 1000}
         value={Math.max(min, Math.min(max, shown))}
-        onChange={(e) => setLive(Number(e.target.value))}
+        onChange={(e) => {
+          const v = Math.round(Number(e.target.value) * 100) / 100
+          setLive(v)
+          onCommit(v)
+        }}
         onPointerUp={() => {
           if (live !== null) onCommit(Math.round(live * 100) / 100)
           setLive(null)
@@ -289,6 +294,7 @@ export function AngleDial({ value, onCommit }: { value: number; onCommit: (v: nu
         const ang = (ev: { clientX: number; clientY: number }) => (Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180) / Math.PI
         let prev = ang(e)
         let acc = value
+        const preview = liveValue(onCommit)
         const move = (ev: PointerEvent) => {
           const cur = ang(ev)
           let d = cur - prev
@@ -297,12 +303,13 @@ export function AngleDial({ value, onCommit }: { value: number; onCommit: (v: nu
           prev = cur
           acc += d
           setLive(Math.round(acc * 10) / 10)
+          preview.update(Math.round(acc * 10) / 10)
         }
         const up = () => {
           window.removeEventListener('pointermove', move)
           window.removeEventListener('pointerup', up)
           setLive(null)
-          if (acc !== value) onCommit(Math.round(acc * 10) / 10)
+          preview.finish(Math.round(acc * 10) / 10)
         }
         window.addEventListener('pointermove', move)
         window.addEventListener('pointerup', up)

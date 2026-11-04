@@ -7,6 +7,8 @@ call ``dispatch``, so they share exactly the same behaviour.
 
 from __future__ import annotations
 
+import os
+import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -14,10 +16,12 @@ from . import inspect as views
 from . import timebase
 from .commands.registry import REGISTRY, CommandError
 from .media import probe as probe_mod
-from .media.jobs import JobRunner
+from .media.jobs import JobRunner, stale_proxy
 from . import presets as presets_mod
 from .render import export as export_mod
 from .session import Session
+
+WATCH_INTERVAL = 1.0  # s between looks at the media files (hot reload)
 
 
 class MediaServices:
@@ -37,6 +41,20 @@ class MediaServices:
 
         rate = 16000
         return audio_analysis.features(export_mod.decode_audio(path, src_start, src_dur, 1.0, rate, None, channels), rate)
+
+    def extract_audio(self, path: str, src_start: int, src_dur: int, out: str, audio: dict | None = None) -> None:
+        """Render a source range's audio, untouched (its rate and channels), to a WAV file."""
+        import subprocess
+
+        from .adb.quiet_process import NO_WINDOW
+        from .media.probe import ffmpeg_bin
+
+        codec = "pcm_f32le" if (audio or {}).get("codec") in ("pcm_f32le", "pcm_f64le") else "pcm_s16le"
+        cmd = [ffmpeg_bin(), "-v", "error", "-nostdin", "-y", "-ss", f"{src_start / timebase.TICKS_PER_SECOND:.6f}",
+               "-t", f"{src_dur / timebase.TICKS_PER_SECOND:.6f}", "-i", path, "-map", "0:a:0", "-vn", "-c:a", codec, out]
+        proc = subprocess.run(cmd, capture_output=True, timeout=3600, **NO_WINDOW)
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.decode("utf-8", "replace").strip()[-300:] or "ffmpeg failed")
 
     def audio_measure(self, path: str, src_start: int, src_dur: int, speed: float = 1.0, channels: int = 2,
                       filters: list[str] | tuple = ()) -> dict:
@@ -64,6 +82,9 @@ class Engine:
         from . import media_cache
 
         media_cache.auto_clean(self._media_in_use)
+        self._stop = threading.Event()
+        if run_jobs:
+            threading.Thread(target=self._watch_media, name="lumina-media-watch", daemon=True).start()
         self.methods: dict[str, Callable[[dict], Any]] = {
             "hello": lambda p: {"engine": "lumina", "api": 1, "commands": REGISTRY.describe(), **self.session.snapshot(),
                                 "projects": self._project_list()},
@@ -111,6 +132,17 @@ class Engine:
             "shorts.plan": self._shorts_plan,
             "shorts.check": self._shorts_check,
         }
+        from .speech.service import SpeechService
+        self.speech = SpeechService(self)
+        from .sourcedb.review import SourceReviewService
+        self.source_review = SourceReviewService(self)
+        self.methods.update({f'source_review.{name}': getattr(self.source_review, name)
+                             for name in ('get', 'start', 'update', 'preview', 'publish', 'import_srt', 'choices', 'save')})
+        self.methods.update({
+            'speech.status': self.speech.status, 'speech.start': self.speech.start,
+            'speech.list': self.speech.list, 'speech.job': self.speech.get,
+            'speech.cancel': self.speech.cancel, 'speech.apply': self.speech.apply,
+        })
 
     # ------------------------------------------------------------ dispatch
 
@@ -267,6 +299,70 @@ class Engine:
         self._submit_missing_jobs()
         return res
 
+    # ------------------------------------------------------------ hot reload
+
+    def _watch_media(self) -> None:
+        """Hot reload: a media file that changes on disk (saved in Audition, re-rendered) is read again once it
+        has stopped changing, and its waveform, thumbnails and proxy are made again."""
+        seen: dict[str, tuple] = {}
+        pending: dict[str, tuple] = {}
+        while not self._stop.wait(WATCH_INTERVAL):
+            try:
+                self._poll_media(seen, pending)
+            except Exception:  # noqa: BLE001 - the watcher must outlive a bad file
+                pass
+
+    def _poll_media(self, seen: dict[str, tuple], pending: dict[str, tuple]) -> list[str]:
+        """One look at every open project's media files. ``seen``: the file state last taken in, per path;
+        ``pending``: a changed state waiting one more look to be sure the writer has finished."""
+        paths: dict[str, str] = {}
+        for s in list(self.projects.values()):
+            with s.lock:
+                for item in s.doc["media"].values():
+                    paths.setdefault(os.path.normcase(item["path"]), item["path"])
+        reloaded = []
+        for key, path in paths.items():
+            try:
+                st = os.stat(path)
+            except OSError:
+                continue  # offline
+            sig = (st.st_mtime_ns, st.st_size)
+            if key not in seen:
+                seen[key] = sig
+            elif sig == seen[key]:
+                pending.pop(key, None)
+            elif pending.get(key) != sig:
+                pending[key] = sig
+            else:
+                del pending[key]
+                seen[key] = sig
+                reloaded += self.reload_media(path)
+        for key in set(seen) - set(paths):
+            del seen[key]
+        return reloaded
+
+    def reload_media(self, path: str) -> list[str]:
+        """Every open project's media items of ``path`` re-read (media.refresh) and their files made again."""
+        key = os.path.normcase(path)
+        ids = []
+        for s in list(self.projects.values()):
+            with s.lock:
+                mids = [mid for mid, m in s.doc["media"].items() if os.path.normcase(m["path"]) == key]
+            if not mids:
+                continue
+            try:
+                s.execute("media.refresh", {"media_ids": mids})
+            except CommandError:
+                continue
+            for mid in mids:
+                if self.run_jobs:
+                    self._queued.add(mid)
+                    self.jobs.submit_media(dict(s.doc["media"][mid]))
+            ids += mids
+        if ids:
+            self._broadcast({"type": "media_reloaded", "path": path, "media_ids": ids})
+        return ids
+
     # ------------------------------------------------------------ methods
 
     def _execute(self, p: dict) -> dict:
@@ -284,6 +380,10 @@ class Engine:
             return
         for item in list(self.session.doc["media"].values()):
             if item["id"] in self._queued:
+                continue
+            if stale_proxy(item) and Path(item['path']).exists():
+                self._queued.add(item['id'])
+                self.jobs.submit_media(item, {'proxy'})
                 continue
             derived = [item.get(k) for k in ("thumbnail_path", "waveform_path", "proxy_path", "filmstrip_path")]
             if any(d and not Path(d).exists() for d in derived) or not (item.get("thumbnail_path") or item.get("waveform_path")):

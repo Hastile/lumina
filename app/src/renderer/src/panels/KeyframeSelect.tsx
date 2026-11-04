@@ -277,7 +277,7 @@ type Half = 'linear' | 'hold' | 'bezier' | 'continuous' | 'auto'
 const near = (a: number[], b: number[]) => Math.abs(a[0] - b[0]) <= 1e-6 * Math.max(1, Math.abs(b[0])) && Math.abs(a[1] - b[1]) < 1e-3
 
 /** Each side's interpolation, the way Premiere draws a keyframe: left half = incoming, right = outgoing.
- * A Bezier side whose handle draws the same straight line as linear shows as linear (Ease In / Out). */
+ * Ease In / Out retain their half icons; a straight Bezier still shows its editable Bezier mode. */
 export function halves(kfs: Kf[], i: number): [Half, Half] {
   const k = kfs[i]
   const side = (s: 'in' | 'out'): Half => {
@@ -298,7 +298,10 @@ export function halves(kfs: Kf[], i: number): [Half, Half] {
         return 'linear'
     }
   }
-  return [side('in'), side('out')]
+  const left = side('in')
+  const right = side('out')
+  if (k.interp === 'bezier' && left === 'linear' && right === 'linear') return ['bezier', 'bezier']
+  return [left, right]
 }
 
 // left halves in a 12x12 box centred on 0; the right half is the mirror image

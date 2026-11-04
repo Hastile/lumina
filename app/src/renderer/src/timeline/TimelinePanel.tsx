@@ -1,3 +1,4 @@
+import { InlineValueInput } from '../panels/InlineValueInput'
 import { EFFECT_MIME, type EffectDrag } from '../panels/EffectsPanel'
 import { VolumeBand } from './VolumeBand'
 import { EFFECTS, TRANSITIONS, trackTransitions, type TransitionWindow } from '../util/effects'
@@ -9,6 +10,7 @@ import type { Asset, Clip, MediaItem, Sequence, Track } from '../engine/document
 import { engine } from '../engine/client'
 import { currentMarker, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
+import { focusPanel } from '../layout/dock'
 import { openDialog } from '../state/dialog'
 import { DRAG_MIME, draggedItems } from '../panels/ProjectPanel'
 import { activeSequence, closeSequence, exec, findClip, get, openSequence, sequenceEnd, set, toast, useStore } from '../state/store'
@@ -19,8 +21,12 @@ import { mediaUrl } from '../engine/client'
 import { clipMarkers } from '../util/markers'
 import { addCaptionTrack, addTrackEffect, applyPresetToTrack, captionStyleDialog, editCaptionText, exportCaptions, graphicsToCaptions, importCaptions, placeAsset, upgradeCaptions } from '../actions/extra'
 import { effectMedia } from '../util/effects'
+import { sourcePlacement, patchedTrack } from '../util/sourcePlacement'
 import { isCaptionTrack } from '../util/tracks'
 import { valueAt } from '../util/motion'
+import { trimRange } from '../util/trimRange'
+import { sourceDropDuration } from '../util/sourceDropDuration'
+import { editClipsInAudition } from '../state/audition'
 
 const HEADER_W = 190
 const RULER_H = 30
@@ -58,7 +64,7 @@ type Row = { track: Track; label: string; kind: 'video' | 'audio'; area: Area; i
 
 type Drag =
   | { kind: 'move'; ids: string[]; anchorRow: number; startX: number; startY: number; dt: number; dRow: number; moved: boolean; base: Clip; dup: boolean }
-  | { kind: 'trim'; clipId: string; edge: 'start' | 'end'; ripple: boolean; startX: number; dt: number }
+  | { kind: 'trim'; clipId: string; ids: string[]; edge: 'start' | 'end'; ripple: boolean; startX: number; dt: number }
   | { kind: 'hand'; startX: number; startScroll: number }
   | { kind: 'marquee'; x0: number; y0: number; x1: number; y1: number; base: string[] }
   | { kind: 'tool'; tool: EditTool; clipId: string; ids: string[]; edge: 'start' | 'end' | null; startX: number; dt: number }
@@ -507,7 +513,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       return
     }
     if (edge) {
-      setDrag({ kind: 'trim', clipId: clip.id, edge, ripple: tool === 'ripple', startX: e.clientX, dt: 0 })
+      setDrag({ kind: 'trim', clipId: clip.id, ids: linked, edge, ripple: tool === 'ripple', startX: e.clientX, dt: 0 })
     } else if (tool === 'select' || tool === 'ripple') {
       setDrag({ kind: 'move', ids: sel.includes(clip.id) ? sel : linked, anchorRow: rowIdx, startX: e.clientX, startY: e.clientY, dt: 0, dRow: 0, moved: false, base: clip, dup: e.altKey })
     }
@@ -571,7 +577,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         if (!found) return
         let dt = Math.round(raw / tpf) * tpf
         const edgeT = (drag.edge === 'start' ? found.clip.start : found.clip.end) + dt
-        dt += snapDelta([edgeT], new Set([drag.clipId]))
+        dt += snapDelta([edgeT], new Set(drag.ids))
+        const [lo, hi] = trimRange(seq, drag.ids, drag.edge, drag.ripple, tpf, mediaLimit)
+        dt = lo > hi ? 0 : Math.max(lo, Math.min(hi, dt))
         setDrag({ ...drag, dt })
       } else if (drag.kind === 'tool') {
         const found = findClip(seq, drag.clipId)
@@ -600,7 +608,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
         const label = { rolling: tx('Rolling Edit'), rate: tx('Rate Stretch'), slip: tx('Slip'), slide: tx('Slide') }[d.tool]
         await exec(EDIT_TOOLS[d.tool], { sequence_id: seq.id, clip_id: d.clipId, delta: d.dt, include_linked: d.ids.length > 1, ...(d.edge && d.tool !== 'slip' && d.tool !== 'slide' ? { edge: d.edge } : {}), ...(d.tool === 'rolling' ? { clamp: true } : {}) }, label)
       } else if (d.kind === 'trim' && d.dt !== 0) {
-        await exec('clip.trim', { sequence_id: seq.id, clip_id: d.clipId, edge: d.edge, delta: d.dt, ripple: d.ripple, include_linked: !e.altKey }, d.ripple ? 'Ripple Trim' : 'Trim')
+        await exec('clip.trim', { sequence_id: seq.id, clip_id: d.clipId, edge: d.edge, delta: d.dt, ripple: d.ripple, include_linked: d.ids.length > 1 }, d.ripple ? 'Ripple Trim' : 'Trim')
       }
     }
     window.addEventListener('mousemove', move)
@@ -705,11 +713,12 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
     await engine.call('transaction.begin', { label: mode === 'insert' ? 'Insert' : 'Overwrite' })
     try {
       for (const m of items) {
-        const tracks = { video_track_id: seq.video_tracks[vIdx], audio_track_id: seq.audio_tracks[aIdx] }
+        const tracks = sourcePlacement(seq, { video: seq.video_tracks[vIdx], audio: seq.audio_tracks[aIdx] }, 'settings' in m ? undefined : m)
         const res = 'settings' in m
           ? await engine.exec<{ end: number }>('clip.place_sequence', { sequence_id: seq.id, nested_id: m.id, at, mode, ...tracks })
           : await engine.exec<{ end: number }>('clip.place', {
-            sequence_id: seq.id, media_id: m.id, at, mode, ...tracks, source_in: 0, source_out: m.kind === 'image' ? null : m.duration
+            // Let the engine resolve this media's Source In/Out marks, as button edits do.
+            sequence_id: seq.id, media_id: m.id, at, mode, ...tracks
           })
         at = res.end
       }
@@ -747,7 +756,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
       // rows run top to bottom in every area; a linked partner on the other kind mirrors (V down = A up)
       rowOffset = anchor.kind === row.kind ? moveGhost.dRow : -moveGhost.dRow
     }
-    if (trimGhost && trimGhost.clipId === clip.id) {
+    if (trimGhost && trimGhost.ids.includes(clip.id)) {
       if (trimGhost.edge === 'start') {
         if (trimGhost.ripple) {
           stop -= trimGhost.dt
@@ -786,7 +795,8 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           } else if (clip.caption) {
             editCaptionText(clip.id)
           } else if (m) {
-            set({ sourceMediaId: m.id, sourceTime: clip.source_in })
+            set({ sourceMediaId: m.id, sourceClip: { sequenceId: seq.id, clipId: clip.id }, sourceTime: clip.source_in })
+            focusPanel('source')
           }
         }}
         onContextMenu={(e) => {
@@ -795,7 +805,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             { label: tx('Enable'), action: 'clip.enable' },
             { label: clip.link_id ? 'Unlink' : 'Link', action: 'clip.link' },
             'sep',
-            { label: tx('Speed/Duration...'), action: 'clip.speed' },
+            { label: tx('Speed/Duration...'), run: () => void import('../layout/SpeedDialog').then((m) => m.openSpeedDialog([clip.id])) },
             ...(clipMarkers(clip, m).length
               ? [
                   { label: tx('Speed Clip Marker to Playhead'), action: 'markers.speedToPlayhead' },
@@ -817,6 +827,9 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
                 : []),
             ...(clip.caption
               ? ['sep' as const, { label: tx('Edit Caption'), action: 'caption.edit' }, { label: tx('Caption Track Style...'), action: 'caption.style' }, { label: tx('Upgrade Caption to Graphic'), action: 'caption.upgrade' }]
+              : []),
+            ...(row.kind === 'audio' && m?.audio
+              ? ['sep' as const, { label: tx('Edit in Adobe Audition'), run: () => void editClipsInAudition() }]
               : []),
             'sep',
             { label: tx('Nest...'), action: 'clip.nest' },
@@ -1098,7 +1111,7 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
           {areas.map((k) => (
             <div key={k} className="lm-tl-pane" data-pane={k} style={{ clipPath: clips_[k] }}>
               {rows.map((r, i) => r.area === k && (
-                <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
+                <div key={r.track.id} className={`lm-lane ${r.kind} ${r.track.locked ? 'locked' : ''} ${dropTarget?.row === i && !draggedItems().some((id) => get().doc?.media[id]) ? 'drop' : ''} ${flash.includes(r.track.id) ? 'flash' : ''}`} style={{ top: r.top, height: r.height }} />
               ))}
               {rows.map((r, i) => r.area === k && Object.values(r.track.clips).map((c) =>
                 moveGhost?.dup && moveGhost.ids.includes(c.id) ? [renderClip(c, r, i, true), renderClip(c, r, i)] : renderClip(c, r, i)))}
@@ -1111,6 +1124,34 @@ function TimelineView({ seq, media }: { seq: Sequence; media: Record<string, Med
             <div className="lm-tl-marquee" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />
           )}
           {dropTarget && <div className="lm-dropline" style={{ left: toX(dropTarget.t), height: bodyH }} />}
+          {dropTarget && (() => {
+            const doc = get().doc
+            if (!doc) return null
+            const r = rows[dropTarget.row]
+            const vIdx = r && r.area !== 'caption' ? (r.kind === 'video' ? r.index : Math.min(r.index, seq.video_tracks.length - 1)) : 0
+            const aIdx = r ? (r.kind === 'audio' ? r.index : Math.min(r.index, seq.audio_tracks.length - 1)) : 0
+            let at = dropTarget.t
+            return <div className="lm-cue-ghosts" data-source-ghosts="">
+              {draggedItems().map((id) => {
+                const media = doc.media[id]
+                if (!media) return null
+                const tracks = sourcePlacement(seq, { video: seq.video_tracks[vIdx], audio: seq.audio_tracks[aIdx] }, media)
+                const duration = sourceDropDuration(media, st)
+                const start = at
+                at += duration
+                if (!duration) return null
+                return (['video', 'audio'] as const).map((kind) => {
+                  if (!media[kind] || !tracks[`take_${kind}`]) return null
+                  const row = rows.find((row) => row.track.id === tracks[`${kind}_track_id`])
+                  if (!row || row.track.locked) return null
+                  return <div key={`${id}-${kind}`} className="lm-tl-pane" style={{ clipPath: clips_[row.area] }}><div className={`lm-clip ${kind} ghost`} data-source-ghost={id}
+                    style={{ pointerEvents: 'none', left: toX(start), width: Math.max(2, toX(at) - toX(start) - 1), top: row.top + 1, height: row.height - 2, ['--clip-color' as string]: `var(--label-${media.label || 'iris'})` }}>
+                    <span className="name">{media.name}</span>
+                  </div></div>
+                })
+              })}
+            </div>
+          })()}
           {dropTarget && (() => {
             // the captions being dragged, split at their SRT cues, where they will land
             const cap = captionDrag()
@@ -1255,20 +1296,11 @@ function PlayheadTimecode({ value, st, audio = false }: { value: number; st: Seq
   const [edit, setEdit] = useState<string | null>(null)
   if (edit !== null) {
     return (
-      <input
+      <InlineValueInput
         className="lm-tc big"
-        autoFocus
-        value={edit}
-        onChange={(e) => setEdit(e.target.value)}
-        onBlur={() => setEdit(null)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            const t = parseTimecode(edit, st)
-            if (t != null) goTo('program', t)
-            setEdit(null)
-          }
-          if (e.key === 'Escape') setEdit(null)
-        }}
+        initialValue={edit}
+        onCommit={(text) => { const t = parseTimecode(text, st); if (t != null) goTo('program', t) }}
+        onClose={() => setEdit(null)}
       />
     )
   }
@@ -1279,15 +1311,6 @@ function PlayheadTimecode({ value, st, audio = false }: { value: number; st: Seq
   )
 }
 
-/** The track source video / audio is patched to (Insert/Overwrite), null = unpatched. */
-function patchedTrack(seq: Sequence, kind: 'video' | 'audio'): string | null {
-  const set_ = kind === 'video' ? seq.source_video_track : seq.source_audio_track
-  if (set_ === '') return null
-  if (set_ && seq.tracks[set_]) return set_
-  const order = kind === 'video' ? seq.video_tracks : seq.audio_tracks
-  const usable = order.filter((id) => !seq.tracks[id].locked && !seq.tracks[id].caption_style)
-  return usable.find((id) => seq.tracks[id].targeted) ?? usable[0] ?? null
-}
 
 
 function TrackHeader({ row, seq, onResize }: { row: Row; seq: Sequence; onResize: (h: number, commit: boolean) => void }) {

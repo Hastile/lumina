@@ -1,0 +1,122 @@
+{
+  "version": 1,
+  "prepared_date": "2026-10-31",
+  "files": [
+    {
+      "output": "02_COMMON_GRAMMAR.md",
+      "sha256": "76db8c8400050e7a22cbb4b71b1faa94a6d49edc0951abaca3275d6adbfd2656",
+      "sources": [
+        {
+          "path": "docs/editing-grammar/README.md",
+          "sha256": "9c72c8def58cd804d012b395db0318147e9ea4fc08493be5028872e4812626be"
+        },
+        {
+          "path": "docs/editing-grammar/캐디노트_편집_지침_v1.0.md",
+          "sha256": "428bfb77cc1be8ddc01aca4b47397c6ada7d2de0d792a7f184bd470cd94e17f1"
+        },
+        {
+          "path": "docs/editing-grammar/common-cuts.md",
+          "sha256": "3b9ee4c6c99773e5a46f552ed2d63c659aa60fefcda14c143ecd6fcf2ea9619f"
+        },
+        {
+          "path": "docs/editing-grammar/cut-quality.md",
+          "sha256": "70e8c4ec5ffb7d8f43118626cbf5afe5c490d2a18f0da0b7cc6c182a83bf2e28"
+        },
+        {
+          "path": "docs/editing-grammar/caption-quality.md",
+          "sha256": "a1b37229928fd23f8c4c7bea97a717a64c856f9d3af8e85f3562a777321b7ba4"
+        }
+      ]
+    },
+    {
+      "output": "03_SHORTS_GRAMMAR.md",
+      "sha256": "1ff464cca4c09d46fc5c8d6fecfd78109ca1396f0794e831a8d6bad874566dcd",
+      "sources": [
+        {
+          "path": "docs/shorts-editing/README.md",
+          "sha256": "a657eef9fd45db3a66915839c7cd6a23989cdef69bad10c8f776142d7c8284d5"
+        },
+        {
+          "path": "docs/shorts-editing/caddynote-audience.md",
+          "sha256": "a1a19be407c356bcf623d50f4640c347fbeb94e5135dfe3bcc083cd5634aec02"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-edit-review-lessons.md",
+          "sha256": "10510c0c0c486bf8eb4210828eac9ee160ab3336febec1c81b6e18c7457a007b"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-cut-grammar.md",
+          "sha256": "9bb0ba3d9215d99a9180f564e558b453cfff18ebba08996d851a3e1487affb55"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-caption-effect-grammar.md",
+          "sha256": "b292609af2dcc4854f905258215f0f9584ca2ee5f3726b14df3c2ba7aa24e368"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-sfx-grammar.md",
+          "sha256": "cf22127e074945ff3a9c1182d7e6dd5d5f2c5a461c01e5b02ddbd37e1997bd40"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-tmi-grammar.md",
+          "sha256": "ea21774377a977a04850218381faceb92641bc9eb7b80bc8813aa78a8cf7a378"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-copy-grammar.md",
+          "sha256": "5aa1584baae1c09ebf042b7550cf0a1472b19e09827a15fa6d2cc04fb78d74b7"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-project-per-folder.md",
+          "sha256": "e0c496f60528a7dfdb1427635ad3d2a1de362946b84b93557d4e49677355ccb0"
+        },
+        {
+          "path": "docs/shorts-editing/move-sources-not-copy.md",
+          "sha256": "f4d74c1dccce8a1adfc0fd0f9c13871409043f40551f08d5992ad7f41275f74b"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-marker-workflow.md",
+          "sha256": "d3dd0d30e7d95acde11f37684159798c1041fdc966730a6e94c0aae0aae860b2"
+        },
+        {
+          "path": "docs/shorts-editing/shorts-upload-title-grammar.md",
+          "sha256": "af2c77827ce065c4e0da502154863a7afc42ff9ce19d2f9c3bb5dd6b88b894a6"
+        }
+      ]
+    },
+    {
+      "output": "04_LONGFORM_GRAMMAR.md",
+      "sha256": "0206c3a7cdc6fbbb47450255a84967ce9d36a25dedf917131bfe4bdf97def066",
+      "sources": [
+        {
+          "path": "docs/editing-grammar/longform.md",
+          "sha256": "91e2145427b113fad7746e77c853f5ab78effe86b7a242a0d0d6c8c19aff0a80"
+        },
+        {
+          "path": "docs/longform-editing/caption-segmentation.md",
+          "sha256": "13add45038c101fc9faab59de997c522d81cbff556d38d1accffb8a0e15ee2a2"
+        }
+      ]
+    },
+    {
+      "output": "05_REFERENCE_EVIDENCE.md",
+      "sha256": "af3b367782722a212fff061856cf931d8a821681498206435853be5a7c4c703e",
+      "sources": [
+        {
+          "path": "docs/longform-editing/reference-benchmark/README.md",
+          "sha256": "ff6b47d187e291809bd1077a23f1dbbae03e08d998fc9b632fcb9b3fd62ea8c1"
+        },
+        {
+          "path": "docs/longform-editing/reference-benchmark/lumina-review/README.md",
+          "sha256": "6b21dd224522a4d054e6b91e1a4b99c8180b774a468bfc1e8a07c900330ccba2"
+        },
+        {
+          "path": "docs/editing-grammar/references/story-Czmkes4yAOA.md",
+          "sha256": "c99ab197b3a9df762324c1e2a491da3baff61467ed9e2c75def8d901b628b2c5"
+        },
+        {
+          "path": "docs/editing-grammar/references/dugong-frieren-opening.md",
+          "sha256": "311fbe7f8aeb88a1fcdf0efd2aabdda6d831e859515fbdeafc81df51bf630bdf"
+        }
+      ]
+    }
+  ]
+}

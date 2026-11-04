@@ -31,6 +31,7 @@ export type EngineEvent =
   | ({ type: 'history' } & HistoryState)
   | { type: 'job'; job: Job }
   | { type: 'projects'; projects: ProjectInfo[] }
+  | { type: 'disconnected' }
 
 /** An open project (several can be open; the active one is the document shown). */
 export type ProjectInfo = { key: string; name: string; path: string | null; dirty: boolean; active: boolean; blank: boolean }
@@ -63,7 +64,7 @@ export class EngineError extends Error {
   }
 }
 
-type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void }
+type Pending = { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
 
 export class EngineClient {
   private ws: WebSocket | null = null
@@ -86,8 +87,10 @@ export class EngineClient {
       ws.onerror = () => reject(new Error('cannot connect to engine'))
       ws.onmessage = (ev) => this.onMessage(ev.data as string)
       ws.onclose = () => {
-        for (const p of this.pending.values()) p.reject(new Error('engine connection closed'))
+        if (this.ws !== ws) return
+        for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error('engine connection closed')) }
         this.pending.clear()
+        for (const fn of this.listeners) fn({ type: 'disconnected' })
       }
       this.ws = ws
     })
@@ -103,6 +106,7 @@ export class EngineClient {
     const p = this.pending.get(msg.id)
     if (!p) return
     this.pending.delete(msg.id)
+    clearTimeout(p.timer)
     if (msg.error) {
       const data = msg.error.data ?? {}
       p.reject(new EngineError(data.code ?? 'RPC_ERROR', msg.error.message, data.details))
@@ -116,7 +120,8 @@ export class EngineClient {
     if (!ws || ws.readyState !== WebSocket.OPEN) return Promise.reject(new Error('engine not connected'))
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject })
+      const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('engine request timed out; request was not replayed')) }, 120000)
+      this.pending.set(id, { resolve: resolve as (v: unknown) => void, reject, timer })
       ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }))
     })
   }
@@ -151,4 +156,10 @@ export function applyPatch<T>(doc: T, patch: Patch): T {
 
 export function mediaUrl(path: string): string {
   return `lumina-media://file/${encodeURIComponent(path)}`
+}
+
+/** A media item's own file. Its revision (bumped when the file changed on disk and was read again) is part of
+ * the URL, so decoders and caches keyed by URL open the new file. */
+export function mediaFileUrl(m: { path: string; revision?: number }): string {
+  return m.revision ? `${mediaUrl(m.path)}?v=${m.revision}` : mediaUrl(m.path)
 }

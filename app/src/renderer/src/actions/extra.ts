@@ -82,6 +82,7 @@ export function editCaptionText(clipId?: string): void {
   if (!found?.clip.caption) return
   openDialog({
     title: t('Edit Caption'),
+    commitOnBlur: true,
     fields: [{ key: 'text', label: t('Text'), type: 'text', value: found.clip.caption.text }],
     onSubmit: async (v) => void (await exec('caption.set', { sequence_id: seq.id, clip_id: found.clip.id, text: String(v.text) }, t('Edit Caption')))
   })

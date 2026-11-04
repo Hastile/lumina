@@ -11,6 +11,7 @@ export type DialogSpec = {
   title: string
   fields: Field[]
   okLabel?: string
+  commitOnBlur?: boolean
   onSubmit: (values: Record<string, string | number | boolean>) => void | Promise<void>
 }
 

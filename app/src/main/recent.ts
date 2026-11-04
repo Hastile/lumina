@@ -3,11 +3,11 @@
 
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 
 export type Purpose = 'project' | 'import' | 'export' | 'any'
 type Recent = { path: string; opened: number }
-type State = { projects: Recent[]; dirs: Partial<Record<Purpose, string>> }
+type State = { projects: Recent[]; dirs: Partial<Record<Purpose, string>>; exportDir?: string }
 
 const MAX = 15
 let cache: State | null = null
@@ -20,7 +20,7 @@ function load(): State {
   if (cache) return cache
   try {
     const s = JSON.parse(readFileSync(file(), 'utf8')) as State
-    cache = { projects: Array.isArray(s.projects) ? s.projects : [], dirs: s.dirs ?? {} }
+    cache = { projects: Array.isArray(s.projects) ? s.projects : [], dirs: s.dirs ?? {}, exportDir: s.exportDir }
   } catch {
     cache = { projects: [], dirs: {} }
   }
@@ -73,6 +73,32 @@ export function setDir(purpose: Purpose, dir: string, persist = true): void {
   d[purpose] = dir
   d.any = dir
   if (persist) save()
+}
+
+/** A fixed export preference, independent of import dialogs and one-off export locations. */
+export function defaultExportDir(projectPath?: string | null): string {
+  const state = load()
+  if (state.exportDir) return state.exportDir
+  let target = state.dirs.export
+  if (!target || !/^outputs?$/i.test(basename(target))) {
+    target = undefined
+    let parent = projectPath ? dirname(projectPath) : ''
+    while (parent) {
+      target = ['output', 'Outputs'].map((name) => join(parent, name)).find((path) => existsSync(path) && statSync(path).isDirectory())
+      if (target || dirname(parent) === parent) break
+      parent = dirname(parent)
+    }
+  }
+  state.exportDir = target ?? join(projectPath ? dirname(projectPath) : app.getPath('videos'), 'output')
+  save()
+  return state.exportDir
+}
+
+export function setDefaultExportDir(dir: string): void {
+  if (!dir.trim() || !isAbsolute(dir)) throw new Error('Choose an absolute export folder path')
+  if (existsSync(dir) && !statSync(dir).isDirectory()) throw new Error('Export location must be a folder')
+  load().exportDir = dir
+  save()
 }
 
 /** Start a dialog in the purpose's last folder unless the caller gave a full path. */

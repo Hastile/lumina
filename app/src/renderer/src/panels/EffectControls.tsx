@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronRight, RotateCcw, Trash2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { exec, get, set } from '../state/store'
@@ -13,6 +13,8 @@ import type { Kf } from '../util/motion'
 import { EFFECT_MIME } from './EffectsPanel'
 import { GraphicLayers } from './GraphicLayers'
 import { marqueeMouseDown } from './KeyframeSelect'
+import { useSelectedClips } from './PropertyControls'
+import { MultiClipProperties } from './MultiClipProperties'
 
 export function Group({ title, children, onReset, enabled, onToggleEnabled, onDelete, fxId }: {
   title: string; children: React.ReactNode; onReset?: () => void; enabled?: boolean; onToggleEnabled?: () => void; onDelete?: () => void; fxId?: string
@@ -106,6 +108,7 @@ export function MotionControls({ c }: { c: ClipCtx }) {
 }
 
 export function EffectControlsPanel() {
+  const selected = useSelectedClips()
   const c = useSelectedClip()
   const tr = useSelectedTrack()
   // Ctrl/Alt+wheel zooms the keyframe lane around the pointer, Shift+wheel scrolls it. A native,
@@ -135,6 +138,7 @@ export function EffectControlsPanel() {
     if (!el) return
     el.addEventListener('wheel', (e) => wheel.current(e), { passive: false })
   }, [])
+  if (selected.length > 1) return <MultiClipProperties key={selected.map((c) => c.clip.id).join(':')} clips={selected} />
   if (!c && tr) {
     return (
       <div className="lm-panel lm-ec" ref={panel}>
@@ -277,7 +281,7 @@ function CaptionCueSections({ c }: { c: ClipCtx }) {
   const track = findClip(c.seq, c.clip.id)?.track
   return (
     <>
-      <CaptionGroup c={c} />
+      <CaptionGroup key={`${c.seq.id}:${c.clip.id}`} c={c} />
       {track?.caption_style && (
         <>
           <div className="lm-ec-hint">{t('Caption cues share their track\'s style and transform: changes here apply to every caption on {track}.').replace('{track}', track.name)}</div>
@@ -292,6 +296,19 @@ function CaptionCueSections({ c }: { c: ClipCtx }) {
 function CaptionGroup({ c }: { c: ClipCtx }) {
   const cap = c.clip.caption!
   const [text, setText] = useState<string | null>(null)
+  const pending = useRef<string | null>(null)
+  const commit = () => {
+    const value = pending.current
+    pending.current = null
+    if (value !== null) void exec('caption.set', { sequence_id: c.seq.id, clip_id: c.clip.id, text: value }, t('Edit Caption'))
+  }
+  useEffect(() => {
+    window.addEventListener('blur', commit)
+    return () => {
+      window.removeEventListener('blur', commit)
+      commit()
+    }
+  }, [])
   return (
     <Group title={t('Caption')}>
       <div className="lm-ec-prop">
@@ -302,9 +319,12 @@ function CaptionGroup({ c }: { c: ClipCtx }) {
             className="lm-caption-text"
             rows={2}
             value={text ?? cap.text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              pending.current = e.target.value
+              setText(e.target.value)
+            }}
             onBlur={() => {
-              if (text !== null && text !== cap.text) void exec('caption.set', { sequence_id: c.seq.id, clip_id: c.clip.id, text }, t('Edit Caption'))
+              commit()
               setText(null)
             }}
           />

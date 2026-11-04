@@ -7,6 +7,7 @@ import { importFiles, runAction } from '../actions/actions'
 import { openContextMenu } from '../layout/Chrome'
 import { focusPanel } from '../layout/dock'
 import { exec, get, openSequence, set, useStore } from '../state/store'
+import { openInAudition } from '../state/audition'
 import { linkMedia, makeOffline, newAdjustmentLayer, placeAsset } from '../actions/extra'
 import { activateProject, closeProject } from '../actions/projects'
 import { timecode } from '../util/time'
@@ -55,7 +56,7 @@ function openRow(r: Row): void {
   if (r.kind === 'bin') set({ currentBin: r.id, selectedItems: [] })
   else if (r.kind === 'asset') void placeAsset(r.id)
   else if (r.kind === 'media') {
-    set({ sourceMediaId: r.id, sourceTime: r.item.in_point ?? 0 })
+    set({ sourceMediaId: r.id, sourceClip: null, sourceTime: r.item.in_point ?? 0 })
     focusPanel('source')
   } else {
     openSequence(r.id)
@@ -118,6 +119,12 @@ export function ProjectPanel() {
     const ids = selected.includes(r.id) ? selected : [r.id]
     e.dataTransfer.setData(DRAG_MIME, JSON.stringify(ids))
     e.dataTransfer.effectAllowed = 'copyMove'
+    if (r.kind === 'media') {
+      // The timeline draws the marked range; don't also carry a full source-row image.
+      const blank = document.createElement('canvas')
+      blank.width = blank.height = 1
+      e.dataTransfer.setDragImage(blank, 0, 0)
+    }
     setDraggedItems(ids)
   }
 
@@ -155,6 +162,14 @@ export function ProjectPanel() {
       ...(r && r.kind === 'asset' ? [{ label: r.asset.kind === 'captions' ? t('Place on a Caption Track') : t('Place at Playhead'), run: () => void placeAsset(r.id) }] : []),
       'sep',
       { label: t('Link Media...'), disabled: !r || r.kind !== 'media', run: () => r && r.kind === 'media' && linkMedia(r.id) },
+      {
+        label: t('Edit in Adobe Audition'),
+        disabled: !r || r.kind !== 'media' || r.item.kind !== 'audio',
+        run: () => {
+          const doc = get().doc
+          void openInAudition(get().selectedItems.map((id) => doc?.media[id]).filter((m) => m?.kind === 'audio').map((m) => m!.path))
+        }
+      },
       {
         label: r && r.kind === 'media' && r.item.offline ? t('Make Online') : t('Make Offline'),
         disabled: !r || r.kind !== 'media',
@@ -249,6 +264,7 @@ export function ProjectPanel() {
                 }
               }}
               onMouseDown={(e) => select(e, r.id)}
+              onClick={(e) => { if (r.kind === 'media' && !e.ctrlKey && !e.shiftKey) openRow(r) }}
               onDoubleClick={() => openRow(r)}
               onContextMenu={(e) => rowMenu(e, r)}
             >
@@ -278,6 +294,7 @@ export function ProjectPanel() {
               onDragStart={(e) => onDragStart(e, r)}
               onDragEnd={() => setDraggedItems([])}
               onMouseDown={(e) => select(e, r.id)}
+              onClick={(e) => { if (r.kind === 'media' && !e.ctrlKey && !e.shiftKey) openRow(r) }}
               onDoubleClick={() => openRow(r)}
               onContextMenu={(e) => rowMenu(e, r)}
             >

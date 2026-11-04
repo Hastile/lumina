@@ -133,6 +133,26 @@ class ImportMedia(Params):
     bin_id: str | None = None
 
 
+def new_media_item(path: str, bin_id: str, info: dict) -> dict:
+    """A project media item for a probed file."""
+    return {
+        "id": new_id(),
+        "path": path,
+        "bin_id": bin_id,
+        "label": "iris" if info["kind"] == "video" else ("forest" if info["kind"] == "audio" else "lavender"),
+        "proxy_path": None,
+        "thumbnail_path": None,
+        "waveform_path": None,
+        "filmstrip_path": None,
+        "in_point": None,
+        "out_point": None,
+        "offline": False,
+        "revision": 0,
+        "markers": {},
+        **info,
+    }
+
+
 @command("media.import", ImportMedia)
 def media_import(ctx: Context, p: ImportMedia):
     """Import media files into the project (probes each with ffprobe)."""
@@ -146,22 +166,8 @@ def media_import(ctx: Context, p: ImportMedia):
         except Exception as exc:  # noqa: BLE001 - reported per file
             errors.append({"path": path, "error": str(exc)})
             continue
-        mid = new_id()
-        item = {
-            "id": mid,
-            "path": path,
-            "bin_id": bid,
-            "label": "iris" if info["kind"] == "video" else ("forest" if info["kind"] == "audio" else "lavender"),
-            "proxy_path": None,
-            "thumbnail_path": None,
-            "waveform_path": None,
-            "filmstrip_path": None,
-            "in_point": None,
-            "out_point": None,
-            "offline": False,
-            "markers": {},
-            **info,
-        }
+        item = new_media_item(path, bid, info)
+        mid = item["id"]
         ctx.m.set(["media", mid], item)
         ids.append(mid)
     if not ids:
@@ -315,6 +321,7 @@ def build_sequence(name: str, bin_id: str, settings: dict, video_tracks: int, au
         "in_point": None,
         "out_point": None,
         "master_volume_db": 0.0,
+        "transcript": None,
         "source_video_track": None,
         "source_audio_track": None,
     }

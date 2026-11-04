@@ -9,5 +9,15 @@ samples/
 .hypothesis/
 .pytest_cache/
 release/
+app/release-source-review*/
 app/build-resources/ffmpeg/
 engine/build/
+engine/.speech-venv/
+.speech-models/
+build-backups/
+app/release*/
+.tmp/
+.longform-cut-review/
+docs/editing-grammar/references/dugong-evidence/
+.talia-source-review/
+/tmp-*

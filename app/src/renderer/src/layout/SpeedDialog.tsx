@@ -1,6 +1,6 @@
 // Clip > Speed/Duration (Ctrl+R) that says what it will do before it does it: Speed and Duration are
 // linked (edit either), and the dialog spells out the ripple - which clips move and by how much,
-// the gap left behind, or the collision that would stop it - and applies to every selected clip.
+// the gap left behind, or the collision that would stop it - and applies only to the primary selected clip.
 import { useEffect, useState } from 'react'
 import { Link2, Link2Off } from 'lucide-react'
 import { create } from 'zustand'
@@ -13,7 +13,7 @@ import { parseTimecode, ticksPerFrame, timecode, TICKS_PER_SECOND } from '../uti
 const useSpeed = create<{ ids: string[] | null }>(() => ({ ids: null }))
 
 export function openSpeedDialog(ids: string[]): void {
-  useSpeed.setState({ ids })
+  useSpeed.setState({ ids: ids.slice(0, 1) })
 }
 
 type Plan = { clip: Clip; track: string; newLen: number; delta: number; blocked: Clip | null; followers: number }
@@ -41,18 +41,16 @@ export function SpeedDialog() {
   const [speed, setSpeed] = useState(100)
   const [dur, setDur] = useState('')
   const [linked, setLinked] = useState(true)
-  const [ripple, setRipple] = useState(true)
+  const [ripple, setRipple] = useState(false)
   const [reverse, setReverse] = useState(false)
   const clips = (seq && ids ? ids.map((id) => findClip(seq, id)).filter(Boolean).map((f) => ({ clip: f!.clip, track: f!.track.id })) : [])
-    // linked partners follow their clip in the engine: one entry per link group
-    .filter((x, i, all) => !x.clip.link_id || all.findIndex((y) => y.clip.link_id === x.clip.link_id) === i)
   const first = clips[0]?.clip
   useEffect(() => {
     if (!first || !seq) return
     setSpeed(Math.round(Math.abs(first.speed) * 10000) / 100)
     setReverse(first.speed < 0)
     setDur(timecode(first.end - first.start, seq.settings))
-    setRipple(true)
+    setRipple(false)
     setLinked(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ids])
@@ -87,7 +85,7 @@ export function SpeedDialog() {
     await engine.call('transaction.begin', { label: t('Speed/Duration') })
     try {
       // Reverse Speed applies to clips with media (a nested sequence plays forward)
-      for (const { clip } of clips) await engine.exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: s, ripple, reverse: clip.sequence_id ? false : reverse })
+      for (const { clip } of clips) await engine.exec('clip.set_speed', { sequence_id: seq.id, clip_id: clip.id, speed: s, ripple, include_linked: false, reverse: clip.sequence_id ? false : reverse })
       await engine.call('transaction.commit')
     } catch (err) {
       await engine.call('transaction.rollback').catch(() => undefined)
@@ -112,7 +110,7 @@ export function SpeedDialog() {
         <div className="body">
           <label>{t('Speed')}</label>
           <span className="pair">
-            <input type="number" min={1} max={10000} step={1} value={speed} onChange={(e) => onSpeed(Number(e.target.value))} data-field="speed" autoFocus />
+            <input type="number" onFocus={(e) => e.currentTarget.select()} min={1} max={10000} step={1} value={speed} onChange={(e) => onSpeed(Number(e.target.value))} data-field="speed" autoFocus />
             %
             <button type="button" className={`lm-iconbtn ${linked ? 'on' : ''}`} title={t('Link speed and duration')} onClick={() => setLinked(!linked)}>
               {linked ? <Link2 size={13} /> : <Link2Off size={13} />}

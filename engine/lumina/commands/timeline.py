@@ -333,7 +333,7 @@ def clip_razor(ctx: Context, p: Razor):
     """Razor / Add Edit (Ctrl+K) at a time."""
     seq = seq_of(ctx.doc, p.sequence_id)
     at = seq["playhead"] if p.at is None else resolve_time(p.at, seq["settings"])
-    tids = p.track_ids or [t for t in ordered_tracks(seq) if not seq["tracks"][t]["locked"]]
+    tids = p.track_ids if p.track_ids is not None else [t for t in ordered_tracks(seq) if not seq["tracks"][t]["locked"]]
     link_map: dict[str, str] = {}
     created = []
     for tid in tids:
@@ -576,8 +576,8 @@ class SetSpeed(Params):
     clip_id: str
     speed: float = Field(gt=0, le=100, description="1.0 = 100% (the magnitude; see reverse)")
     reverse: bool | None = Field(default=None, description="Reverse Speed: play the same frames back to front; default keeps the direction")
-    ripple: bool = True
-    include_linked: bool = True
+    ripple: bool = False
+    include_linked: bool = False
 
 
 @command("clip.set_speed", SetSpeed)
@@ -774,8 +774,14 @@ class AddMarker(Params):
     media_id: str | None = Field(default=None, description="a clip marker on this media at source time `at` (Source monitor M)")
 
 
-def _marker_owner(ctx: Context, p) -> tuple[list[str], dict, dict | None]:
+def _marker_owner(ctx: Context, p) -> tuple[list[str], dict | None, dict | None]:
     """(path to the markers dict, sequence, media or None) for a sequence or clip marker."""
+    # A source marker belongs to media even in a project with no sequence.
+    if p.media_id and not p.clip_id:
+        media = ctx.doc['media'].get(p.media_id)
+        if media is None:
+            raise CommandError('NO_MEDIA', f'media not found: {p.media_id}')
+        return ['media', p.media_id, 'markers'], None, media
     seq = seq_of(ctx.doc, p.sequence_id)
     media_id = p.media_id
     if p.clip_id:
@@ -796,8 +802,8 @@ def marker_add(ctx: Context, p: AddMarker):
     """Add a marker (M): a sequence marker, or a clip marker on a clip's media (clip_id: at the source
     time under the playhead) or on a media item (media_id: at source time `at`)."""
     path, seq, media = _marker_owner(ctx, p)
-    st = seq["settings"]
-    at = seq["playhead"] if p.at is None else resolve_time(p.at, st)
+    st = (media.get('video') or {'fps_num': 30, 'fps_den': 1}) if media and not p.clip_id else seq['settings']
+    at = (0 if seq is None else seq["playhead"]) if p.at is None else resolve_time(p.at, st)
     if p.clip_id:
         _, clip = find_clip(seq, p.clip_id)
         if not clip["start"] <= at < clip["end"]:
@@ -824,7 +830,7 @@ class UpdateMarker(Params):
 def marker_update(ctx: Context, p: UpdateMarker):
     """Edit a marker (sequence marker, or a clip marker with media_id / clip_id)."""
     owner, seq, media = _marker_owner(ctx, p)
-    st = seq["settings"]
+    st = (media.get('video') or {'fps_num': 30, 'fps_den': 1}) if media and not p.clip_id else seq['settings']
     if p.marker_id not in (media or seq)["markers"]:
         raise CommandError("NO_MARKER", f"marker not found: {p.marker_id}")
     path = owner + [p.marker_id]

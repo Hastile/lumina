@@ -17,7 +17,6 @@ export const openExportDialog = () => useExport.setState({ open: true })
 const sep = (p: string) => (p.includes('\\') ? '\\' : '/')
 const dirOf = (p: string) => p.slice(0, Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/')))
 const safeName = (s: string) => s.replace(/[<>:"/\\|?*]+/g, '_').trim() || 'Sequence'
-let lastDir: string | null = null
 
 export function ExportDialog() {
   const open = useExport((s) => s.open)
@@ -27,6 +26,7 @@ export function ExportDialog() {
   const [preset, setPreset] = useState('h264')
   const [name, setName] = useState('')
   const [dir, setDir] = useState('')
+  const [defaultDir, setDefaultDir] = useState('')
   const [range, setRange] = useState<'entire' | 'in_out'>('entire')
   const [hardware, setHardware] = useState(true)
   const [preview, setPreview] = useState<string | null>(null)
@@ -38,7 +38,9 @@ export function ExportDialog() {
     setRange(seq.in_point != null && seq.out_point != null ? 'in_out' : 'entire')
     void (async () => {
       setPresets((await call<Preset[]>('export.presets')) ?? [])
-      setDir(lastDir ?? (await window.lumina.lastDir('export')) ?? (projectPath ? dirOf(projectPath) : await window.lumina.videosDir()))
+      const folder = await window.lumina.defaultExportDir(projectPath)
+      setDir(folder)
+      setDefaultDir(folder)
       const f = await call<{ path: string }>('export.frame', { sequence_id: seq.id, time: get().programTime, max_size: 640 })
       setPreview(f ? `${mediaUrl(f.path)}?v=${Date.now()}` : null)
     })()
@@ -71,7 +73,6 @@ export function ExportDialog() {
     setName(chosen.slice(dirOf(chosen).length + 1).replace(/\.[^.]+$/, ''))
   }
   const start = async () => {
-    lastDir = dir
     void window.lumina.setLastDir('export', dir)
     close()
     try {
@@ -104,6 +105,13 @@ export function ExportDialog() {
               <button type="button" className="lm-btn small" onClick={() => void browse()}>
                 {t('Browse...')}
               </button>
+            </span>
+            <label>기본 내보내기 폴더</label>
+            <span className="row">
+              <span className="dim" title={defaultDir} style={{ overflowWrap: 'anywhere' }}>{defaultDir}</span>
+              <button type="button" className="lm-btn small" disabled={!dir.trim() || dir === defaultDir} onClick={() => {
+                void window.lumina.setDefaultExportDir(dir).then(() => setDefaultDir(dir)).catch((err) => toast(String(err)))
+              }}>현재 위치를 기본값으로</button>
             </span>
             <label htmlFor="ex-preset">{t('Format')}</label>
             <select id="ex-preset" value={preset} onChange={(e) => setPreset(e.target.value)}>
@@ -220,7 +228,7 @@ export async function exportFrame(): Promise<void> {
   const seq = activeSequence(get())
   if (!seq) return toast(t('No sequence is open'), 'info')
   const tc = timecode(get().programTime, seq.settings).replace(/[:;]/g, '')
-  const dir = lastDir ?? (await window.lumina.lastDir('export')) ?? (await window.lumina.videosDir())
+  const dir = await window.lumina.defaultExportDir(get().path)
   const target = await window.lumina.saveDialog({
     title: t('Export Frame...'),
     defaultPath: `${dir}${sep(dir)}${safeName(seq.name)}_${tc}.png`,

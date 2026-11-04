@@ -6,7 +6,7 @@
 import { gradeUniforms, isIdentity, LUMETRI_KEYS, type LumetriParams } from '../util/color'
 import { useEffect, useLayoutEffect, useRef } from 'react'
 import type { Clip, Effect, MediaItem, Sequence } from '../engine/document'
-import { engine, mediaUrl } from '../engine/client'
+import { engine, mediaFileUrl, mediaUrl } from '../engine/client'
 import { useStore } from '../state/store'
 import { BLUR_SIGMA_PER_UNIT, effectParam, transformEffectAt, trs } from '../util/effects'
 import { sourceTime, transformAt, type Resolved } from '../util/motion'
@@ -49,7 +49,7 @@ let stats = { videos: 0, exact: 0, frames: [] as number[] }
  * skipped (the playhead jumped over them) or shown late (a video layer was not on its frame yet). */
 export const playbackStats = { shown: 0, dropped: 0, last: -1, playing: false }
 
-type VideoSlot = { url: string; src: FrameSource | null; tex: WebGLTexture | null; shown: number | null; disposed: boolean }
+type VideoSlot = { url: string; src: FrameSource | null; tex: WebGLTexture | null; shown: ImageBitmap | null; disposed: boolean }
 type Still = { tex: WebGLTexture | null; w: number; h: number }
 type GraphicTex = { key: string; groups: { blend: Blend; x: number; y: number; w: number; h: number; tex: WebGLTexture }[] | null }
 
@@ -101,15 +101,16 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
   // ---- sources
 
   const videoSlot = (key: string, m: MediaItem): VideoSlot => {
-    const url = mediaUrl(m.path)
+    const url = mediaFileUrl(m)
     let v = videos.current.get(key)
-    if (v && v.url !== url) {
+    const identity = `${url}\n${m.proxy_path ?? ''}`
+    if (v && v.url !== identity) {
       v.disposed = true
       v.src?.dispose()
       v = undefined
     }
     if (!v) {
-      const slot: VideoSlot = { url, src: null, tex: null, shown: null, disposed: false }
+      const slot: VideoSlot = { url: identity, src: null, tex: null, shown: null, disposed: false }
       videos.current.set(key, slot)
       const fallback = m.proxy_path ? mediaUrl(m.proxy_path) : null
       void openMedia(url)
@@ -127,7 +128,7 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
   }
 
   const still = (m: MediaItem): Still => {
-    const url = mediaUrl(m.proxy_path ?? m.path)
+    const url = m.proxy_path ? mediaUrl(m.proxy_path) : mediaFileUrl(m)
     let s = stills.current.get(url)
     if (!s) {
       const slot: Still = { tex: null, w: 0, h: 0 }
@@ -238,9 +239,9 @@ export function GLStage({ seq, layers, at, playing, rate, scale, resolve, onFail
       if (f) stats.frames.push(f.sample.timestamp)
       if (v && f) {
         if (!v.tex) v.tex = c.texture()
-        if (v.shown !== f.sample.timestamp || v.tex === null) {
+        if (v.shown !== f.sample.bitmap || v.tex === null) {
           c.upload(v.tex, f.sample.bitmap)
-          v.shown = f.sample.timestamp
+          v.shown = f.sample.bitmap
         }
         sources = [{ placed: { tex: v.tex, x: 0, y: 0, w, h, flip: true }, ps: f.sample.bitmap.width / w, blend }]
       }

@@ -37,8 +37,12 @@ async def run_server(engine: Engine, host: str = "127.0.0.1", port: int = 0, tok
 
     def on_event(event: dict) -> None:
         msg = json.dumps({"jsonrpc": "2.0", "method": "event", "params": event}, ensure_ascii=False)
-        for ws in list(clients):
-            asyncio.run_coroutine_threadsafe(_safe_send(ws, msg), loop)
+        # Session callbacks run on worker threads; iterate clients only on the
+        # websocket event loop so short-lived MCP connections cannot race it.
+        def broadcast():
+            for ws in list(clients):
+                asyncio.create_task(_safe_send(ws, msg))
+        loop.call_soon_threadsafe(broadcast)
 
     engine.subscribe(on_event)
 
@@ -77,14 +81,18 @@ async def run_server(engine: Engine, host: str = "127.0.0.1", port: int = 0, tok
         info = {"host": host, "port": actual_port, "token": token, "pid": os.getpid()}
         path = discovery_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(info), encoding="utf-8")
+        # Readers must never observe a partially written endpoint/token during GUI startup.
+        temporary = path.with_name(f'.{path.name}.{os.getpid()}.tmp')
+        temporary.write_text(json.dumps(info), encoding="utf-8")
+        temporary.replace(path)
         # the Electron main process reads this line to connect
         print(json.dumps({"ready": True, **info}), flush=True)
         try:
             await asyncio.Future()
         finally:
             try:
-                if json.loads(path.read_text(encoding="utf-8")).get("pid") == os.getpid():
+                current = json.loads(path.read_text(encoding="utf-8"))
+                if current.get("pid") == os.getpid() and current.get("token") == token:
                     path.unlink()
             except (OSError, ValueError):
                 pass

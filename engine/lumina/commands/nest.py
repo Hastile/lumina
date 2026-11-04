@@ -117,6 +117,8 @@ class PlaceSequence(Params):
     mode: Literal["overwrite", "insert"] = "overwrite"
     video_track_id: str | None = None
     audio_track_id: str | None = None
+    take_video: bool = True
+    take_audio: bool = True
 
 
 @command("clip.place_sequence", PlaceSequence)
@@ -134,10 +136,12 @@ def clip_place_sequence(ctx: Context, p: PlaceSequence):
         raise CommandError("EMPTY_SEQUENCE", f"{inner['name']} is empty")
     at = seq["playhead"] if p.at is None else resolve_time(p.at, seq["settings"])
     targets = []
-    if _has_video(doc, inner):
+    if p.take_video and _has_video(doc, inner):
         targets.append(p.video_track_id or default_track(seq, "video"))
-    if _has_audio(doc, inner):
+    if p.take_audio and _has_audio(doc, inner):
         targets.append(p.audio_track_id or default_track(seq, "audio"))
+    if not targets:
+        raise CommandError("NOTHING_TO_PLACE", "sequence has no selected video/audio")
     for tid in targets:
         require_unlocked(seq, tid)
     if p.mode == "insert":

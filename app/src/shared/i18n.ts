@@ -5,6 +5,7 @@
 export type Locale = 'ko' | 'en'
 
 const ko: Record<string, string> = {
+  'Source Review': '소스 검수',
   // captions, track effects, frame hold, media, analysis
   'Close Project': '프로젝트 닫기',
   'Close All Projects': '모든 프로젝트 닫기',
@@ -398,6 +399,8 @@ const ko: Record<string, string> = {
   'Up one level': '상위 저장소로',
   Rename: '이름 바꾸기',
   'Reveal in Project': '프로젝트에서 표시',
+  'Edit in Adobe Audition': 'Adobe Audition에서 편집',
+  'Adobe Audition is not installed.': 'Adobe Audition이 설치되어 있지 않습니다.',
   // monitors
   '(no clips)': '(클립 없음)',
   '(no sequences)': '(시퀀스 없음)',

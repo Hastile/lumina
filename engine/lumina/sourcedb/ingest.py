@@ -38,11 +38,14 @@ IMAGE_EXT = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif"}
 SKIP_DIRS = {"Adobe Premiere Pro Auto-Save", "Adobe Premiere Pro Audio Previews", "Adobe Premiere Pro Video Previews"}
 
 PROBE_V = "probe@2"
-CUTS_V = "cuts@3"
+CUTS_V = "cuts@4"
 FILENAME_V = "filename@4"
 
 SCENE_THRESHOLD = 0.3
 SOFT_THRESHOLD = 0.12   # inside a long shot only: dark scenes and slow moves change less between shots
+SPIKE_THRESHOLD = 0.1   # a dark hard cut scores 0.15-0.3 ...
+SPIKE_RATIO = 4         # ... while nothing else near it changes even a quarter as much
+SPIKE_WINDOW = 0.25     # seconds either side that "near" means
 LONG_CUT_SECONDS = 8
 MIN_SPLIT_SECONDS = 1.5
 MIN_CUT_SECONDS = 0.25  # a shorter "shot" is a flash or a detector stutter
@@ -172,6 +175,30 @@ def scene_times(path: Path, start: Fraction) -> list[Fraction]:
     return sorted(t for t, s in scene_scores(path, start) if s > SCENE_THRESHOLD and t > 0)
 
 
+def spike_times(scores: list[tuple[Fraction, float]]) -> list[Fraction]:
+    """Hard cuts below SCENE_THRESHOLD: in a dark scene a cut scores 0.15-0.3,
+    but every other frame around it scores near 0. A score that towers over
+    everything within SPIKE_WINDOW is a cut. Animation does not pass: its held
+    drawings change in steps of about the same size every few frames."""
+    out = []
+    lo = 0
+    for i, (t, s) in enumerate(scores):
+        while scores[lo][0] < t - SPIKE_WINDOW:
+            lo += 1
+        if not (SPIKE_THRESHOLD < s <= SCENE_THRESHOLD) or t <= 0:
+            continue
+        around = 0.0
+        for j in range(lo, len(scores)):
+            tj, sj = scores[j]
+            if tj > t + SPIKE_WINDOW:
+                break
+            if j != i:
+                around = max(around, sj)
+        if s > SPIKE_RATIO * max(around, 0.005):
+            out.append(t)
+    return out
+
+
 def split_long(edges: list[Fraction], scores: list[tuple[Fraction, float]], duration: Fraction) -> list[Fraction]:
     """More edges inside shots longer than LONG_CUT_SECONDS. Dark scenes and
     slow camera moves change less than SCENE_THRESHOLD between shots, so a
@@ -275,7 +302,7 @@ def analyze_file(path: Path, kind: str, sha256: Optional[str] = None) -> dict:
         start, fps, cfr = stream_timing(path)
         scores = scene_scores(path, start)
         seconds = Fraction(info["duration_ticks"], S)
-        hard = [t for t, sc in scores if sc > SCENE_THRESHOLD and t > 0]
+        hard = [t for t, sc in scores if sc > SCENE_THRESHOLD and t > 0] + spike_times(scores)
         edges = [to_ticks(t, fps, cfr) for t in split_long(hard, scores, seconds)]
         cuts = []
         for a, b in plan_cuts(edges, info["duration_ticks"]):

@@ -52,7 +52,7 @@ FILMSTRIP_HEIGHT = 54
 FILMSTRIP_MAX = 300
 
 
-def make_filmstrip(item: dict, out_dir: Path) -> Path:
+def make_filmstrip(item: dict, out_dir: Path, tag: str = "") -> Path:
     """Frames across the media in one horizontal sprite, for the timeline's clip thumbnails:
     one per second, or fewer (evenly spaced, at most FILMSTRIP_MAX) for long media."""
     v = item["video"]
@@ -60,12 +60,12 @@ def make_filmstrip(item: dict, out_dir: Path) -> Path:
     interval = max(1.0, secs / FILMSTRIP_MAX)
     count = max(1, int(secs / interval))
     w = max(2, round(FILMSTRIP_HEIGHT * v["width"] / max(1, v["height"]) / 2) * 2)
-    img = out_dir / "filmstrip.jpg"
+    img = out_dir / f"filmstrip{tag}.jpg"
     # frame i shows the media at (i + 0.5) * interval
     _run([ffmpeg_bin(), "-y", "-v", "error", "-skip_frame", "nokey" if interval >= 4 else "default", "-i", item["path"], "-an",
           "-vf", f"fps=1/{interval!r}:start_time={interval / 2!r},scale={w}:{FILMSTRIP_HEIGHT},tile={count}x1",
           "-frames:v", "1", "-q:v", "5", str(img)])
-    meta = out_dir / "filmstrip.json"
+    meta = out_dir / f"filmstrip{tag}.json"
     meta.write_text(json.dumps({"image": str(img), "interval": interval, "count": count, "width": w, "height": FILMSTRIP_HEIGHT}),
                     encoding="utf-8")
     return meta
@@ -85,20 +85,41 @@ def needs_proxy(item: dict) -> bool:
     return False
 
 
-def make_proxy(item: dict, out_dir: Path) -> Path:
+def has_alpha(item: dict) -> bool:
+    fmt = (item.get('video') or {}).get('pix_fmt', '').lower()
+    return fmt.startswith(('yuva', 'gbrap', 'rgba', 'bgra', 'argb', 'abgr', 'ya8', 'ya16'))
+
+
+def stale_proxy(item: dict) -> bool:
+    """Old H.264 proxies discarded alpha; they are not valid fallbacks for MOV overlays."""
+    proxy = item.get('proxy_path')
+    return has_alpha(item) and bool(proxy) and Path(proxy).suffix.lower() != '.webm'
+
+
+def make_proxy(item: dict, out_dir: Path, tag: str = "") -> Path:
     """Browser-playable, seek-friendly proxy (short GOP, no B-frames)."""
     src = item["path"]
     if item["kind"] == "image":
-        out = out_dir / "proxy.png"
+        out = out_dir / f"proxy{tag}.png"
         _run([ffmpeg_bin(), "-y", "-v", "error", "-i", src, "-frames:v", "1", str(out)], timeout=120)
         return out
     if item.get("video") is None:
-        out = out_dir / "proxy.m4a"
+        out = out_dir / f"proxy{tag}.m4a"
         _run([ffmpeg_bin(), "-y", "-v", "error", "-i", src, "-vn", "-c:a", "aac", "-b:a", "192k", str(out)])
         return out
-    out = out_dir / "proxy.mp4"
+    if has_alpha(item):
+        out = out_dir / f"proxy-alpha-v1{tag}.webm"
+        # Keep native dimensions, lossless VP9 + alpha. Never flatten onto black
+        # or reduce a transparent title to the old 720p H.264 proxy.
+        cmd = [ffmpeg_bin(), '-y', '-v', 'error', '-i', src, '-c:v', 'libvpx-vp9',
+               '-lossless', '1', '-pix_fmt', 'yuva420p', '-auto-alt-ref', '0',
+               '-row-mt', '1', '-deadline', 'good', '-cpu-used', '4', '-g', '15']
+        cmd += ['-c:a', 'libopus', '-b:a', '192k'] if item.get('audio') else ['-an']
+        _run([*cmd, str(out)])
+        return out
+    out = out_dir / f"proxy{tag}.mp4"
     cmd = [ffmpeg_bin(), "-y", "-v", "error", "-i", src,
-           "-vf", "scale=-2:'min(720,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+           "-vf", "scale=-2:'min(1080,ih)'", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
            "-g", "15", "-bf", "0", "-pix_fmt", "yuv420p"]
     cmd += ["-c:a", "aac", "-b:a", "160k"] if item.get("audio") else ["-an"]
     cmd += ["-movflags", "+faststart", str(out)]
@@ -143,16 +164,18 @@ class JobRunner:
         """Queue the derived files of a media item (``kinds``: only these of thumbnail / filmstrip / waveform / proxy)."""
         out_dir = cache_root() / item["id"]
         out_dir.mkdir(parents=True, exist_ok=True)
+        # a reloaded file gets new names, so the GUI's caches (keyed by path) fetch the new ones
+        tag = f"-r{item['revision']}" if item.get("revision") else ""
         ids = []
         tasks: list[tuple[str, Callable[[], dict]]] = []
         if item.get("video") is not None:
-            tasks.append(("thumbnail", lambda: {"thumbnail_path": str(make_thumbnail(item, out_dir / "thumb.jpg"))}))
+            tasks.append(("thumbnail", lambda: {"thumbnail_path": str(make_thumbnail(item, out_dir / f"thumb{tag}.jpg"))}))
             if item["kind"] == "video" and item["duration"] > 0:
-                tasks.append(("filmstrip", lambda: {"filmstrip_path": str(make_filmstrip(item, out_dir))}))
+                tasks.append(("filmstrip", lambda: {"filmstrip_path": str(make_filmstrip(item, out_dir, tag))}))
         if item.get("audio") is not None:
-            tasks.append(("waveform", lambda: {"waveform_path": str(make_waveform(item, out_dir / "waveform.json"))}))
+            tasks.append(("waveform", lambda: {"waveform_path": str(make_waveform(item, out_dir / f"waveform{tag}.json"))}))
         if needs_proxy(item):
-            tasks.append(("proxy", lambda: {"proxy_path": str(make_proxy(item, out_dir))}))
+            tasks.append(("proxy", lambda: {"proxy_path": str(make_proxy(item, out_dir, tag))}))
         if kinds is not None:
             tasks = [t for t in tasks if t[0] in kinds]
         for kind, fn in tasks:
