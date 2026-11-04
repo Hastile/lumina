@@ -104,7 +104,10 @@ def score(data: list[dict], rules: sp.Rules) -> dict:
 OBJECTIVE = {"cuts": "cut_f1", "effects": "effect_acc", "sounds": "sound_score"}
 
 
-def tune(rows: list[dict], *, passes: int = 2, log=print) -> dict:
+MIN_GAIN = 0.002   # a change must buy at least this much on the training Shorts, or the documented rule stays
+
+
+def tune(rows: list[dict], *, passes: int = 2, min_gain: float = MIN_GAIN, log=print) -> dict:
     data = prepare(rows)
     train = [d for n, d in enumerate(data) if n % 3 != 2]
     test = [d for n, d in enumerate(data) if n % 3 == 2]
@@ -122,9 +125,12 @@ def tune(rows: list[dict], *, passes: int = 2, log=print) -> dict:
                         continue
                     trial = replace(rules, **{knob: v})
                     got = score(train, trial)[key] or 0
-                    if got > best + 1e-4:
+                    if got > best + min_gain:
+                        before_test = score(test, rules)[key] or 0
                         best, rules, changed = got, trial, True
-                        log(f"  {group:<7} {knob} = {v}  -> {key} {got:.4f}  ({time.time() - t0:.0f}s)")
+                        after_test = score(test, rules)[key] or 0
+                        log(f"  {group:<7} {knob} = {v}  -> {key} train {got:.4f}, test {before_test:.4f} -> "
+                            f"{after_test:.4f}  ({time.time() - t0:.0f}s)")
             if not changed:
                 break
     return {"shorts": len(data), "train": len(train), "test": len(test),

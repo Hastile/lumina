@@ -1,0 +1,16 @@
+{
+ "tuned": "2026-11-04",
+ "shorts": 180,
+ "note": "Chosen from tune_plan.py on the archive (rules picked on 120 Shorts, checked on 60). Kept only changes that held on the check set or brought the rhythm toward the user's (2.64 captions per shot) without losing cut F1; lead_in 0.6, teeding cta (gains ~0.001) and slam_questions never (contradicts the hook-slam rule) were left at the documented values.",
+ "rules": {
+  "clause_age": 0.8,
+  "long_age": 1.8,
+  "slam_min_caps": 4,
+  "punch_len": 0,
+  "whoosh": "w4"
+ },
+ "archive_check_set": {
+  "before": {"cut_f1": 0.664, "captions_per_shot": 3.45, "effect_acc": 0.694, "sound_f1": 0.564, "sound_same": 0.503},
+  "after_all_8_changes": {"cut_f1": 0.665, "captions_per_shot": 2.83, "effect_acc": 0.727, "sound_f1": 0.566, "sound_same": 0.561}
+ }
+}

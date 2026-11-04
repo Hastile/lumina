@@ -13,6 +13,12 @@ from lumina.timebase import TICKS_PER_SECOND as SEC
 from .test_session import FakeServices
 
 
+@pytest.fixture(autouse=True)
+def documented_rules(monkeypatch):
+    """These tests pin the documented grammar; the tuned lumina/shorts_rules.json is checked separately."""
+    monkeypatch.setattr(sp, "RULES", sp.Rules())
+
+
 def cues(rows):
     """rows: (seconds, text) back to back from 0."""
     out, t = [], 0.0
@@ -526,3 +532,11 @@ def test_tuner_finds_rules_that_fit_the_archive(tmp_path):
     for k, v in rep["changed"].items():
         assert getattr(loaded, k) == (float("inf") if v == "inf" else v)
     assert "changed rules" in st.render(rep)
+
+
+def test_tuned_rules_file_loads():
+    tuned = sp.load_rules()
+    assert (tuned.clause_age, tuned.long_age, tuned.slam_min_caps, tuned.punch_len, tuned.whoosh) == (0.8, 1.8, 4, 0, "w4")
+    assert tuned.lead_in == 0.5 and tuned.teeding == "last" and tuned.slam_questions == "hook", "unchosen rules stay documented"
+    plan = sp.make_plan(cues(SHORT), rules=tuned)
+    assert all(s.seconds >= 1.1 for s in plan.shots) and plan.problems == []
