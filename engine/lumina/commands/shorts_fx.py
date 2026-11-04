@@ -351,6 +351,8 @@ class BuildShort(Params):
     auto_match: bool = True
     end_pad_frames: int = Field(default=6, ge=0, le=30, description="the video ends this long after the narration (A1)")
     align_end: bool = Field(default=True, description="end V1, V5, V6, the last caption and every sound on the video's end")
+    mark_shots: bool = Field(default=True, description="store the shot plan as S-markers (the given shots, or the draft "
+                                                       "when none are given and none are marked yet)")
 
 
 def _align_end(ctx: Context, seq: dict, end: int, notes: list[str]) -> None:
@@ -442,6 +444,16 @@ def shorts_build(ctx: Context, p: BuildShort):
                                            auto_match=p.auto_match))
         out["sounds"] = [f"{x['at_frame']}f {x['sound']} ({x['track']})" for x in r["sounds"]]
         out["notes"] += r["warnings"]
+
+    if p.mark_shots:
+        from .. import shorts_fill
+
+        if p.shots:
+            marks = [MarkShot(at=s.at, end=s.end) for s in p.shots]
+            shorts_mark_shots(ctx, MarkShots(sequence_id=seq["id"], shots=marks))
+        elif not shorts_fill.shot_markers(seq) and plan is not None:
+            shorts_mark_shots(ctx, MarkShots(sequence_id=seq["id"], reveal=list(p.reveal)))
+            out["notes"].append("shot plan stored as markers S1.. (no shots given: fill them with shorts_gaps as sources arrive)")
 
     rep = shorts_check.check(ctx.doc, seq)
     out["check"] = shorts_check.render(rep)
@@ -617,3 +629,49 @@ def shorts_set_bgm(ctx: Context, p: SetBgm):
             row["note"] = "could not reach the band (peak ceiling or boost limit)"
         out["clips"][c["id"]] = row
     return out
+
+
+# ---------------------------------------------------------------- the shot plan as markers
+
+class MarkShot(Params):
+    at: TimeValue
+    end: TimeValue
+    look: str = Field(default="", description="what should be on screen (Korean picture description), for the source search")
+    text: str = Field(default="", description="the narration the shot covers")
+
+
+class MarkShots(Params):
+    sequence_id: Optional[str] = None
+    shots: Optional[list[MarkShot]] = Field(default=None, description="omit: the shorts_plan draft's shots")
+    reveal: list[int] = Field(default_factory=list, description="for the draft: caption numbers that start a new shot")
+    color: Literal["green", "red", "purple", "orange", "yellow", "white", "blue", "cyan"] = "cyan"
+
+
+@command("shorts.mark_shots", MarkShots)
+def shorts_mark_shots(ctx: Context, p: MarkShots):
+    """Store the shot plan on the sequence as markers S1, S2 ... spanning each shot, with 'look | narration' as
+    the comment, replacing earlier S-markers. The plan then survives the session, shows (and can be dragged) in the
+    GUI, and shorts_gaps fills it as sources arrive."""
+    from .. import shorts_fill, shorts_plan as sp
+    from ..model import new_id
+
+    seq = seq_of(ctx.doc, p.sequence_id)
+    st = seq["settings"]
+    if p.shots is None:
+        cues = sp.cues_from_sequence(seq)
+        if not cues:
+            raise CommandError("NO_CAPTIONS", "no captions to plan from; give shots")
+        plan = sp.make_plan(cues, reveal=tuple(p.reveal))
+        rows = [(s.start, s.end, "", s.text) for s in plan.shots]
+    else:
+        rows = [(resolve_time(s.at, st), resolve_time(s.end, st), s.look, s.text) for s in p.shots]
+    for a, b, *_ in rows:
+        if b <= a:
+            raise CommandError("BAD_SHOT", "a shot must end after it starts")
+    for m in shorts_fill.shot_markers(seq):
+        ctx.m.delete(["sequences", seq["id"], "markers", m["marker_id"]])
+    for n, (a, b, look, text) in enumerate(sorted(rows), start=1):
+        mid = new_id()
+        ctx.m.set(["sequences", seq["id"], "markers", mid], {"id": mid, "start": a, "duration": b - a, "name": f"S{n}",
+                                                             "comment": shorts_fill.comment(look, text), "color": p.color})
+    return {"shots": len(rows)}

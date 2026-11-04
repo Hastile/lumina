@@ -118,6 +118,7 @@ class Filters:
     used_only: bool = False                 # used before (approved edits first)
     include_staged: bool = False
     exclude_media: tuple[int, ...] = ()
+    media_ids: tuple[int, ...] = ()         # only these media (a source just handed over)
 
 
 _MEASURES = ("luma", "text_overlay", "subject_x", "subject_area")
@@ -169,6 +170,9 @@ def _candidates(con, text, f: Filters, limit: int) -> dict[int, float]:
     if f.exclude_media:
         where.append(f"c.media_id NOT IN ({','.join('?' * len(f.exclude_media))})")
         args += list(f.exclude_media)
+    if f.media_ids:
+        where.append(f"c.media_id IN ({','.join('?' * len(f.media_ids))})")
+        args += list(f.media_ids)
     terms = _terms(text) if text else []
     if terms:
         match = " OR ".join(f'"{t}"*' for t in terms)

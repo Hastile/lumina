@@ -131,6 +131,7 @@ class Engine:
             "analysis.plan_scene_cuts": self._analysis_plan_scene,
             "shorts.plan": self._shorts_plan,
             "shorts.check": self._shorts_check,
+            "shorts.gaps": self._shorts_gaps,
         }
         from .speech.service import SpeechService
         self.speech = SpeechService(self)
@@ -548,6 +549,38 @@ class Engine:
                 con.close()
         except Exception:  # noqa: BLE001 - names are only hints
             return []
+
+    def _shorts_gaps(self, p: dict) -> dict:
+        """Empty shots of the stored plan, and (given new sources) candidates from those sources only."""
+        from . import shorts_fill
+        from .commands.project import seq_of
+
+        seq = seq_of(self.session.doc, p.get("sequence_id"))
+        rep = shorts_fill.gaps(self.session.doc, seq)
+        out = {"report": shorts_fill.render(rep), "empty": rep["empty"], "partial": rep["partial"]}
+        paths, media_ids = list(p.get("paths") or []), [int(m) for m in p.get("source_media_ids") or []]
+        if (paths or media_ids) and rep["marked"]:
+            from .sourcedb import db
+
+            con = db.connect(p.get("db") or db.DEFAULT_DB_PATH)
+            try:
+                missing = []
+                for path in paths:
+                    mid = db.media_id_for_path(con, path)
+                    if mid is None:
+                        missing.append(path)
+                    else:
+                        media_ids.append(mid)
+                if missing:
+                    out["not_in_db"] = missing
+                    out["hint"] = "run python -m lumina.sourcedb intake on these first (cuts, tags, descriptions)"
+                sug = shorts_fill.suggest(con, rep, media_ids, per_shot=int(p.get("per_shot", 3)),
+                                          use_pictures=p.get("use_pictures", True) is not False,
+                                          include_partial=bool(p.get("include_partial")))
+            finally:
+                con.close()
+            out.update(sug)
+        return out
 
     def _shorts_check(self, p: dict) -> dict:
         """The Short's edit checked against the grammar as text (read-only)."""

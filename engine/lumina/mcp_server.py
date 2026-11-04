@@ -26,7 +26,9 @@ All editing uses the GUI engine; a missing GUI never silently creates a headless
 Wrap multi-step edits in begin_transaction/commit_transaction so they undo as one step (rollback_transaction on failure).
 Use get_frame_image to look at the result, and export_media to render a verified file.
 Shorts, few calls: shorts_plan (draft from the captions) -> source_plan (one call, `look` per shot) -> shorts_build
-(shots + end + effects + sounds + check, one undo) -> fix what its check lists -> get_frame_strip once -> save."""
+(shots + end + effects + sounds + check, one undo) -> fix what its check lists -> get_frame_strip once -> save.
+Sources arriving later: shorts_build without shots (base setup, plan stored as S-markers; shorts_mark_shots to add
+looks) -> per handed-over file: intake -> shorts_gaps(paths) -> clip_place_shots(place) -> shorts_check."""
 
 _OBJ = {"type": "object", "properties": {}, "additionalProperties": False}
 
@@ -171,6 +173,19 @@ EXTRA_TOOLS: dict[str, tuple[str, str, dict, Any]] = {
                                                  "source DB's works and characters"},
                         "min_shot": {"type": "number", "default": 1.1},
                         "format": {"type": "string", "enum": ["text", "json"], "default": "text"}}}, None),
+    "shorts_gaps": ("shorts.gaps",
+                    "A Short filled as sources arrive: which planned shots (markers S1, S2 ... from shorts_mark_shots or "
+                    "shorts_build) are still empty on V1, with their look and narration. Give the new source files (paths, "
+                    "already intaken into the source DB) to search only them for the empty shots: returns candidates and a "
+                    "ready clip_place_shots list (`place`, each cut once). Read-only.",
+                    {"type": "object", "properties": {
+                        "sequence_id": {"type": "string"},
+                        "paths": {"type": "array", "items": {"type": "string"}, "description": "the source files just handed over"},
+                        "source_media_ids": {"type": "array", "items": {"type": "integer"}, "description": "or their DB media ids"},
+                        "per_shot": {"type": "integer", "default": 3},
+                        "include_partial": {"type": "boolean", "default": False},
+                        "use_pictures": {"type": "boolean", "default": True,
+                                         "description": "picture search (SigLIP) as well as words"}}}, None),
     "shorts_check": ("shorts.check",
                      "Check a Short's edit as text, without frames: short shots, gaps, cuts off caption starts, speeds, "
                      "neighbour-shot flashes and scene changes inside shots (source DB), dark shots, the ending (video = "

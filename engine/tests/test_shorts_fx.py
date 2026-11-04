@@ -540,3 +540,83 @@ def test_tuned_rules_file_loads():
     assert tuned.lead_in == 0.5 and tuned.teeding == "last" and tuned.slam_questions == "hook", "unchosen rules stay documented"
     plan = sp.make_plan(cues(SHORT), rules=tuned)
     assert all(s.seconds >= 1.1 for s in plan.shots) and plan.problems == []
+
+
+# ---------------------------------------------------------------- base setup first, sources one by one
+
+def test_base_setup_marks_the_plan_and_gaps_list_empty_shots():
+    from lumina import shorts_fill
+
+    s, sid, tids, ids, mids = build_session()
+    r = s.execute("shorts.build", {"auto_match": False, "sounds": []})["result"]
+    assert "shot plan stored as markers" in " ".join(r["notes"])
+    seq = s.doc["sequences"][sid]
+    marks = shorts_fill.shot_markers(seq)
+    assert [m["n"] for m in marks] == list(range(1, len(marks) + 1)) and len(marks) >= 2
+    rep = shorts_fill.gaps(s.doc, seq)
+    assert rep["empty"] == [m["n"] for m in marks], "nothing on V1 yet"
+    # place one shot by hand: it is filled, a half-covered one is partial
+    v1 = seq["video_tracks"][0]
+    a, b = marks[0]["at"], marks[0]["end"]
+    s.execute("clip.place", {"media_id": mids[0], "at": a, "source_out": b - a, "video_track_id": v1, "take_audio": False})
+    a2, b2 = marks[1]["at"], marks[1]["end"]
+    s.execute("clip.place", {"media_id": mids[1], "at": a2, "source_out": (b2 - a2) // 2, "video_track_id": v1, "take_audio": False})
+    rep = shorts_fill.gaps(s.doc, s.doc["sequences"][sid])
+    st = {x["n"]: x["status"] for x in rep["shots"]}
+    assert st[1] == "filled" and st[2] == "partial"
+    assert "S2" in shorts_fill.render(rep) and "S1 " not in shorts_fill.render(rep)
+
+
+def test_mark_shots_replaces_the_plan_with_looks():
+    from lumina import shorts_fill
+
+    s, sid, tids, ids, mids = build_session()
+    s.execute("shorts.mark_shots", {})
+    s.execute("shorts.mark_shots", {"shots": [{"at": 0, "end": "93f", "look": "사이버펑크 도시 야경 와이드", "text": "도입"},
+                                              {"at": "93f", "end": "174f", "look": "사스케 클로즈업"}]})
+    marks = shorts_fill.shot_markers(s.doc["sequences"][sid])
+    assert [(m["n"], m["look"], m["text"]) for m in marks] == [(1, "사이버펑크 도시 야경 와이드", "도입"), (2, "사스케 클로즈업", "")]
+    assert len(s.doc["sequences"][sid]["markers"]) == 2, "earlier S-markers are replaced, not added to"
+    with pytest.raises(CommandError):
+        s.execute("shorts.mark_shots", {"shots": [{"at": "10f", "end": "5f"}]})
+
+
+def test_gaps_suggest_cuts_from_the_handed_over_source(tmp_path, monkeypatch):
+    from lumina.commands import shots as shots_mod
+    from lumina.sourcedb import db
+
+    clip = tmp_path / "E03 사스케.mp4"
+    clip.write_bytes(b"x")
+    other = tmp_path / "other.mp4"
+    other.write_bytes(b"y")
+    dbp = tmp_path / "source.db"
+    con = db.connect(dbp)
+    mid, _ = db.register_file(con, clip, "video", probe={"duration_ticks": 30 * SEC, "fps_num": 30, "fps_den": 1})
+    oid, _ = db.register_file(con, other, "video", probe={"duration_ticks": 30 * SEC, "fps_num": 30, "fps_den": 1})
+    for m in (mid, oid):
+        db.set_cuts(con, m, [{"start_ticks": 0, "end_ticks": 10 * SEC, "keyframe_ticks": 0},
+                             {"start_ticks": 10 * SEC, "end_ticks": 20 * SEC, "keyframe_ticks": 10 * SEC}])
+        db.put_facts(con, m, "claude-sonnet@4", [
+            {"kind": "description", "value": "밤의 도시 야경 와이드샷", "t0_ticks": 0, "t1_ticks": 10 * SEC},
+            {"kind": "description", "value": "사스케 얼굴 클로즈업", "t0_ticks": 10 * SEC, "t1_ticks": 20 * SEC}])
+    con.commit()
+    con.close()
+    e = Engine(services=BuildServices(), run_jobs=False)
+    shorts_session(e.session)
+    sid = e.session.doc["active_sequence_id"]
+    e.dispatch("execute", {"name": "shorts.mark_shots", "params": {"shots": [
+        {"at": 0, "end": "93f", "look": "도시 야경", "text": "도입"}, {"at": "93f", "end": "174f", "look": "사스케 클로즈업"}]}})
+    r = e.dispatch("shorts.gaps", {"paths": [str(clip), str(tmp_path / "nope.mp4")], "db": str(dbp), "use_pictures": False})
+    assert r["empty"] == [1, 2] and r["not_in_db"] == [str(tmp_path / "nope.mp4")]
+    assert [x["shot"] for x in r["place"]] == ["S1", "S2"]
+    con = db.connect(dbp)
+    starts = {x["shot"]: con.execute("SELECT media_id, start_ticks FROM cut WHERE cut_id = ?", (x["cut_id"],)).fetchone()
+              for x in r["place"]}
+    con.close()
+    assert all(v[0] == mid for v in starts.values()), "only the handed-over file is searched"
+    assert starts["S1"][1] == 0 and starts["S2"][1] == 10 * SEC, "each shot gets the cut its look describes"
+    # the place list goes straight into clip_place_shots
+    monkeypatch.setattr(shots_mod, "SOURCE_DB", dbp)
+    e.dispatch("execute", {"name": "clip.place_shots", "params": {"shots": [{k: v for k, v in x.items() if k != "shot"}
+                                                                             for x in r["place"]]}})
+    assert e.dispatch("shorts.gaps", {})["empty"] == []
